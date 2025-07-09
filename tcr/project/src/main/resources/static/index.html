@@ -484,16 +484,19 @@
             </div>
             <!-- partial -->
             <!-- partial:partials/_sidebar.html -->
+             <!-- 这里侧边栏的链接改成了vue动态调用 -->
             <nav class="sidebar sidebar-offcanvas" id="sidebar">
                 <ul class="nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="index.html">
+                        <!-- 主页链接 -->
+                        <a class="nav-link" href="javascript:void(0)" @click="loadContent('dashboard')">
                             <i class="mdi mdi-grid-large menu-icon"></i>
                             <span class="menu-title">主页</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#">
+                        <!-- 工艺策划链接 -->
+                        <a class="nav-link" href="javascript:void(0)" @click="loadContent('craft-planning')">
                             <i class="menu-icon mdi mdi-rename-box"></i>
                             <span class="menu-title">工艺策划</span>
                         </a>
@@ -671,165 +674,8 @@
                 </ul>
             </nav>
             <!-- partial -->
-            <div class="main-panel">
-                <div class="content-wrapper">
-                    <div class="row">
-                        <div class="col-sm-12">
-                            <div class="home-tab">
-                                <div class="d-sm-flex align-items-center justify-content-between border-bottom">
-                                    <ul class="nav nav-tabs" role="tablist">
-                                        <li class="nav-item">
-                                            <a class="nav-link active ps-0" id="home-tab" data-bs-toggle="tab"
-                                               href="#overview" role="tab" aria-controls="overview"
-                                               aria-selected="true">工作概览</a>
-                                        </li>
-                                        <li class="nav-item">
-                                            <a class="nav-link" id="contact-tab" data-bs-toggle="tab"
-                                               href="#demographics"
-                                               role="tab" aria-selected="false">事务提醒</a>
-                                        </li>
-                                        <li class="nav-item">
-                                            <a class="nav-link border-0" id="more-tab" data-bs-toggle="tab" href="#more"
-                                               role="tab" aria-selected="false">更多</a>
-                                        </li>
-                                    </ul>
-                                    <div>
-                                        <div class="btn-wrapper">
-                                            <a href="#" class="btn btn-otline-dark align-items-center"><i
-                                                    class="icon-share"></i> 分享</a>
-                                            <a href="#" class="btn btn-otline-dark"><i class="icon-printer"></i>
-                                                打印</a>
-                                            <a href="#" class="btn btn-primary text-white me-0"><i
-                                                    class="icon-download"></i> 导出</a>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="tab-content tab-content-basic">
-                                    <div class="tab-pane fade show active" id="overview" role="tabpanel"
-                                         aria-labelledby="overview">
-                                        <div class="row">
-                                            <div class="col-sm-12">
-                                                <div class="statistics-details d-flex align-items-center justify-content-between">
-                                                    <div>
-                                                        <p class="statistics-title">完成率</p>
-                                                        <h3 class="rate-percentage">32.53%</h3>
-                                                        <p class="text-danger d-flex"><i
-                                                                class="mdi mdi-menu-down"></i><span>-0.5%</span></p>
-                                                    </div>
-                                                    <div>
-                                                        <p class="statistics-title">页面浏览量</p>
-                                                        <h3 class="rate-percentage">7,682</h3>
-                                                        <p class="text-success d-flex"><i
-                                                                class="mdi mdi-menu-up"></i><span>+0.1%</span>
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <p class="statistics-title">已处理</p>
-                                                        <h3 class="rate-percentage">68.8</h3>
-                                                        <p class="text-danger d-flex"><i
-                                                                class="mdi mdi-menu-down"></i><span>68.8</span></p>
-                                                    </div>
-                                                    <div class="d-none d-md-block">
-                                                        <p class="statistics-title">平均工作时间</p>
-                                                        <h3 class="rate-percentage">2m:35s</h3>
-                                                        <p class="text-success d-flex"><i
-                                                                class="mdi mdi-menu-down"></i><span>+0.8%</span></p>
-                                                    </div>
-                                                    <div class="d-none d-md-block">
-                                                        <p class="statistics-title">待处理</p>
-                                                        <h3 class="rate-percentage">68.8</h3>
-                                                        <p class="text-danger d-flex"><i
-                                                                class="mdi mdi-menu-down"></i><span>68.8</span></p>
-                                                    </div>
-                                                    <div class="d-none d-md-block">
-                                                        <p class="statistics-title">经常在线时间</p>
-                                                        <h3 class="rate-percentage">2m:35s</h3>
-                                                        <p class="text-success d-flex"><i
-                                                                class="mdi mdi-menu-down"></i><span>+0.8%</span></p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="row">
-                                            <div class="col-lg-8 d-flex flex-column">
-                                                <div class="row flex-grow">
-                                                    <div class="col-12 col-lg-4 col-lg-12 grid-margin stretch-card">
-                                                        <div class="card card-rounded">
-                                                            <div class="card-body">
-                                                                <div class="d-sm-flex justify-content-between align-items-start">
-                                                                    <div>
-                                                                        <h4 class="card-title card-title-dash">审批工作量折线表</h4>
-                                                                        <h5 class="card-subtitle card-subtitle-dash">直观读出您每周的审批数量</h5>
-                                                                    </div>
-                                                                    <div id="performance-line-legend"></div>
-                                                                </div>
-                                                                <div class="chartjs-wrapper mt-5">
-                                                                    <canvas id="performaneLine"></canvas>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="col-lg-4 d-flex flex-column">
-                                                <div class="row flex-grow">
-                                                    <div class="col-md-6 col-lg-12 grid-margin stretch-card">
-                                                        <div class="card bg-primary card-rounded">
-                                                            <div class="card-body pb-0">
-                                                                <h4 class="card-title card-title-dash text-white mb-4">
-                                                                    Status Summary</h4>
-                                                                <div class="row">
-                                                                    <div class="col-sm-4">
-                                                                        <p class="status-summary-ight-white mb-1">Closed
-                                                                            Value</p>
-                                                                        <h2 class="text-info">357</h2>
-                                                                    </div>
-                                                                    <div class="col-sm-8">
-                                                                        <div class="status-summary-chart-wrapper pb-4">
-                                                                            <canvas id="status-summary"></canvas>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-md-6 col-lg-12 grid-margin stretch-card">
-                                                        <div class="card card-rounded">
-                                                            <div class="card-body">
-                                                                <div class="row">
-                                                                    <div class="col-sm-6">
-                                                                        <div class="d-flex justify-content-between align-items-center mb-2 mb-sm-0">
-                                                                            <div class="circle-progress-width">
-                                                                                <div id="totalVisitors"
-                                                                                     class="progressbar-js-circle pr-2"></div>
-                                                                            </div>
-                                                                            <div>
-                                                                                <p class="text-small mb-2">总访问量</p>
-                                                                                <h4 class="mb-0 fw-bold">26.80%</h4>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div class="col-sm-6">
-                                                                        <div class="d-flex justify-content-between align-items-center">
-                                                                            <div class="circle-progress-width">
-                                                                                <div id="visitperday"
-                                                                                     class="progressbar-js-circle pr-2"></div>
-                                                                            </div>
-                                                                            <div>
-                                                                                <p class="text-small mb-2">每日访问</p>
-                                                                                <h4 class="mb-0 fw-bold">9065</h4>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="row"><div class="col-lg-8 d-flex flex-column">
-            </div>
+            <!-- main-panel 现在是空的，由 v-html 动态填充 -->
+            <div class="main-panel" v-html="mainPanelContent"></div>
         </div>
     </div>
 </div>
@@ -852,13 +698,18 @@
         el: '#app',
         data() {
             return {
+                // --- 原有的菜单折叠逻辑的状态  ---
                 showProjectMenu: false,
                 showInfoSummaryMenu: false,
                 showDrawingCheckMenu: false,
-                showDesignInfoMenu: false
+                showDesignInfoMenu: false,
+
+                // --- 新增的面板切换逻辑的状态 ---
+                mainPanelContent: '' 
             }
         },
         methods: {
+            // --- 原有的菜单折叠逻辑的方法 (完全保留) ---
             toggleProjectMenu() {
                 this.showProjectMenu = !this.showProjectMenu;
             },
@@ -870,13 +721,23 @@
             },
             toggleDesignInfoMenu() {
                 this.showDesignInfoMenu = !this.showDesignInfoMenu;
+            },
+
+            // --- 新增的面板切换逻辑的方法 ---
+            loadContent(pageName) {
+                // ... Axios 请求逻辑 ...
+                axios.get(`partials/${pageName}-content.html`)
+                    .then(response => {
+                        this.mainPanelContent = response.data;
+                    })
+                    // ...
             }
         },
+        // --- 新增的 mounted 钩子，用于加载初始页面 ---
         mounted() {
-
+            this.loadContent('dashboard');
         }
     })
-
 </script>
 </body>
 

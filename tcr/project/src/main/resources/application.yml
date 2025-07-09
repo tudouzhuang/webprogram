@@ -8,4 +8,3 @@ mybatis-plus:
     default-fetch-size: 10000
     default-statement-timeout: 300
   type-aliases-package: com.example.project.entity
-
