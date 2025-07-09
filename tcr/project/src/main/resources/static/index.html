@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="main/vendors/mdi/css/materialdesignicons.min.css">
     <link rel="stylesheet" href="main/vendors/ti-icons/css/themify-icons.css">
     <link rel="stylesheet" href="main/vendors/typicons/typicons.css">
-    <link rel="stylesheet" href="main/vendors/simple-line-icons/css/simple-line-icons.css">
+    <link rel="stylesheet" href="main/vendors/simple-line-icons/cwss/simple-line-icons.css">
     <link rel="stylesheet" href="main/vendors/css/vendor.bundle.base.css">
     <link rel="stylesheet" href="main/vendors/datatables.net-bs4/dataTables.bootstrap4.css">
     <link rel="stylesheet" href="main/js/select.dataTables.min.css">
@@ -95,6 +95,17 @@
         
         .menu-arrow {
             transition: transform 0.3s ease;
+        }
+
+            .main-panel {
+        /* 告诉浏览器，当 opacity (透明度) 属性变化时，
+           用 0.3 秒的时间和一个 "ease" 缓动函数来创建动画 */
+            transition: opacity 0.3s ease;
+        }
+
+        /* 定义一个用于“淡出”的辅助类 */
+        .main-panel.panel-fade {
+            opacity: 0;
         }
     </style>
 
@@ -698,43 +709,60 @@
         el: '#app',
         data() {
             return {
-                // --- 原有的菜单折叠逻辑的状态  ---
+                // ... 原有的菜单折叠 data ...
                 showProjectMenu: false,
                 showInfoSummaryMenu: false,
                 showDrawingCheckMenu: false,
                 showDesignInfoMenu: false,
 
-                // --- 新增的面板切换逻辑的状态 ---
+                // ... 原有的 main-panel 内容 data ...
                 mainPanelContent: '' 
             }
         },
         methods: {
-            // --- 原有的菜单折叠逻辑的方法 (完全保留) ---
-            toggleProjectMenu() {
-                this.showProjectMenu = !this.showProjectMenu;
-            },
-            toggleInfoSummaryMenu() {
-                this.showInfoSummaryMenu = !this.showInfoSummaryMenu;
-            },
-            toggleDrawingCheckMenu() {
-                this.showDrawingCheckMenu = !this.showDrawingCheckMenu;
-            },
-            toggleDesignInfoMenu() {
-                this.showDesignInfoMenu = !this.showDesignInfoMenu;
-            },
+            // ... 原有的菜单折叠 methods ...
+            toggleProjectMenu() { /* ... */ },
+            toggleInfoSummaryMenu() { /* ... */ },
+            toggleDrawingCheckMenu() { /* ... */ },
+            toggleDesignInfoMenu() { /* ... */ },
 
-            // --- 新增的面板切换逻辑的方法 ---
+            // ★★★★★ 我们将重点升级这个方法 ★★★★★
             loadContent(pageName) {
-                // ... Axios 请求逻辑 ...
-                axios.get(`partials/${pageName}-content.html`)
-                    .then(response => {
-                        this.mainPanelContent = response.data;
-                    })
-                    // ...
+                // 首先，获取到 main-panel 这个 DOM 元素
+                const mainPanel = this.$el.querySelector('.main-panel');
+                if (!mainPanel) return; // 如果找不到，就退出
+
+                // --- 1. 淡出 ---
+                // 给 main-panel 添加 'panel-fade' 类，触发 CSS 过渡，使其透明度变为 0
+                mainPanel.classList.add('panel-fade');
+
+                // --- 2. 延迟替换 ---
+                // 设置一个短暂的延迟，等待淡出动画播放完毕
+                // 这个时间应该略大于或等于你的 CSS transition-duration (0.3秒 = 300毫秒)
+                setTimeout(() => {
+                    const url = `partials/${pageName}-content.html`;
+                    axios.get(url)
+                        .then(response => {
+                            // --- 3. 替换内容 ---
+                            // 在 panel 不可见时，更新它的内容
+                            this.mainPanelContent = response.data;
+
+                            // --- 4. 淡入 ---
+                            // 内容更新后，移除 'panel-fade' 类，
+                            // 触发 CSS 过渡，使其透明度恢复为 1，产生淡入效果
+                            mainPanel.classList.remove('panel-fade');
+                        })
+                        .catch(error => {
+                            console.error(`加载 ${url} 失败:`, error);
+                            this.mainPanelContent = '<p style="color:red; text-align:center;">内容加载失败!</p>';
+                            // 加载失败也要让它显示出来
+                            mainPanel.classList.remove('panel-fade');
+                        });
+                }, 300); 
             }
         },
-        // --- 新增的 mounted 钩子，用于加载初始页面 ---
         mounted() {
+            // mounted 钩子也使用同样的逻辑，这样初始加载也会有动画效果
             this.loadContent('dashboard');
         }
     })
