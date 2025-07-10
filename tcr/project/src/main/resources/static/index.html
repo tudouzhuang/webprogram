@@ -577,16 +577,37 @@
                                     </a>
                                     <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}" id="project-submenu">
                                         <li class="nav-item">
-                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">项目1</a>
+                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">X243</a>
                                         </li>
                                         <li class="nav-item"><a class="nav-link"
-                                                                href="main/pages/ui-features/dropdowns.html">项目2</a>
+                                                                href="main/pages/ui-features/dropdowns.html">RGD</a>
                                         </li>
+                                        <!-- === 新增开始 === -->
+                                        <li class="nav-item"><a class="nav-link" href="#">EVADER</a>
+                                        </li>
+                                        <!-- === 新增结束 === -->
                                     </ul>
                                 </li>
-                                <li class="nav-item"><a class="nav-link"
-                                                        href="main/pages/ui-features/dropdowns.html">膜具类别</a>
+                                <!-- === 修改开始：将“膜具类别”改造为可折叠菜单 === -->
+                                <li class="nav-item">
+                                    <a class="nav-link" href="javascript:void(0)" @click="toggleMoldCategoryMenu">
+                                        膜具类别
+                                        <i class="menu-arrow" :class="{'mdi-rotate-180': showMoldCategoryMenu}"></i>
+                                    </a>
+                                    <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}" id="project-submenu">
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">落料膜</a>
+                                        </li>
+                                        <li class="nav-item"><a class="nav-link"
+                                                                href="main/pages/ui-features/dropdowns.html">翻整膜</a>
+                                        </li>
+                                        <!-- === 新增开始 === -->
+                                        <li class="nav-item"><a class="nav-link" href="#">修冲膜</a>
+                                        </li>
+                                        <!-- === 新增结束 === -->
+                                    </ul>
                                 </li>
+                                <!-- === 修改结束 === -->
                             </ul>
                         </div>
                     </li>
@@ -715,16 +736,32 @@
                 showDrawingCheckMenu: false,
                 showDesignInfoMenu: false,
 
+                // --- 新增：为“膜具类别”菜单添加状态 ---
+                showMoldCategoryMenu: false,
+
                 // ... 原有的 main-panel 内容 data ...
                 mainPanelContent: '' 
             }
         },
         methods: {
             // ... 原有的菜单折叠 methods ...
-            toggleProjectMenu() { /* ... */ },
-            toggleInfoSummaryMenu() { /* ... */ },
-            toggleDrawingCheckMenu() { /* ... */ },
-            toggleDesignInfoMenu() { /* ... */ },
+            toggleProjectMenu() { 
+                this.showProjectMenu = !this.showProjectMenu;
+            },
+            toggleInfoSummaryMenu() { 
+                this.showInfoSummaryMenu = !this.showInfoSummaryMenu;
+            },
+            toggleDrawingCheckMenu() { 
+                this.showDrawingCheckMenu = !this.showDrawingCheckMenu;
+            },
+            toggleDesignInfoMenu() { 
+                this.showDesignInfoMenu = !this.showDesignInfoMenu;
+            },
+            
+            // --- 新增：为“膜具类别”菜单添加控制方法 ---
+            toggleMoldCategoryMenu() {
+                this.showMoldCategoryMenu = !this.showMoldCategoryMenu;
+            },
 
             // ★★★★★ 我们将重点升级这个方法 ★★★★★
             loadContent(pageName) {
@@ -740,6 +777,8 @@
                 // 设置一个短暂的延迟，等待淡出动画播放完毕
                 // 这个时间应该略大于或等于你的 CSS transition-duration (0.3秒 = 300毫秒)
                 setTimeout(() => {
+                    // 假设你的内容片段都存放在一个统一的目录，比如 'partials/'
+                    // 如果你的文件在其他地方，请修改这个路径
                     const url = `partials/${pageName}-content.html`;
                     axios.get(url)
                         .then(response => {
@@ -754,7 +793,7 @@
                         })
                         .catch(error => {
                             console.error(`加载 ${url} 失败:`, error);
-                            this.mainPanelContent = '<p style="color:red; text-align:center;">内容加载失败!</p>';
+                            this.mainPanelContent = '<div class="content-wrapper"><p style="color:red; text-align:center;">内容加载失败! 请确保 `partials/' + pageName + '.html` 文件存在。</p></div>';
                             // 加载失败也要让它显示出来
                             mainPanel.classList.remove('panel-fade');
                         });
