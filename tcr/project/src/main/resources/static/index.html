@@ -4,14 +4,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>Star Admin2 </title>
+    <title>江福模具 </title>
     <script src="material/vue.js"></script>
     <script src="https://unpkg.com/element-ui/lib/index.js"></script>
     <link rel="stylesheet" href="main/vendors/feather/feather.css">
     <link rel="stylesheet" href="main/vendors/mdi/css/materialdesignicons.min.css">
     <link rel="stylesheet" href="main/vendors/ti-icons/css/themify-icons.css">
     <link rel="stylesheet" href="main/vendors/typicons/typicons.css">
-    <link rel="stylesheet" href="main/vendors/simple-line-icons/cwss/simple-line-icons.css">
+    <link rel="stylesheet" href="main/vendors/simple-line-icons/css/simple-line-icons.css">
     <link rel="stylesheet" href="main/vendors/css/vendor.bundle.base.css">
     <link rel="stylesheet" href="main/vendors/datatables.net-bs4/dataTables.bootstrap4.css">
     <link rel="stylesheet" href="main/js/select.dataTables.min.css">
@@ -96,17 +96,6 @@
         .menu-arrow {
             transition: transform 0.3s ease;
         }
-
-            .main-panel {
-        /* 告诉浏览器，当 opacity (透明度) 属性变化时，
-           用 0.3 秒的时间和一个 "ease" 缓动函数来创建动画 */
-            transition: opacity 0.3s ease;
-        }
-
-        /* 定义一个用于“淡出”的辅助类 */
-        .main-panel.panel-fade {
-            opacity: 0;
-        }
     </style>
 
 </head>
@@ -122,7 +111,8 @@
                     </button>
                 </div>
                 <div>
-                    <a class="navbar-brand brand-logo" href="index.html">
+                    <a class="navbar-brand brand-logo flex-grow-1" href="index.html" style="flex: 1;"> 
+                        <!-- 加一个flex=1 -->
                         <img src="main/images/logo.svg" alt="logo"/>
                     </a>
                     <a class="navbar-brand brand-logo-mini" href="index.html">
@@ -495,19 +485,16 @@
             </div>
             <!-- partial -->
             <!-- partial:partials/_sidebar.html -->
-             <!-- 这里侧边栏的链接改成了vue动态调用 -->
             <nav class="sidebar sidebar-offcanvas" id="sidebar">
                 <ul class="nav">
                     <li class="nav-item">
-                        <!-- 主页链接 -->
-                        <a class="nav-link" href="javascript:void(0)" @click="loadContent('dashboard')">
+                        <a class="nav-link" href="javascript:void(0)" @click="changePanel('dashboard-panel')">
                             <i class="mdi mdi-grid-large menu-icon"></i>
                             <span class="menu-title">主页</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <!-- 工艺策划链接 -->
-                        <a class="nav-link" href="javascript:void(0)" @click="loadContent('craft-planning')">
+                        <a class="nav-link" href="javascript:void(0)" @click="changePanel('craft-planning-panel')">
                             <i class="menu-icon mdi mdi-rename-box"></i>
                             <span class="menu-title">工艺策划</span>
                         </a>
@@ -577,37 +564,16 @@
                                     </a>
                                     <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}" id="project-submenu">
                                         <li class="nav-item">
-                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">X243</a>
+                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">项目1</a>
                                         </li>
                                         <li class="nav-item"><a class="nav-link"
-                                                                href="main/pages/ui-features/dropdowns.html">RGD</a>
+                                                                href="main/pages/ui-features/dropdowns.html">项目2</a>
                                         </li>
-                                        <!-- === 新增开始 === -->
-                                        <li class="nav-item"><a class="nav-link" href="#">EVADER</a>
-                                        </li>
-                                        <!-- === 新增结束 === -->
                                     </ul>
                                 </li>
-                                <!-- === 修改开始：将“膜具类别”改造为可折叠菜单 === -->
-                                <li class="nav-item">
-                                    <a class="nav-link" href="javascript:void(0)" @click="toggleMoldCategoryMenu">
-                                        膜具类别
-                                        <i class="menu-arrow" :class="{'mdi-rotate-180': showMoldCategoryMenu}"></i>
-                                    </a>
-                                    <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}" id="project-submenu">
-                                        <li class="nav-item">
-                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">落料膜</a>
-                                        </li>
-                                        <li class="nav-item"><a class="nav-link"
-                                                                href="main/pages/ui-features/dropdowns.html">翻整膜</a>
-                                        </li>
-                                        <!-- === 新增开始 === -->
-                                        <li class="nav-item"><a class="nav-link" href="#">修冲膜</a>
-                                        </li>
-                                        <!-- === 新增结束 === -->
-                                    </ul>
+                                <li class="nav-item"><a class="nav-link"
+                                                        href="main/pages/ui-features/dropdowns.html">膜具类别</a>
                                 </li>
-                                <!-- === 修改结束 === -->
                             </ul>
                         </div>
                     </li>
@@ -705,9 +671,10 @@
                     </li>
                 </ul>
             </nav>
-            <!-- partial -->
-            <!-- main-panel 现在是空的，由 v-html 动态填充 -->
-            <div class="main-panel" v-html="mainPanelContent"></div>
+            <div class="main-panel">
+                <!-- Vue 的动态组件挂载点 -->
+                <component :is="activePanel"></component>
+            </div>
         </div>
     </div>
 </div>
@@ -725,86 +692,47 @@
 <script src="main/js/Chart.roundedBarCharts.js"></script>
 <script src="material/axios.min.js"></script>
 
+<script src="js/components/dashboard-panel.js"></script>
+<script src="js/components/craft-planning-panel.js"></script>
+<!--引入生成的main-panel相关页面组件-->
+
+
+
 <script>
     new Vue({
         el: '#app',
         data() {
             return {
-                // ... 原有的菜单折叠 data ...
                 showProjectMenu: false,
                 showInfoSummaryMenu: false,
                 showDrawingCheckMenu: false,
                 showDesignInfoMenu: false,
-
-                // --- 新增：为“膜具类别”菜单添加状态 ---
-                showMoldCategoryMenu: false,
-
-                // ... 原有的 main-panel 内容 data ...
-                mainPanelContent: '' 
+                activePanel: 'dashboard-panel' // 用于显示main-panel为哪个界面 默认为dashboard
             }
         },
         methods: {
-            // ... 原有的菜单折叠 methods ...
-            toggleProjectMenu() { 
+            toggleProjectMenu() {
                 this.showProjectMenu = !this.showProjectMenu;
             },
-            toggleInfoSummaryMenu() { 
+            toggleInfoSummaryMenu() {
                 this.showInfoSummaryMenu = !this.showInfoSummaryMenu;
             },
-            toggleDrawingCheckMenu() { 
+            toggleDrawingCheckMenu() {
                 this.showDrawingCheckMenu = !this.showDrawingCheckMenu;
             },
-            toggleDesignInfoMenu() { 
+            toggleDesignInfoMenu() {
                 this.showDesignInfoMenu = !this.showDesignInfoMenu;
             },
-            
-            // --- 新增：为“膜具类别”菜单添加控制方法 ---
-            toggleMoldCategoryMenu() {
-                this.showMoldCategoryMenu = !this.showMoldCategoryMenu;
-            },
-
-            // ★★★★★ 我们将重点升级这个方法 ★★★★★
-            loadContent(pageName) {
-                // 首先，获取到 main-panel 这个 DOM 元素
-                const mainPanel = this.$el.querySelector('.main-panel');
-                if (!mainPanel) return; // 如果找不到，就退出
-
-                // --- 1. 淡出 ---
-                // 给 main-panel 添加 'panel-fade' 类，触发 CSS 过渡，使其透明度变为 0
-                mainPanel.classList.add('panel-fade');
-
-                // --- 2. 延迟替换 ---
-                // 设置一个短暂的延迟，等待淡出动画播放完毕
-                // 这个时间应该略大于或等于你的 CSS transition-duration (0.3秒 = 300毫秒)
-                setTimeout(() => {
-                    // 假设你的内容片段都存放在一个统一的目录，比如 'partials/'
-                    // 如果你的文件在其他地方，请修改这个路径
-                    const url = `partials/${pageName}-content.html`;
-                    axios.get(url)
-                        .then(response => {
-                            // --- 3. 替换内容 ---
-                            // 在 panel 不可见时，更新它的内容
-                            this.mainPanelContent = response.data;
-
-                            // --- 4. 淡入 ---
-                            // 内容更新后，移除 'panel-fade' 类，
-                            // 触发 CSS 过渡，使其透明度恢复为 1，产生淡入效果
-                            mainPanel.classList.remove('panel-fade');
-                        })
-                        .catch(error => {
-                            console.error(`加载 ${url} 失败:`, error);
-                            this.mainPanelContent = '<div class="content-wrapper"><p style="color:red; text-align:center;">内容加载失败! 请确保 `partials/' + pageName + '.html` 文件存在。</p></div>';
-                            // 加载失败也要让它显示出来
-                            mainPanel.classList.remove('panel-fade');
-                        });
-                }, 300); 
+            changePanel(panelName) {
+            console.log('切换面板到:', panelName);
+            this.activePanel = panelName;
             }
         },
         mounted() {
-            // mounted 钩子也使用同样的逻辑，这样初始加载也会有动画效果
-            this.loadContent('dashboard');
+
         }
     })
+
 </script>
 </body>
 

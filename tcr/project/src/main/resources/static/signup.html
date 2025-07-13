@@ -70,6 +70,76 @@
 		    </div>
 	    </div>
     </div>
+
+    <!-- 引入 Axios 库，用于发送网络请求 -->
+    <script src="material/axios.min.js"></script>
+
+	<script>
+        // 1. 首先，通过类名找到我们的注册表单元素
+        const signupForm = document.querySelector('.auth-signup-form');
+
+        // 2. 给这个表单添加一个 "submit" (提交) 事件的监听器
+        signupForm.addEventListener('submit', function(event) {
+            
+            // 3. 阻止表单的默认提交行为，这是为了防止页面自己刷新
+            event.preventDefault(); 
+            
+            // 4. 从各个输入框中，通过它们的 ID 获取用户输入的值
+            const name = document.getElementById('signup-name').value;
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const identity = document.getElementById('identity-select').value;
+            
+            // 5. 进行简单的非空验证
+            if (!name || !email || !password) {
+                alert('用户名、邮箱和密码不能为空！');
+                return; // 如果有空项，就停止执行
+            }
+
+            // 6. 将收集到的数据打包成一个 JavaScript 对象
+            //    注意：这里的键名 (name, email, password, identity)
+            //    必须和你后端 UserRegisterDTO.java 类中的字段名完全一致！
+            const formData = {
+                name: name,
+                email: email,
+                password: password,
+                identity: identity
+            };
+
+            // 7. 使用 Axios 发送一个 POST 请求到后端的注册接口
+            //    请求地址是 '/api/users/register'
+            //    请求体是 我们刚刚打包好的 formData
+            axios.post('/api/users/register', formData)
+                .then(function (response) {
+                    // 8a. 如果请求成功了 (后端返回了 2xx 状态码)，就会执行这里的代码
+                    console.log('后端成功响应:', response.data);
+                    alert('恭喜你，注册成功！现在将跳转到登录页面。');
+                    // 1秒后自动跳转到登录页
+                    setTimeout(function() {
+                        window.location.href = 'login.html'; 
+                    }, 1000);
+                })
+                .catch(function (error) {
+                    // 8b. 如果请求失败了 (后端返回了 4xx 或 5xx 状态码)，就会执行这里的代码
+                    console.error('注册请求失败:', error);
+                    
+                    // 尝试从后端的响应中获取具体的错误信息来提示用户
+                    let errorMessage = '注册失败，请稍后再试。';
+                    if (error.response && error.response.data) {
+                        // 比如，后端返回了 "用户名已存在"
+                        errorMessage = error.response.data;
+                    }
+                    
+                    alert(errorMessage);
+                });
+        });
+    </script>
+    <!-- ↑↑↑ 复制并粘贴到这里结束 ↑↑↑ -->
+
+
+
+
+
 </body>
 </html> 
 
