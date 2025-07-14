@@ -44,6 +44,19 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         userMapper.insert(user);
     }
 
+    @Override
+    public User findByUsername(String username) {
+        // 1. 创建一个 MyBatis-Plus 的查询包装器
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+
+        // 2. 添加查询条件：where username = ?
+        queryWrapper.eq("username", username);
+
+        // 3. 调用 userMapper 执行查询，并返回查询到的单个用户对象
+        // 如果找不到，userMapper.selectOne 会自动返回 null
+        return userMapper.selectOne(queryWrapper);
+    }
+
 
     /**
      * 【核心修改 2】: 实现 UserDetailsService 接口的核心方法
