@@ -1,75 +1,156 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <title>登录</title>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Portal - Bootstrap 5 Admin Dashboard Template For Developers">
-    <meta name="author" content="Xiaoying Riley at 3rd Wave Media">
-    <link rel="shortcut icon" href="favicon.ico">
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Portal - Bootstrap 5 Admin Dashboard Template For Developers" />
+    <meta name="author" content="Xiaoying Riley at 3rd Wave Media" />
+    <link rel="shortcut icon" href="favicon.ico" />
     <script defer src="assets/plugins/fontawesome/js/all.min.js"></script>
-    <link id="theme-style" rel="stylesheet" href="assets/css/portal.css">
-</head>
+    <link id="theme-style" rel="stylesheet" href="assets/css/portal.css" />
+  </head>
 
-<body class="app app-login p-0">
-<div class="row g-0 app-auth-wrapper">
-    <div class="col-12 col-md-7 col-lg-6 auth-main-col text-center p-5">
+  <body class="app app-login p-0">
+    <div class="row g-0 app-auth-wrapper">
+      <div class="col-12 col-md-7 col-lg-6 auth-main-col text-center p-5">
         <div class="d-flex flex-column align-content-end">
-            <div class="app-auth-body mx-auto">
-                <div class="app-auth-branding mb-4"><a class="app-logo" href="index.html"><img class="logo-icon me-2"
-                                                                                               src="assets/images/app-logo.svg"
-                                                                                               alt="logo"></a></div>
-                <h2 class="auth-heading text-center mb-5">登录</h2>
-                <div class="auth-form-container text-start">
-                    <form class="auth-form login-form">
-                        <div class="email mb-3">
-                            <label class="sr-only" for="signin-email">邮件</label>
-                            <input id="signin-email" name="signin-email" type="email" class="form-control signin-email"
-                                   placeholder="请输入您的邮件地址" required="required">
-                        </div>
-                        <div class="password mb-3">
-                            <label class="sr-only" for="signin-password">密码</label>
-                            <input id="signin-password" name="signin-password" type="password"
-                                   class="form-control signin-password" placeholder="请输入密码" required="required">
-                            <div class="extra mt-3 row justify-content-between">
-                                <div class="col-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" value="" id="RememberPassword">
-                                        <label class="form-check-label" for="RememberPassword">
-                                            记住我
-                                        </label>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="forgot-password text-end">
-                                        <a href="reset-password.html" style="text-decoration: none;">忘记密码？</a>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="text-center">
-                            <button type="submit" class="btn app-btn-primary w-100 theme-btn mx-auto">登录</button>
-                        </div>
-                    </form>
-                    <div class="auth-option text-center pt-5">没有账户？ 注册<a class="text-link" href="signup.html">这里</a>.
-                    </div>
-                </div>
+          <div class="app-auth-body mx-auto">
+            <div class="app-auth-branding mb-4">
+              <a class="app-logo" href="index.html">
+                <img class="logo-icon me-2" src="assets/images/app-logo.svg" alt="logo" />
+              </a>
             </div>
+            <h2 class="auth-heading text-center mb-5">登录</h2>
+            <div class="auth-form-container text-start">
+              <!-- 
+                【修改 1】: 修改 <form> 标签
+                - 我们不再需要原生的 form action 和 method。
+                - 添加一个 id="login-form" 以便 JavaScript 能够轻松地找到它。
+              -->
+              <form class="auth-form login-form" id="login-form">
+                <div class="email mb-3">
+                  <label class="sr-only" for="signin-username">用户名</label>
+                  <!-- 
+                    【修改 2】: 修改输入框
+                    - 将 id 和 name 改为 "username"，以匹配 Spring Security 的默认参数名。
+                    - 将 type="email" 改为 type="text"，因为通常使用用户名登录。
+                    - 更新 placeholder。
+                  -->
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    class="form-control signin-username"
+                    placeholder="请输入您的用户名"
+                    required="required"
+                  />
+                </div>
+                <div class="password mb-3">
+                  <label class="sr-only" for="signin-password">密码</label>
+                   <!-- 
+                    【修改 3】: 修改密码框
+                    - 将 id 和 name 改为 "password"，以匹配 Spring Security 的默认参数名。
+                  -->
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    class="form-control signin-password"
+                    placeholder="请输入密码"
+                    required="required"
+                  />
+                  <div class="extra mt-3 row justify-content-between">
+                    <div class="col-6">
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="RememberPassword" />
+                        <label class="form-check-label" for="RememberPassword">记住我</label>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="forgot-password text-end">
+                        <a href="reset-password.html" style="text-decoration: none">忘记密码？</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-center">
+                  <button type="submit" class="btn app-btn-primary w-100 theme-btn mx-auto">
+                    登录
+                  </button>
+                </div>
+              </form>
+              <div class="auth-option text-center pt-5">
+                没有账户？ <a class="text-link" href="signup.html">注册一个</a>.
+              </div>
+            </div>
+          </div>
         </div>
-    </div>
-    <div class="col-12 col-md-5 col-lg-6 h-100 auth-background-col">
-        <div class="auth-background-holder">
-        </div>
+      </div>
+      <div class="col-12 col-md-5 col-lg-6 h-100 auth-background-col">
+        <div class="auth-background-holder"></div>
         <div class="auth-background-mask"></div>
         <div class="auth-background-overlay p-3 p-lg-5">
-            <div class="d-flex flex-column align-content-end h-100">
-                <div class="h-100"></div>
-
-            </div>
+          <div class="d-flex flex-column align-content-end h-100">
+            <div class="h-100"></div>
+          </div>
         </div>
+      </div>
     </div>
-</div>
-</body>
-</html> 
+
+    <!-- ================================================================== -->
+    <!--  ↓↓↓ 【修改 4】: 在这里添加我们的 JavaScript 代码 ↓↓↓ -->
+    <!-- ================================================================== -->
+
+    <!-- 1. 引入 Axios 库，用于发送HTTP请求 -->
+    <script src="material/axios.min.js"></script>
+
+    <!-- 2. 编写登录逻辑脚本 -->
+    <script>
+        // 等待整个页面加载完毕
+        document.addEventListener('DOMContentLoaded', function() {
+            // 找到登录表单
+            const loginForm = document.getElementById('login-form');
+
+            // 给表单添加提交事件的监听
+            loginForm.addEventListener('submit', function(event) {
+                // 阻止表单的默认提交行为（防止页面刷新）
+                event.preventDefault();
+
+                // 使用 FormData 来收集表单数据。
+                // 这种方式对于 application/x-www-form-urlencoded 类型的请求非常方便，
+                // 这正是 Spring Security 表单登录默认期望的格式。
+                const formData = new FormData(loginForm);
+
+                // Spring Security 期望的登录处理 URL
+                // 这应该与你在 SecurityConfig 中 .loginProcessingUrl("/api/users/login") 的配置一致
+                const loginUrl = '/api/users/login'; 
+
+                // 使用 Axios 发送 POST 请求
+                axios.post(loginUrl, formData, {
+                    // 明确指定请求头的 Content-Type
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                })
+                .then(function(response) {
+                    // 如果登录成功，Spring Security 通常会返回一个重定向。
+                    // Axios 会自动处理这个重定向，但我们最好在这里手动跳转。
+                    // 默认成功后跳转到 /index
+                    console.log('登录成功，正在跳转到主页...');
+                    window.location.href = '/index'; 
+                })
+                .catch(function(error) {
+                    // 如果登录失败 (比如用户名或密码错误)，Spring Security 会返回一个错误状态码 (通常是401 Unauthorized)
+                    console.error('登录失败:', error);
+                    alert('登录失败：用户名或密码不正确，请重试。');
+                });
+            });
+        });
+    </script>
+  </body>
+</html>
+
+
 

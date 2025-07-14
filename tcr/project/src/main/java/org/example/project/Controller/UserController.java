@@ -1,4 +1,4 @@
-package org.example.project.Controller;
+package org.example.project.controller;
 
 import org.example.project.dto.UserRegisterDTO;
 import org.example.project.service.UserService;
