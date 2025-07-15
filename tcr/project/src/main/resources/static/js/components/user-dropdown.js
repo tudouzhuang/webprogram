@@ -1,25 +1,18 @@
 Vue.component('user-dropdown', {
-    // 【模板】: 根据新的界面样式进行更新
     template: `
         <li class="nav-item dropdown d-none d-lg-block user-dropdown">
             <a class="nav-link" id="UserDropdown" href="#" data-bs-toggle="dropdown" aria-expanded="false">
-                <!-- 动态绑定头像 -->
                 <img class="img-xs rounded-circle" :src="currentUser.avatarUrl" alt="Profile image">
             </a>
             <div class="dropdown-menu dropdown-menu-right navbar-dropdown" aria-labelledby="UserDropdown">
                 <div class="dropdown-header text-center">
-                    <!-- 动态绑定头像 -->
                     <img class="img-md rounded-circle" :src="currentUser.avatarUrl" alt="Profile image">
-                    <!-- 动态绑定用户名和邮箱 -->
                     <p class="mb-1 mt-3 font-weight-semibold">{{ currentUser.username }}</p>
                     <p class="fw-light text-muted mb-0">{{ currentUser.email }}</p>
                 </div>
-
-                <!-- 【新增】添加了新的菜单项和徽章 -->
                 <a class="dropdown-item">
                     <i class="dropdown-item-icon mdi mdi-account-outline text-primary me-2"></i>
                     个人资料
-                    <!-- 徽章，将来可以动态绑定未读数量 -->
                     <span class="badge badge-pill badge-danger">1</span>
                 </a>
                 <a class="dropdown-item">
@@ -34,8 +27,6 @@ Vue.component('user-dropdown', {
                     <i class="dropdown-item-icon mdi mdi-help-circle-outline text-primary me-2"></i>
                     FAQ
                 </a>
-                
-                <!-- 【更新】登出按钮绑定了 logout 方法 -->
                 <a class="dropdown-item" href="javascript:void(0)" @click="logout">
                     <i class="dropdown-item-icon mdi mdi-power text-primary me-2"></i>
                     退出登录
@@ -43,39 +34,55 @@ Vue.component('user-dropdown', {
             </div>
         </li>
     `,
-    // data, methods, created 部分保持不变，因为它们的功能是正确的
     data() {
         return {
             currentUser: {
                 username: '加载中...',
                 email: '...',
-                avatarUrl: 'main/images/faces/face1.jpg'
+                avatarUrl: 'main/images/faces/face1.jpg' // 一个默认的头像
             }
         }
     },
     methods: {
         fetchCurrentUser() {
+            // 从后端API获取当前登录用户的信息
             axios.get('/api/users/current')
                 .then(response => {
+                    // 1. 将从后端获取到的数据赋值给组件的 currentUser 对象，Vue会自动更新UI
                     this.currentUser = response.data;
+                    console.log('✅ [UserDropdown] 成功获取到当前用户信息:');
+                    console.log('   - 用户名:', this.currentUser.username);
+                    console.log('   - 邮  箱:', this.currentUser.email);
+                    console.log('   - 头像地址:', this.currentUser.avatarUrl);
+                    
                 })
                 .catch(error => {
-                    console.error('用户组件获取信息失败:', error);
+                    console.error('❌ [UserDropdown] 获取当前用户信息失败:', error);
+                    // 可以在这里设置一个表示“未登录”状态的用户对象
                     this.currentUser.username = '未登录';
+                    this.currentUser.email = '请先登录';
+                    // 可以设置一个默认的匿名用户头像
+                    this.currentUser.avatarUrl = 'main/images/faces/anonymous.jpg'; 
                 });
         },
         logout() {
+            // 调用后端API执行登出操作
             axios.post('/api/users/logout')
                 .then(() => {
+                    console.log('✅ [UserDropdown] 登出成功，即将跳转到登录页。');
+                    // 登出成功后，重定向到登录页面
                     window.location.href = '/login';
                 })
                 .catch(error => {
-                    console.error('登出失败:', error);
-                    alert('登出时发生错误。');
+                    console.error('❌ [UserDropdown] 登出失败:', error);
+                    alert('登出时发生错误，请稍后再试。');
                 });
         }
     },
+    // 【生命周期钩子】
+    // 当这个组件被创建并挂载到页面上时，自动调用 fetchCurrentUser 方法
     created() {
+        console.log('[UserDropdown] 组件已创建，正在请求用户信息...');
         this.fetchCurrentUser();
     }
 });
