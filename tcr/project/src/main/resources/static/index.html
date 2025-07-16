@@ -532,21 +532,41 @@
                         <div class="collapse" id="design-planning">
                             <ul class="nav flex-column sub-menu">
                                 <li class="nav-item">
+                                    <!-- 点击“项目名称”本身，依然是折叠/展开子菜单 -->
                                     <a class="nav-link" href="javascript:void(0)" @click="toggleProjectMenu">
                                         项目名称
                                         <i class="menu-arrow" :class="{'mdi-rotate-180': showProjectMenu}"></i>
                                     </a>
+                                    
+                                    <!-- 动态生成的项目列表子菜单 -->
                                     <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}" id="project-submenu">
-                                        <li class="nav-item">
-                                            <a class="nav-link" href="main/pages/ui-features/buttons.html">项目1</a>
+                                        <!-- 
+                                            v-for="project in projectList" : 遍历 projectList 数组。
+                                            :key="project.id" : 为每个列表项提供唯一的key。
+                                        -->
+                                        <li class="nav-item" v-for="project in projectList" :key="project.id">
+                                            <!--
+                                                @click="viewProject(project)" : 点击时调用 viewProject 方法，并将当前项目对象传进去。
+                                            -->
+                                            <a class="nav-link" href="javascript:void(0)" @click="viewProject(project)">
+                                                <!-- 显示项目号和产品名，可以自定义 -->
+                                                {{ project.projectNumber }}
+                                            </a>
                                         </li>
-                                        <li class="nav-item"><a class="nav-link"
-                                                                href="main/pages/ui-features/dropdowns.html">项目2</a>
+                        
+                                        <!-- 
+                                            当项目列表为空或正在加载时，显示一个提示。
+                                            v-if="projectList.length === 0" 
+                                        -->
+                                        <li class="nav-item" v-if="projectList.length === 0">
+                                            <a class="nav-link text-muted" href="#">加载中...</a>
                                         </li>
                                     </ul>
                                 </li>
-                                <li class="nav-item"><a class="nav-link"
-                                                        href="main/pages/ui-features/dropdowns.html">膜具类别</a>
+                                
+                                <!-- 其他静态子菜单项可以保留或删除 -->
+                                <li class="nav-item">
+                                    <a class="nav-link" href="#">膜具类别</a>
                                 </li>
                             </ul>
                         </div>
@@ -654,8 +674,7 @@
                 </ul>
             </nav>
             <div class="main-panel">
-                <!-- Vue 的动态组件挂载点 -->
-                <component :is="activePanel"></component>
+                <component :is="activePanel" :project-id="currentProjectId"></component>
             </div>
         </div>
     </div>
@@ -677,6 +696,7 @@
 <script src="js/components/dashboard-panel.js"></script>
 <script src="js/components/craft-planning-panel.js"></script>
 <script src="js/components/create-project-panel.js"></script>
+<script src="js/components/project-files-viewer.js"></script>
 <!--引入生成的main-panel相关页面组件-->
 
 <script src="js/components/user-dropdown.js"></script>
@@ -691,36 +711,74 @@
         el: '#app',
         data() {
             return {
+                // --- 菜单UI控制 ---
                 showProjectMenu: false,
                 showInfoSummaryMenu: false,
                 showDrawingCheckMenu: false,
                 showDesignInfoMenu: false,
-                activePanel: 'dashboard-panel' // 用于显示main-panel为哪个界面 默认为dashboard
+
+                // --- 核心状态管理 ---
+                activePanel: 'dashboard-panel', // 当前显示的主面板组件名
+                projectList: [],                // 从后端获取的项目列表
+                currentProjectId: null          // 【关键】当前选中的项目ID，只存储ID
             }
         },
         methods: {
-            toggleProjectMenu() {
-                this.showProjectMenu = !this.showProjectMenu;
-            },
-            toggleInfoSummaryMenu() {
-                this.showInfoSummaryMenu = !this.showInfoSummaryMenu;
-            },
-            toggleDrawingCheckMenu() {
-                this.showDrawingCheckMenu = !this.showDrawingCheckMenu;
-            },
-            toggleDesignInfoMenu() {
-                this.showDesignInfoMenu = !this.showDesignInfoMenu;
-            },
+            // --- 菜单折叠/展开方法 ---
+            toggleProjectMenu() { this.showProjectMenu = !this.showProjectMenu; },
+            toggleInfoSummaryMenu() { this.showInfoSummaryMenu = !this.showInfoSummaryMenu; },
+            toggleDrawingCheckMenu() { this.showDrawingCheckMenu = !this.showDrawingCheckMenu; },
+            toggleDesignInfoMenu() { this.showDesignInfoMenu = !this.showDesignInfoMenu; },
+
+            /**
+             * 切换主面板显示内容
+             * @param {string} panelName - 要切换到的组件名称
+             */
             changePanel(panelName) {
-            console.log('切换面板到:', panelName);
-            this.activePanel = panelName;
+                console.log('【父组件】切换面板到:', panelName);
+                this.activePanel = panelName;
+                
+                // 如果切换到的不是详情类面板，清空当前项目ID
+                const detailPanels = ['project-files-viewer'];
+                if (!detailPanels.includes(panelName)) {
+                    this.currentProjectId = null;
+                }
+            },
+            
+            /**
+             * 从后端API获取所有项目的列表
+             */
+            fetchProjectList() {
+                console.log('【父组件】正在获取项目列表...');
+                axios.get('/api/projects/list')
+                    .then(response => {
+                        this.projectList = response.data;
+                        console.log('【父组件】项目列表获取成功:', this.projectList);
+                    })
+                    .catch(error => {
+                        console.error('【父组件】获取项目列表失败:', error);
+                    });
+            },
+
+            /**
+             * 当用户在侧边栏点击某个项目时调用
+             * @param {object} project - 被点击的那个项目对象
+             */
+            viewProject(project) {
+                console.log('【父组件】你点击了项目，ID为:', project.id);
+                // 只保存被点击项目的ID
+                this.currentProjectId = project.id; 
+                // 切换到文件查看器面板
+                this.changePanel('project-files-viewer');
             }
         },
-        mounted() {
-
+        /**
+         * Vue实例创建完成后立即执行的生命周期钩子
+         */
+        created() {
+            this.fetchProjectList();
         }
     })
-
 </script>
 </body>
 
