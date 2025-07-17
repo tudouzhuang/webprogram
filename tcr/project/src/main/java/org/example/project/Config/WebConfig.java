@@ -1,4 +1,4 @@
-package org.example.project.Config;
+package org.example.project.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
