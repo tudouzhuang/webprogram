@@ -48,24 +48,45 @@ Vue.component('project-files-viewer', {
                 </div>
             </div>
 
-            <!-- 第一行：文件列表 (原来的第一行) -->
             <div class="row">
                 <div class="col-12">
                     <div class="card">
                         <div class="card-body">
-                            <h4 class="card-title">文件列表</h4>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h4 class="card-title mb-0">文件列表</h4>
+                                <!-- ======================================================= -->
+                                <!--   ↓↓↓  【核心新增】筛选按钮区域  ↓↓↓   -->
+                                <!-- ======================================================= -->
+                                <div>
+                                    <el-button-group>
+                                        <!-- "全部显示"按钮，点击后清空筛选关键字 -->
+                                        <el-button size="small" :type="filterKeyword === '' ? 'primary' : 'default'" @click="setFilter('')">全部显示</el-button>
+                                        
+                                        <!-- 你可以自定义任意多个筛选按钮 -->
+                                        <!-- 点击按钮后，将筛选关键字设置为按钮的文本 -->
+                                        <el-button size="small" :type="filterKeyword === '数据统计' ? 'primary' : 'default'" @click="setFilter('数据统计')">数据统计</el-button>
+                                        <el-button size="small" :type="filterKeyword === '汇总' ? 'primary' : 'default'" @click="setFilter('汇总')">汇总表</el-button>
+                                        <el-button size="small" :type="filterKeyword === '废料' ? 'primary' : 'default'" @click="setFilter('废料')">废料相关</el-button>
+                                    </el-button-group>
+                                </div>
+                            </div>
+                            
                             <div class="list-group list-group-horizontal-md" style="overflow-x: auto;">
+                                <!-- 【核心修改】这里循环的是计算属性 filteredFileList，而不是原始的 fileList -->
                                 <a href="javascript:void(0)" 
-                                   v-for="file in fileList" 
+                                   v-for="file in filteredFileList" 
                                    :key="file.id"
                                    class="list-group-item list-group-item-action text-nowrap"
                                    :class="{ 'active': selectedFile && selectedFile.id === file.id }"
                                    @click="selectFile(file)">
                                    {{ file.fileName }}
                                 </a>
-                                <div v-if="isLoading && fileList.length === 0" class="list-group-item">加载中...</div>
+                                <div v-if="isLoading" class="list-group-item">加载中...</div>
                                 <div v-if="!isLoading && fileList.length === 0" class="list-group-item text-muted">
                                     此项目没有关联文件。
+                                </div>
+                                <div v-if="!isLoading && fileList.length > 0 && filteredFileList.length === 0" class="list-group-item text-muted">
+                                    没有找到符合筛选条件的文件。
                                 </div>
                             </div>
                         </div>
@@ -114,7 +135,24 @@ Vue.component('project-files-viewer', {
                 checkerDate: '',
                 auditorName: '',
                 auditorDate: ''
+            },
+            filterKeyword: '' // 默认为空，表示显示全部
+        }
+    },
+    computed: {
+        /**
+         * 计算属性：根据 filterKeyword 动态筛选文件列表。
+         * 这是响应式的，当 fileList 或 filterKeyword 变化时，它会自动更新。
+         */
+        filteredFileList() {
+            // 如果没有筛选关键字，返回完整的原始列表
+            if (!this.filterKeyword) {
+                return this.fileList;
             }
+            // 否则，返回文件名包含关键字的新数组
+            return this.fileList.filter(file => 
+                file.fileName.includes(this.filterKeyword)
+            );
         }
     },
     methods: {
@@ -150,6 +188,16 @@ Vue.component('project-files-viewer', {
             console.error('图片加载失败:', event.target.src);
             event.target.src = 'path/to/image-load-failed-placeholder.png';
             this.$message.error('无法加载预览图片。');
+        },
+        setFilter(keyword) {
+            this.filterKeyword = keyword;
+            // 【优化】当筛选条件改变后，自动选择筛选结果的第一个文件进行预览
+            if (this.filteredFileList.length > 0) {
+                this.selectFile(this.filteredFileList[0]);
+            } else {
+                // 如果筛选后列表为空，则清空当前预览
+                this.selectedFile = null;
+            }
         }
     },
     watch: {
