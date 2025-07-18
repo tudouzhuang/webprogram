@@ -38,21 +38,39 @@ public class ProjectController {
             @RequestPart(value = "file", required = false) MultipartFile file) {
 
         log.info("【Controller】接收到创建项目请求...");
+        if (file != null && !file.isEmpty()) {
+            log.info("【Controller】文件名: {}, 文件大小: {} bytes", file.getOriginalFilename(), file.getSize());
+        } else {
+            log.info("【Controller】本次请求未上传文件。");
+        }
         
         try {
+            // 1. 解析JSON数据
+            log.info("【Controller】准备解析JSON数据...");
             ObjectMapper objectMapper = new ObjectMapper();
             objectMapper.registerModule(new JavaTimeModule()); 
             ProjectCreateDTO createDTO = objectMapper.readValue(projectDataJson, ProjectCreateDTO.class);
             log.info("【Controller】项目数据JSON解析成功，项目号: {}", createDTO.getProjectNumber());
 
+            // 2. 调用Service层核心方法
+            log.info("【Controller】准备调用 projectService.createProjectWithFile...");
             projectService.createProjectWithFile(createDTO, file);
+            log.info("【Controller】Service方法执行完毕，准备返回成功响应。");
 
-            return ResponseEntity.ok("项目创建成功");
+            // 3. 返回成功响应
+            return ResponseEntity.status(HttpStatus.CREATED).body("项目创建成功");
 
+        } catch (RuntimeException re) {
+            // 【优化1】专门捕获Service层主动抛出的业务异常
+            // 例如 "项目号已存在" 这种，应该返回 400 Bad Request
+            log.warn("【Controller】捕获到业务逻辑异常: {}", re.getMessage());
+            return ResponseEntity.badRequest().body(re.getMessage());
         } catch (Exception e) {
-            log.error("【Controller】创建项目时发生异常", e);
-            // 将业务异常（如“项目号已存在”）的message直接返回给前端
-            return ResponseEntity.badRequest().body(e.getMessage());
+            // 【优化2】捕获所有其他未知异常 (IO, NullPointer, etc.)
+            // 这种是真正的服务器内部错误，应该返回 500 Internal Server Error
+            // 并且在日志中打印完整的堆栈信息 (e)，这对于调试至关重要！
+            log.error("【Controller】创建项目时发生未知服务器错误！", e); 
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("服务器内部错误，请查看后端日志了解详情。");
         }
     }
 

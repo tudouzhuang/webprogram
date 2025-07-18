@@ -1,105 +1,119 @@
 package org.example.project.utils;
 
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
-/**
- * 使用本地安装的WPS Office将Excel文件转换为PNG图片的工具类。
- */
 @Component
-public class WpsConverter {
+public class WpsConverter { // 建议可以重命名为 FileConverter
 
     private static final Logger log = LoggerFactory.getLogger(WpsConverter.class);
-    
-    /**
-     * 【核心】WPS表格程序(et.exe)的完整路径。
-     * 请务必将其修改为你电脑上的实际路径！
-     */
-    private static final String WPS_ET_PATH = "D:\\WPS\\WPS Office\\12.1.0.21915\\office6";
+
+    @Value("${wps.executable.path}")
+    private String converterExecutablePath;
 
     /**
-     * 将一个Excel文件转换为PNG图片。
-     * 注意：WPS命令行转换似乎是将整个工作簿作为一个长图片或多张图片输出，
-     * 或者只转换第一个sheet，具体行为可能因版本而异。
-     * 我们先假设它能正确处理。
-     *
-     * @param inputFile  要转换的源Excel文件
-     * @param outputDir  PNG图片的输出目录
-     * @throws IOException          如果文件操作或进程执行失败
-     * @throws InterruptedException 如果等待进程时被中断
+     * 【核心方法】将Excel文件通过中间PDF格式，转换为多个PNG图片。
+     * @param excelFile 要转换的源Excel文件
+     * @param outputDir PNG图片最终输出的目录
+     * @return 生成的PNG文件列表
      */
-    public void convertToPng(File inputFile, File outputDir) throws IOException, InterruptedException {
-        if (!inputFile.exists()) {
-            throw new IOException("源文件不存在: " + inputFile.getAbsolutePath());
-        }
-        if (!outputDir.exists() && !outputDir.mkdirs()) {
-            throw new IOException("无法创建输出目录: " + outputDir.getAbsolutePath());
-        }
-
-        log.info("准备使用WPS转换文件: {}", inputFile.getName());
-
-        // 构建命令行指令。WPS的参数比较特殊，通常是 "源文件路径 -o 输出文件路径 -t png" 的形式
-        // 我们需要先定义好输出文件的完整路径
-        String outputFileName = inputFile.getName().replaceAll("\\.[^.]+$", ".png");
-        File outputFile = new File(outputDir, outputFileName);
-
-        List<String> command = new ArrayList<>();
-        command.add(WPS_ET_PATH);
-        command.add(inputFile.getAbsolutePath());
-        command.add("-o"); // 指定输出文件
-        command.add(outputFile.getAbsolutePath());
-        command.add("-t"); // 指定转换类型
-        command.add("png");
-
-        log.info("执行WPS转换命令: {}", String.join(" ", command));
+    public List<File> convertExcelToPngs(File excelFile, File outputDir) throws IOException, InterruptedException {
+        // --- 第一步：将 Excel 转换为一个多页的 PDF 文件 ---
+        File intermediatePdfFile = convertToPdf(excelFile);
         
-        ProcessBuilder processBuilder = new ProcessBuilder(command);
-        Process process = processBuilder.start();
-
-        boolean finished = process.waitFor(2, TimeUnit.MINUTES);
-        if (!finished) {
-            process.destroyForcibly();
-            throw new IOException("WPS转换超时（超过2分钟）");
+        if (intermediatePdfFile == null || !intermediatePdfFile.exists()) {
+            throw new IOException("Excel转换为PDF失败，未找到中间PDF文件。");
         }
 
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            String errorOutput = readStream(new InputStreamReader(process.getErrorStream()));
-            log.error("WPS转换失败，退出码: {}", exitCode);
-            log.error("错误流输出:\n{}", errorOutput);
-            throw new IOException("WPS转换失败，退出码: " + exitCode + "。错误: " + errorOutput);
-        }
+        // --- 第二步：将多页的 PDF 转换为多个 PNG 图片 ---
+        List<File> pngFiles = convertPdfToPngs(intermediatePdfFile, outputDir);
         
-        // 检查输出文件是否存在
-        if (!outputFile.exists()) {
-            // 有时WPS不会返回错误码，但就是没生成文件，需要额外检查
-            log.error("WPS进程执行完毕，但未找到预期的输出文件: {}", outputFile.getAbsolutePath());
-            throw new IOException("WPS转换后未生成PNG文件，请检查WPS命令行参数是否正确。");
+        // --- 第三步：清理中间产生的PDF文件 ---
+        try {
+            Files.delete(intermediatePdfFile.toPath());
+            log.info("已清理中间PDF文件: {}", intermediatePdfFile.getName());
+        } catch (IOException e) {
+            log.warn("清理中间PDF文件失败: {}", e.getMessage());
         }
 
-        log.info("文件 '{}' 已成功使用WPS转换为PNG。", inputFile.getName());
+        return pngFiles;
     }
-    
-    // 如果WPS是将每个sheet转成一张图，我们需要一个方法来处理这种情况
-    // 但首先我们先用上面的简单方法测试，如果不行再用下面的复杂方法
-    
-    private String readStream(InputStreamReader streamReader) throws IOException {
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(streamReader)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append(System.lineSeparator());
+
+    /**
+     * [私有辅助方法1] 调用LibreOffice将文件转换为PDF。
+     */
+    private File convertToPdf(File inputFile) throws IOException, InterruptedException {
+        File outputDir = inputFile.getParentFile();
+
+        List<String> commandList = new ArrayList<>();
+        commandList.add(converterExecutablePath);
+        commandList.add("--headless");
+        commandList.add("--convert-to");
+        commandList.add("pdf"); // 目标格式是 PDF
+        commandList.add("--outdir");
+        commandList.add(outputDir.getAbsolutePath());
+        commandList.add(inputFile.getAbsolutePath());
+        
+        log.info("【步骤1/2】准备执行Excel转PDF命令: {}", commandList);
+        Process process = new ProcessBuilder(commandList).start();
+
+        if (!process.waitFor(2, TimeUnit.MINUTES)) {
+            process.destroyForcibly();
+            throw new IOException("LibreOffice转换PDF超时");
+        }
+        if (process.exitValue() != 0) {
+            throw new IOException("LibreOffice转换PDF失败，退出码: " + process.exitValue());
+        }
+        log.info("【步骤1/2】Excel转PDF成功！");
+        
+        String pdfFileName = inputFile.getName().replaceAll("\\.[^.]+$", "") + ".pdf";
+        return new File(outputDir, pdfFileName);
+    }
+
+    /**
+     * [私有辅助方法2] 使用Apache PDFBox将PDF的每一页转换为PNG。
+     */
+    private List<File> convertPdfToPngs(File pdfFile, File outputDir) throws IOException {
+        log.info("【步骤2/2】准备使用PDFBox将 {} 转换为PNG...", pdfFile.getName());
+        List<File> generatedPngs = new ArrayList<>();
+
+        try (PDDocument document = PDDocument.load(pdfFile)) {
+            PDFRenderer pdfRenderer = new PDFRenderer(document);
+            int pageCount = document.getNumberOfPages();
+            log.info("PDF文件包含 {} 页，准备逐页转换。", pageCount);
+
+            for (int i = 0; i < pageCount; ++i) {
+                // DPI (Dots Per Inch) 决定了图片的清晰度，150是一个不错的通用值
+                BufferedImage bim = pdfRenderer.renderImageWithDPI(i, 150);
+                
+                // 文件名格式：Sheet_1.png, Sheet_2.png ...
+                // 这里的文件名是根据PDF页码来的，正好对应Excel的Sheet顺序
+                String fileName = "Sheet_" + (i + 1) + ".png";
+                File outputFile = new File(outputDir, fileName);
+                
+                ImageIO.write(bim, "PNG", outputFile);
+                generatedPngs.add(outputFile);
+                log.info("已生成PNG: {}", outputFile.getName());
             }
         }
-        return output.toString();
+        log.info("【步骤2/2】所有PDF页面已成功转换为PNG！");
+        return generatedPngs;
     }
 }
