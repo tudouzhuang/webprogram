@@ -48,51 +48,71 @@ Vue.component('project-files-viewer', {
                 </div>
             </div>
 
-            <div class="row">
-                <div class="col-12">
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h4 class="card-title mb-0">文件列表</h4>
-                                <!-- ======================================================= -->
-                                <!--   ↓↓↓  【核心新增】筛选按钮区域  ↓↓↓   -->
-                                <!-- ======================================================= -->
-                                <div>
-                                    <el-button-group>
-                                        <!-- "全部显示"按钮，点击后清空筛选关键字 -->
-                                        <el-button size="small" :type="filterKeyword === '' ? 'primary' : 'default'" @click="setFilter('')">全部显示</el-button>
-                                        
-                                        <!-- 你可以自定义任意多个筛选按钮 -->
-                                        <!-- 点击按钮后，将筛选关键字设置为按钮的文本 -->
-                                        <el-button size="small" :type="filterKeyword === '数据统计' ? 'primary' : 'default'" @click="setFilter('数据统计')">数据统计</el-button>
-                                        <el-button size="small" :type="filterKeyword === '汇总' ? 'primary' : 'default'" @click="setFilter('汇总')">汇总表</el-button>
-                                        <el-button size="small" :type="filterKeyword === '废料' ? 'primary' : 'default'" @click="setFilter('废料')">废料相关</el-button>
-                                    </el-button-group>
-                                </div>
-                            </div>
-                            
-                            <div class="list-group list-group-horizontal-md" style="overflow-x: auto;">
-                                <!-- 【核心修改】这里循环的是计算属性 filteredFileList，而不是原始的 fileList -->
-                                <a href="javascript:void(0)" 
-                                   v-for="file in filteredFileList" 
-                                   :key="file.id"
-                                   class="list-group-item list-group-item-action text-nowrap"
-                                   :class="{ 'active': selectedFile && selectedFile.id === file.id }"
-                                   @click="selectFile(file)">
-                                   {{ file.fileName }}
-                                </a>
-                                <div v-if="isLoading" class="list-group-item">加载中...</div>
-                                <div v-if="!isLoading && fileList.length === 0" class="list-group-item text-muted">
-                                    此项目没有关联文件。
-                                </div>
-                                <div v-if="!isLoading && fileList.length > 0 && filteredFileList.length === 0" class="list-group-item text-muted">
-                                    没有找到符合筛选条件的文件。
-                                </div>
-                            </div>
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="card-title mb-0">文件列表</h4>
+
+                    <!-- 将筛选和下载按钮包裹在一个 div 中，方便布局 -->
+                    <div class="d-flex align-items-center">
+
+                        <!-- ======================================================= -->
+                        <!--       ↓↓↓  【新增】下载原始Excel文件按钮  ↓↓↓      -->
+                        <!-- ======================================================= -->
+                        <a :href="'/api/files/download/project-excel/' + projectId"
+                           target="_blank"
+                           class="me-3">
+                            <el-button size="small" type="primary" icon="el-icon-document">下载原始Excel</el-button>
+                        </a>
+
+                        <!-- ======================================================= -->
+                        <!--       ↓↓↓  【保留】下载当前选中文件(PNG)按钮  ↓↓↓    -->
+                        <!-- ======================================================= -->
+                        <a v-if="selectedFile" 
+                           :href="'/api/files/download/project-file/' + selectedFile.id"
+                           target="_blank"
+                           class="me-3">
+                            <el-button size="small" type="success" icon="el-icon-download">下载当前图片</el-button>
+                        </a>
+                        
+                        <!-- ======================================================= -->
+                        <!--       ↓↓↓  筛选按钮区域 (保持不变)  ↓↓↓     -->
+                        <!-- ======================================================= -->
+                        <div>
+                            <el-button-group>
+                                <el-button size="small" :type="filterKeyword === '' ? 'primary' : 'default'" @click="setFilter('')">全部显示</el-button>
+                                <el-button size="small" :type="filterKeyword === '数据统计' ? 'primary' : 'default'" @click="setFilter('数据统计')">数据统计</el-button>
+                                <el-button size="small" :type="filterKeyword === '汇总' ? 'primary' : 'default'" @click="setFilter('汇总')">汇总表</el-button>
+                                <el-button size="small" :type="filterKeyword === '废料' ? 'primary' : 'default'" @click="setFilter('废料')">废料相关</el-button>
+                            </el-button-group>
                         </div>
                     </div>
                 </div>
+                
+                <div class="list-group list-group-horizontal-md" style="overflow-x: auto; white-space: nowrap;">
+                    <!-- 循环和状态提示部分保持不变 -->
+                    <a href="javascript:void(0)" 
+                       v-for="file in filteredFileList" 
+                       :key="file.id"
+                       class="list-group-item list-group-item-action text-nowrap"
+                       :class="{ 'active': selectedFile && selectedFile.id === file.id }"
+                       @click="selectFile(file)">
+                       {{ file.fileName }}
+                    </a>
+                    <div v-if="isLoading" class="list-group-item">加载中...</div>
+                    <div v-if="!isLoading && fileList.length === 0" class="list-group-item text-muted">
+                        此项目没有关联文件。
+                    </div>
+                    <div v-if="!isLoading && fileList.length > 0 && filteredFileList.length === 0" class="list-group-item text-muted">
+                        没有找到符合筛选条件的文件。
+                    </div>
+                </div>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- 第二行：图片显示区域 (原来的第二行) -->
             <div class="row mt-4">

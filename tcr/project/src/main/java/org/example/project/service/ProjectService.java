@@ -26,4 +26,6 @@ public interface ProjectService {
     List<Project> getAllProjects();
     List<ProjectFile> getFilesByProjectId(Long projectId);
     Project getProjectById(Long projectId); // 【新增】
+    Project saveProjectInfoInTransaction(ProjectCreateDTO createDTO);
+    void saveFileInfosInTransaction(List<ProjectFile> allFileRecords);
 }

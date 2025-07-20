@@ -2,6 +2,7 @@ package org.example.project.service.impl;
 
 // --- 基础依赖 ---
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.apache.pdfbox.rendering.ImageType;
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
@@ -13,6 +14,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -33,7 +36,11 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.stream.Collectors;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.poi.ss.usermodel.*;
@@ -51,6 +58,14 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Autowired
     private ProjectFileMapper projectFileMapper;
+
+    @Lazy
+    @Autowired
+    private ProjectService self;
+
+    @Autowired
+    @Qualifier("fileProcessingExecutor")
+    private Executor fileProcessingExecutor;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -72,18 +87,181 @@ public class ProjectServiceImpl implements ProjectService {
      * @throws InterruptedException 当调用外部进程（如LibreOffice）被中断时。
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+// 【关键修改】: 移除 @Transactional 注解，此方法现在是非事务性的总协调方法
     public void createProjectWithFile(ProjectCreateDTO createDTO, MultipartFile file) throws IOException, InterruptedException {
-        // 1. 检查项目号是否重复
+        // 1. 在事务外进行前置检查，更早地失败
         QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("project_number", createDTO.getProjectNumber());
         if (projectMapper.selectCount(queryWrapper) > 0) {
             throw new RuntimeException("项目号 '" + createDTO.getProjectNumber() + "' 已存在！");
         }
-        
-        // 2. 数据转换与实体准备
+
+        // 2. 调用独立的事务方法来保存项目信息，这是一个短暂的事务
+        // 【注意】: 确保你已经注入了自身的代理 `self`
+        Project projectEntity = self.saveProjectInfoInTransaction(createDTO);
+        Long newProjectId = projectEntity.getId();
+        log.info("【步骤1】项目信息已保存，新项目ID为: {}", newProjectId);
+
+        // 3. 处理文件（如果存在），这部分在事务之外执行
+        if (file != null && !file.isEmpty()) {
+            Path tempDir = null;
+            try {
+                // a. 保存原始文件并按Sheet拆分 (非数据库操作)
+                File sourceExcelFile = saveOriginalFile(file, newProjectId);
+                tempDir = Paths.get(uploadDir, String.valueOf(newProjectId), TEMP_SHEETS_SUBDIR);
+                List<File> singleSheetExcelFiles = splitExcelByDeleting(sourceExcelFile, tempDir);
+                log.info("【步骤2】发现 {} 个独立的Sheet文件，开始并行处理...", singleSheetExcelFiles.size());
+
+                // b. 并行地进行所有耗时的文件转换，并将结果收集到内存中
+                List<CompletableFuture<List<ProjectFile>>> futures = singleSheetExcelFiles.stream()
+                        .map(singleSheetExcel ->
+                                // 使用 supplyAsync 因为我们需要返回值 (List<ProjectFile>)
+                                CompletableFuture.supplyAsync(() -> {
+                                    try {
+                                        // 这个方法现在只负责文件转换，不接触数据库
+                                        return processSingleFileToImageRecords(singleSheetExcel, newProjectId);
+                                    } catch (Exception e) {
+                                        log.error("并行处理文件 {} 时发生错误", singleSheetExcel.getName(), e);
+                                        return null; // 返回null表示该文件处理失败
+                                    }
+                                }, fileProcessingExecutor) // 使用自定义线程池
+                        )
+                        .collect(Collectors.toList());
+
+                // c. 等待所有并行任务完成
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+                // d. 从所有future中收集成功转换的文件记录
+                List<ProjectFile> allFileRecords = futures.stream()
+                        .map(CompletableFuture::join) // 获取每个任务的结果
+                        .filter(Objects::nonNull)      // 过滤掉处理失败的(null)
+                        .flatMap(List::stream)         // 将多个 List<ProjectFile> 合并成一个大的 List
+                        .collect(Collectors.toList());
+
+                // e. 调用独立的事务方法，将所有文件记录一次性批量保存到数据库
+                if (!allFileRecords.isEmpty()) {
+                    self.saveFileInfosInTransaction(allFileRecords);
+                } else {
+                    log.warn("所有文件处理任务均失败或未生成任何文件，没有文件记录需要保存。");
+                }
+
+            } catch (Exception e) {
+                // f. 手动补偿：如果文件处理流程中发生任何无法恢复的错误，删除之前已创建的项目记录
+                log.error("文件处理流程发生严重错误，将手动删除已创建的项目记录 ID: {}", newProjectId, e);
+                projectMapper.deleteById(newProjectId);
+                // 向上抛出异常，让Controller知道操作失败了
+                throw new RuntimeException("文件处理失败，项目已回滚。", e);
+            } finally {
+                // g. 清理临时文件
+                log.info("【清理】开始清理临时文件...");
+                if (tempDir != null && Files.exists(tempDir)) {
+                    try {
+                        Files.walk(tempDir)
+                                .sorted((p1, p2) -> -p1.compareTo(p2)) // 倒序，先删除文件再删除目录
+                                .forEach(path -> {
+                                    try {
+                                        Files.delete(path);
+                                    } catch (IOException ex) {
+                                        log.error("清理文件失败: {}", path, ex);
+                                    }
+                                });
+                    } catch (IOException ex) {
+                        log.error("遍历临时目录失败: {}", tempDir, ex);
+                    }
+                }
+                log.info("【清理】临时文件清理完毕。");
+            }
+        } else {
+            log.warn("【Service】未提供关联文件，仅创建项目信息。");
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void saveFileInfosInTransaction(List<ProjectFile> fileRecords) {
+        if (fileRecords == null || fileRecords.isEmpty()) {
+            log.warn("【步骤3】文件记录列表为空，无需执行数据库插入操作。");
+            return;
+        }
+
+        log.info("【步骤3】开始在一个事务中批量插入 {} 条文件记录...", fileRecords.size());
+
+        // 遍历列表，逐条插入。
+        // 因为整个方法被 @Transactional 注解包裹，所以这些插入操作会作为一个整体的事务来执行。
+        // 如果中途有任何一条插入失败，所有已插入的记录都会被回滚。
+        for (ProjectFile record : fileRecords) {
+            try {
+                projectFileMapper.insert(record);
+            } catch (Exception e) {
+                log.error("插入文件记录失败: {}", record, e);
+                // 向上抛出运行时异常，以触发整个事务的回滚
+                throw new RuntimeException("数据库批量插入文件记录时失败", e);
+            }
+        }
+
+        log.info("【步骤3】批量插入文件记录成功！");
+    }
+
+    private List<ProjectFile> processSingleFileToImageRecords(File singleSheetExcel, Long projectId) throws IOException, InterruptedException {
+        log.info("线程 [{}] 开始处理文件: {}", Thread.currentThread().getName(), singleSheetExcel.getName());
+
+        // 1. Excel -> PDF (此步骤不变)
+        File pdfFile = convertExcelToPdf(singleSheetExcel);
+
+        // 2. PDF -> PNGs, 并返回待保存的ProjectFile对象列表 (此步骤改变)
+        List<ProjectFile> records = convertPdfToPngRecords(pdfFile, projectId);
+
+        log.info("线程 [{}] 完成文件转换，生成了 {} 条文件记录: {}", Thread.currentThread().getName(), records.size(), singleSheetExcel.getName());
+        return records;
+    }
+
+    private List<ProjectFile> convertPdfToPngRecords(File pdfFile, Long projectId) throws IOException {
+        log.info("【4/5】准备将PDF '{}' 的所有页面转换为PNG...", pdfFile.getName());
+
+        Path projectRootDir = pdfFile.getParentFile().getParentFile().toPath();
+        Path imageDir = projectRootDir.resolve(IMAGES_SUBDIR);
+        if (!Files.exists(imageDir)) {
+            Files.createDirectories(imageDir);
+        }
+
+        String baseFileName = StringUtils.stripFilenameExtension(pdfFile.getName());
+        List<ProjectFile> fileRecords = new ArrayList<>();
+
+        try (PDDocument document = PDDocument.load(pdfFile)) {
+            PDFRenderer pdfRenderer = new PDFRenderer(document);
+            int pageCount = document.getNumberOfPages();
+
+            for (int pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+                String pngFileName;
+                if (pageCount > 1) {
+                    pngFileName = String.format("%s_page_%d.png", baseFileName, pageIndex + 1);
+                } else {
+                    pngFileName = baseFileName + ".png";
+                }
+
+                File pngFile = imageDir.resolve(pngFileName).toFile();
+                BufferedImage bim = pdfRenderer.renderImageWithDPI(pageIndex, 150, ImageType.RGB);
+                ImageIO.write(bim, "PNG", pngFile);
+
+                // 只创建对象，不保存
+                ProjectFile projectFile = new ProjectFile();
+                projectFile.setProjectId(projectId);
+                projectFile.setFileName(pngFileName);
+                String relativePath = Paths.get(String.valueOf(projectId), IMAGES_SUBDIR, pngFileName).toString().replace("\\", "/");
+                projectFile.setFilePath(relativePath);
+                projectFile.setFileType("image/png");
+                fileRecords.add(projectFile);
+            }
+        }
+
+        log.info("【4/5】PDF到PNG的转换完成，生成了 {} 个文件记录。", fileRecords.size());
+        return fileRecords;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Project saveProjectInfoInTransaction(ProjectCreateDTO createDTO) {
         Project projectEntity = new Project();
         BeanUtils.copyProperties(createDTO, projectEntity);
+
         if (createDTO.getQuoteSize() != null) {
             projectEntity.setQuoteLength(createDTO.getQuoteSize().getLength());
             projectEntity.setQuoteWidth(createDTO.getQuoteSize().getWidth());
@@ -94,44 +272,37 @@ public class ProjectServiceImpl implements ProjectService {
             projectEntity.setActualWidth(createDTO.getActualSize().getWidth());
             projectEntity.setActualHeight(createDTO.getActualSize().getHeight());
         }
-        
-        // 3. 保存项目基础信息到数据库
+
+        // ... 为非必填字段设置默认值 ...
+
         projectMapper.insert(projectEntity);
-        Long newProjectId = projectEntity.getId();
-        log.info("【1/5】项目信息已保存，新项目ID为: {}", newProjectId);
-        
-        // 4. 处理并保存关联的Excel文件
-        if (file != null && !file.isEmpty()) {
-            Path tempDir = null;
-            try {
-                File sourceExcelFile = saveOriginalFile(file, newProjectId);
-                tempDir = Paths.get(uploadDir, String.valueOf(newProjectId), TEMP_SHEETS_SUBDIR);
-                List<File> singleSheetExcelFiles = splitExcelByDeleting(sourceExcelFile, tempDir);
-                
-                for (File singleSheetExcel : singleSheetExcelFiles) {
-                    File pdfFile = convertExcelToPdf(singleSheetExcel);
-                    File pngFile = convertPdfToPng(pdfFile);
-                    saveFileInfoToDb(pngFile, newProjectId);
-                }
-            } catch (Exception e) {
-                log.error("【Service】在处理项目ID {} 的文件时发生严重错误，将回滚事务。", newProjectId, e);
-                throw new RuntimeException("文件处理失败，数据库操作已回滚。", e);
-            } finally {
-                // 无论成功失败，都清理所有临时文件
-                log.info("【清理】开始清理临时文件...");
-                if (tempDir != null && Files.exists(tempDir)) {
-                    Files.walk(tempDir)
-                         .sorted((p1, p2) -> -p1.compareTo(p2))
-                         .forEach(path -> {
-                             try { Files.delete(path); } catch (IOException e) { log.error("清理文件失败: {}", path, e); }
-                         });
-                }
-                log.info("【清理】临时文件清理完毕。");
-            }
-        } else {
-            log.warn("【Service】未提供关联文件，仅创建项目信息。");
+        return projectEntity;
+    }
+
+
+    private void processSingleFileAsync(File singleSheetExcel, Long projectId) {
+        // 使用 try-catch 保证单个文件的失败不会影响其他并行任务
+        try {
+            log.info("线程 [{}] 开始处理文件: {}", Thread.currentThread().getName(), singleSheetExcel.getName());
+
+            // 1. Excel -> PDF
+            File pdfFile = convertExcelToPdf(singleSheetExcel);
+
+            // 2. PDF -> PNGs
+            convertPdfToPng(pdfFile, projectId);
+
+            log.info("线程 [{}] 成功完成文件: {}", Thread.currentThread().getName(), singleSheetExcel.getName());
+
+        } catch (IOException | InterruptedException e) {
+            // 将 InterruptedException 转换为 RuntimeException 以便上层捕获
+            Thread.currentThread().interrupt(); // 重新设置中断状态
+            throw new RuntimeException("处理文件 " + singleSheetExcel.getName() + " 时中断", e);
+        } catch (Exception e) {
+            // 捕获其他所有可能的运行时异常
+            throw new RuntimeException("处理文件 " + singleSheetExcel.getName() + " 时发生未知错误", e);
         }
     }
+
 
     /**
      * 获取所有项目的列表。
@@ -278,32 +449,47 @@ public class ProjectServiceImpl implements ProjectService {
         return pdfFile;
     }
 
-    private File convertPdfToPng(File pdfFile) throws IOException {
-        log.info("【4/5】开始将 {} 转换为PNG...", pdfFile.getName());
-        Path imageDir = Paths.get(pdfFile.getParentFile().getParent().toString(), IMAGES_SUBDIR);
-        if (!Files.exists(imageDir)) Files.createDirectories(imageDir);
+    private List<ProjectFile> convertPdfToPng(File pdfFile, Long projectId) throws IOException {
+        log.info("【4/5】准备将PDF '{}' 的所有页面转换为PNG...", pdfFile.getName());
 
-        String pngFileName = StringUtils.stripFilenameExtension(pdfFile.getName()) + ".png";
-        File pngFile = imageDir.resolve(pngFileName).toFile();
+        Path imageDir = Paths.get(pdfFile.getParentFile().getParent().toString(), IMAGES_SUBDIR);
+        if (!Files.exists(imageDir)) {
+            Files.createDirectories(imageDir);
+        }
+
+        String baseFileName = StringUtils.stripFilenameExtension(pdfFile.getName());
+        List<ProjectFile> fileRecords = new ArrayList<>();
 
         try (PDDocument document = PDDocument.load(pdfFile)) {
             PDFRenderer pdfRenderer = new PDFRenderer(document);
-            BufferedImage bim = pdfRenderer.renderImageWithDPI(0, 150);
-            ImageIO.write(bim, "PNG", pngFile);
+            int pageCount = document.getNumberOfPages();
+
+            for (int pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+                String pngFileName;
+                if (pageCount > 1) {
+                    pngFileName = String.format("%s_page_%d.png", baseFileName, pageIndex + 1);
+                } else {
+                    pngFileName = baseFileName + ".png";
+                }
+
+                File pngFile = imageDir.resolve(pngFileName).toFile();
+                BufferedImage bim = pdfRenderer.renderImageWithDPI(pageIndex, 150, ImageType.RGB);
+                ImageIO.write(bim, "PNG", pngFile);
+
+                // 只创建对象，不保存
+                ProjectFile projectFile = new ProjectFile();
+                projectFile.setProjectId(projectId);
+                projectFile.setFileName(pngFileName);
+                String relativePath = Paths.get(String.valueOf(projectId), IMAGES_SUBDIR, pngFileName).toString().replace("\\", "/");
+                projectFile.setFilePath(relativePath);
+                projectFile.setFileType("image/png");
+                fileRecords.add(projectFile);
+            }
         }
-        log.info("【4/5】PNG转换成功，文件位于: {}", pngFile.getAbsolutePath());
-        return pngFile;
+
+        log.info("【4/5】PDF到PNG的转换完成，生成了 {} 个文件记录。", fileRecords.size());
+        return fileRecords;
     }
 
-    private void saveFileInfoToDb(File pngFile, Long projectId) {
-        log.info("【5/5】正在将文件 {} 的信息保存到数据库...", pngFile.getName());
-        ProjectFile projectFile = new ProjectFile();
-        projectFile.setProjectId(projectId);
-        projectFile.setFileName(pngFile.getName());
-        String relativePath = Paths.get(String.valueOf(projectId), IMAGES_SUBDIR, pngFile.getName()).toString().replace("\\", "/");
-        projectFile.setFilePath(relativePath);
-        projectFile.setFileType("image/png");
-        projectFileMapper.insert(projectFile);
-        log.info("【5/5】文件信息保存成功。");
-    }
+
 }
