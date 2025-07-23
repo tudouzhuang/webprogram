@@ -137,4 +137,45 @@ public class FileController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
+    // =========================================================================
+    // 【方法三】: 根据项目ID预览原始Excel文件
+    // =========================================================================
+
+    @GetMapping("/preview/project-file/{fileId}") // <-- 注意：路径变了，用于区分
+    public ResponseEntity<Resource> getProjectFileForPreview(@PathVariable Long fileId) {
+        log.info("接收到预览文件ID {} 的请求", fileId);
+
+        ProjectFile fileRecord = projectFileMapper.selectById(fileId);
+        if (fileRecord == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Path filePath = Paths.get(uploadDir, fileRecord.getFilePath());
+        File file = filePath.toFile();
+        if (!file.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
+            String encodedFilename = URLEncoder.encode(fileRecord.getFileName(), "UTF-8").replaceAll("\\+", "%20");
+            
+            HttpHeaders headers = new HttpHeaders();
+            // 【关键修改点 1】: 将 "attachment" 改为 "inline"
+            // "inline" 会告诉浏览器尝试在页面内展示，对于Ajax请求，则表示将数据流返回给调用方
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + encodedFilename + "\"");
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .contentLength(file.length())
+                    // 【关键修改点 2】: 提供更精确的MIME类型，对Excel文件尤其重要
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .body(resource);
+
+        } catch (IOException e) {
+            log.error("读取文件用于预览时发生IO异常: ", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }

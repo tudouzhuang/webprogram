@@ -6,8 +6,6 @@ import org.example.project.entity.User;
 import org.example.project.mapper.UserMapper;
 import org.example.project.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
-// 【关键修改1】: 不再需要 @Value 注解，可以删除这一行导入
-// import org.springframework.beans.factory.annotation.Value; 
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -24,10 +22,6 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
-
-    // 【关键修改2】: 删除 @Value 注入的成员变量
-    // @Value("${user.default-avatar-url}")
-    // private String defaultAvatarUrl;
 
     /**
      * 处理用户注册的核心业务逻辑

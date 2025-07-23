@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luckysheet 精简UI预览器</title>
+
+    <!-- 1. 引入 Luckysheet 的 CSS (通过CDN) -->
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css' />
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.css' />
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f5f7;
+        }
+        .header {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #file-input {
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        /* Luckysheet 容器样式 */
+        #mysheet {
+            width: 100%;
+            height: 80vh; /* 占视窗高度的80% */
+            margin: 0;
+            padding: 0;
+            border: 1px solid #ddd;
+        }
+        .loading-text {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>Luckysheet 精简UI预览器</h2>
+        <p>请选择一个本地的 .xlsx 文件进行预览。加载后的表格将是只读模式，并隐藏了大部分编辑工具栏。</p>
+        <input type="file" id="file-input" accept=".xlsx" />
+    </div>
+
+    <!-- 2. Luckysheet 的渲染容器 -->
+    <div id="mysheet">
+        <div class="loading-text">请选择一个文件以开始预览...</div>
+    </div>
+
+    <!-- 3. 引入必要的 JS 库 (通过CDN，注意顺序) -->
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luckyexcel/dist/luckyexcel.umd.js"></script>
+
+    <!-- 4. 核心的转换和渲染逻辑 -->
+    <script>
+        // 获取元素
+        const fileInput = document.getElementById('file-input');
+        const sheetContainer = document.getElementById('mysheet');
+
+        // 监听文件选择
+        fileInput.addEventListener('change', function(event) {
+            
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            // 显示加载提示
+            sheetContainer.innerHTML = '<div class="loading-text">正在转换文件，请稍候...</div>';
+
+            // 使用 LuckyExcel 转换文件
+            LuckyExcel.transformExcelToLucky(
+                file, 
+                function(exportJson, luckysheetfile) {
+                    
+                    // 清空加载提示
+                    sheetContainer.innerHTML = '';
+                    
+                    if (!exportJson.sheets || exportJson.sheets.length === 0) {
+                        alert("文件读取失败或内容为空!");
+                        sheetContainer.innerHTML = '<div class="loading-text">文件读取失败，请重新选择。</div>';
+                        return;
+                    }
+
+                    // 销毁可能已存在的旧实例
+                    if (window.luckysheet) {
+                        luckysheet.destroy();
+                    }
+
+                    // 【核心】使用你参考代码中的精简UI配置来创建 Luckysheet
+                    luckysheet.create({
+                        container: 'mysheet',          // 渲染到指定ID的div
+                        data: exportJson.sheets,
+                        title: exportJson.info.name,
+                        lang: 'zh',
+                        
+                        // --- UI精简配置 ---
+                        showtoolbar: false,            // 不显示工具栏
+                        showinfobar: false,            // 不显示顶部信息栏
+                        showsheetbar: true,            // 显示底部的Sheet页签
+                        showstatisticBar: false,       // 不显示底部统计栏
+                        sheetFormulaBar: false,        // 不显示公式栏
+                        
+                        // --- 功能限制配置 ---
+                        allowUpdate: false,            // 完全只读
+                        enableAddRow: false,           // 禁止添加行
+                        enableAddCol: false,           // 禁止添加列
+                        enableAddBackTop: false,       // 禁用回到顶部按钮
+                        sheetBottomConfig: false,      // 禁用底部配置按钮
+                    });
+                },
+                function(err) {
+                    // 转换失败
+                    console.error('文件转换失败:', err);
+                    alert('文件转换失败！请检查文件是否为有效的 .xlsx 格式。');
+                    sheetContainer.innerHTML = '<div class="loading-text">文件转换失败，请重新选择。</div>';
+                }
+            );
+        });
+    </script>
+
+</body>
+</html>

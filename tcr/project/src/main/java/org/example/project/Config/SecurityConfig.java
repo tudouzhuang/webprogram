@@ -14,10 +14,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Spring Security 配置类 (精准保护 / 白名单模式)
+ * Spring Security 配置类 (推荐的黑名单模式)
  * <p>
- * 核心策略：默认所有页面和接口都允许匿名访问。
- * 只有明确指定的 "受保护" 路径（如 /index 及其相关API）才需要进行身份验证。
+ * 核心策略：默认所有请求都需要认证。
+ * 只有明确列出的公共资源（如登录页、静态文件）才允许匿名访问。
  */
 @Configuration
 @EnableWebSecurity
@@ -31,33 +31,45 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // 【第一步：配置请求授权规则】
-            .authorizeRequests(authorize -> authorize
-                .antMatchers(
-                        "/index", // 保护主页
-                        "/"
-                ).authenticated()
+        .authorizeRequests(authorize -> authorize
+            // 【第一优先级】：白名单，放行所有公共资源和静态文件
+            .antMatchers(
+                    // 公共页面
+                    "/login", "/signup", "/reset", "/404",
+                    // 公共API
+                    "/api/users/login", "/api/users/register",
+                    // 所有静态资源 - 这是解决CSS问题的关键
+                    "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**", 
+                    "/luckysheet/**", "/luckyexcel/**", "/favicon.ico","/material/**"
+            ).permitAll()
 
-                // 【开放的资源】除了上面明确指定的，其他任何请求(anyRequest)都允许匿名访问(permitAll)
-                .anyRequest().permitAll()
-            )
+            // 【第二优先级】：黑名单，保护所有需要登录才能访问的资源
+            .antMatchers(
+                    "/", 
+                    "/index",
+                    "/api/projects/**", // 保护所有项目数据API
+                    "/api/files/**"     // 保护所有文件下载API
+            ).authenticated()
 
-            // 【第二步：配置表单登录】
+            // 【最低优先级】：其他任何未匹配的请求，也需要登录
+            .anyRequest().authenticated()
+        )
+
+            // 【第三步：配置表单登录】
             .formLogin(form -> form
-                // 当未登录用户访问受保护的 /index 时，自动跳转到 /login 页面
                 .loginPage("/login")
-                // 指定处理登录请求的API地址
                 .loginProcessingUrl("/api/users/login")
-                // 成功和失败处理器保持不变
+                // 【核心修正】填回完整的成功处理器
                 .successHandler((request, response, authentication) -> {
                     response.setContentType("application/json;charset=UTF-8");
                     response.setStatus(HttpServletResponse.SC_OK);
                     Map<String, Object> result = new HashMap<>();
                     result.put("success", true);
                     result.put("message", "登录成功");
-                    result.put("redirectUrl", "/index"); // 登录成功后，引导前端跳转到主页
+                    result.put("redirectUrl", "/index");
                     response.getWriter().write(new ObjectMapper().writeValueAsString(result));
                 })
+                // 【核心修正】填回完整的失败处理器
                 .failureHandler((request, response, exception) -> {
                     response.setContentType("application/json;charset=UTF-8");
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -68,9 +80,10 @@ public class SecurityConfig {
                 })
             )
 
-            // 【第三步：配置登出】
+            // 【第四步：配置登出】
             .logout(logout -> logout
                 .logoutUrl("/api/users/logout")
+                // 【核心修正】填回完整的登出成功处理器
                 .logoutSuccessHandler((request, response, authentication) -> {
                     response.setContentType("application/json;charset=UTF-8");
                     response.setStatus(HttpServletResponse.SC_OK);
@@ -83,7 +96,7 @@ public class SecurityConfig {
                 .invalidateHttpSession(true)
             )
 
-            // 【第四步：关闭CSRF保护】
+            // 【第五步：关闭CSRF保护】
             .csrf(csrf -> csrf.disable());
 
         return http.build();

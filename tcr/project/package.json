@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "luckyexcel": "^1.0.1",
     "pnpm": "^10.13.1"
   }
 }
