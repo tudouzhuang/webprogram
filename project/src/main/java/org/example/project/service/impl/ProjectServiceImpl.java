@@ -161,4 +161,58 @@ public class ProjectServiceImpl implements ProjectService {
         }
         return project;
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void uploadOrUpdateProjectFile(Long projectId, MultipartFile file, String documentType) throws IOException {
+        // 1. 检查项目是否存在
+        if (projectMapper.selectById(projectId) == null) {
+            throw new NoSuchElementException("无法为不存在的项目 (ID: " + projectId + ") 上传文件");
+        }
+
+        // 2. 检查是否已存在同类型的文件记录
+        QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("project_id", projectId);
+        queryWrapper.eq("document_type", documentType);
+        ProjectFile existingFileRecord = projectFileMapper.selectOne(queryWrapper);
+
+        // 3. 保存新文件到磁盘
+        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+        // 【重要】文件名中不再包含类型，因为类型由 documentType 字段决定
+        // 这样可以确保每次上传同类型文件时，文件名一致，实现覆盖
+        String storedFileName = originalFilename;
+        Path filePath = Paths.get(uploadDir, String.valueOf(projectId), storedFileName);
+
+        Files.createDirectories(filePath.getParent());
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【Service】项目 {} 的'{}'文件已保存至: {}", projectId, documentType, filePath);
+
+        // 4. 更新或插入数据库记录
+        if (existingFileRecord != null) {
+            // 更新记录：如果文件名变了，就更新
+            log.info("【Service】更新数据库中已有的'{}'记录 (ID: {})", documentType, existingFileRecord.getId());
+
+            // 【可选】如果想删除旧的物理文件，可以在这里操作
+            // Path oldFilePath = Paths.get(uploadDir, existingFileRecord.getFilePath());
+            // if (!oldFilePath.equals(filePath)) {
+            //     Files.deleteIfExists(oldFilePath);
+            // }
+
+            existingFileRecord.setFileName(storedFileName);
+            String relativePath = Paths.get(String.valueOf(projectId), storedFileName).toString().replace("\\", "/");
+            existingFileRecord.setFilePath(relativePath);
+            projectFileMapper.updateById(existingFileRecord);
+        } else {
+            // 插入新记录
+            log.info("【Service】在数据库中为'{}'创建新记录", documentType);
+            ProjectFile newFile = new ProjectFile();
+            newFile.setProjectId(projectId);
+            newFile.setDocumentType(documentType);
+            newFile.setFileName(storedFileName);
+            String relativePath = Paths.get(String.valueOf(projectId), storedFileName).toString().replace("\\", "/");
+            newFile.setFilePath(relativePath);
+            newFile.setFileType(file.getContentType());
+            projectFileMapper.insert(newFile);
+        }
+    }
 }

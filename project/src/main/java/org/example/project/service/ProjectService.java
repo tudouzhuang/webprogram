@@ -48,4 +48,6 @@ public interface ProjectService {
     
     // 注意：saveProjectInfoInTransaction 和 saveFileInfosInTransaction 方法已从接口中移除，
     // 因为它们是内部实现细节，不应该暴露给外部调用者。
+    void uploadOrUpdateProjectFile(Long projectId, MultipartFile file, String documentType) throws IOException;
+
 }

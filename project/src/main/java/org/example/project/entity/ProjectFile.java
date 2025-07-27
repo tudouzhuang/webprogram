@@ -31,6 +31,8 @@ public class ProjectFile {
      */
     private String fileName;
 
+
+    private String documentType; 
     /**
      * 文件在服务器上的相对存储路径
      * (例如: 123/images/Sheet1.png)
@@ -46,4 +48,11 @@ public class ProjectFile {
      * 文件记录的创建时间
      */
     private LocalDateTime createdAt;
+
+    public void setDocumentType(String documentType) {
+        this.documentType = documentType;
+    }
+    public String getDocumentType() {
+        return this.documentType;
+    }
 }
