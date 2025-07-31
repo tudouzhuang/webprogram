@@ -55,4 +55,7 @@ public class ProjectFile {
     public String getDocumentType() {
         return this.documentType;
     }
+
+    private Long recordId; // 新增字段
+
 }

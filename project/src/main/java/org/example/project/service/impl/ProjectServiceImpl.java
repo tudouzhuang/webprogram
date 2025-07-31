@@ -3,11 +3,12 @@ package org.example.project.service.impl;
 // --- 基础依赖 ---
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.example.project.dto.ProjectCreateDTO;
+import org.example.project.dto.ProjectFullCreateDTO;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
 import org.example.project.mapper.ProjectFileMapper;
 import org.example.project.mapper.ProjectMapper;
-import org.example.project.service.ExcelSplitterService; // 【注入】: 导入新服务的接口
+import org.example.project.service.ExcelSplitterService;
 import org.example.project.service.ProjectService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,27 +40,64 @@ public class ProjectServiceImpl implements ProjectService {
     @Autowired
     private ProjectFileMapper projectFileMapper;
 
-    // 【注入】: 注入我们新创建的Excel拆分服务
-    @Autowired
+    @Autowired(required = false) // 设置为非必须，如果暂时没有这个Bean也不会报错
     private ExcelSplitterService excelSplitterService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
 
+    // =======================================================
+    //  【修正】createProject 方法，以匹配“极简创建”需求
+    // =======================================================
+    @Override
+    @Transactional
+    public Project createProject(ProjectCreateDTO createDTO) {
+        // 前端现在只传 projectName
+        if (!StringUtils.hasText(createDTO.getProjectNumber())) {
+            throw new IllegalArgumentException("项目名称不能为空！");
+        }
+
+        // 检查项目名称唯一性 (假设项目名称即项目号)
+        QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("project_name", createDTO.getProjectNumber());
+        if (projectMapper.selectCount(queryWrapper) > 0) {
+            throw new RuntimeException("项目名称 '" + createDTO.getProjectNumber() + "' 已存在！");
+        }
+
+        // 创建实体对象
+        Project projectEntity = new Project();
+        projectEntity.setProjectNumber(createDTO.getProjectNumber());
+        // 在创建初期，项目号也使用项目名称
+        projectEntity.setProjectNumber(createDTO.getProjectNumber()); 
+        
+        // 插入数据库
+        projectMapper.insert(projectEntity);
+        log.info("【Service】极简项目创建成功，新项目ID: {}", projectEntity.getId());
+        
+        return projectEntity;
+    }
+
+    // =======================================================
+    //  【补全】createProjectWithFile 方法实现
+    // =======================================================
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void createProjectWithFile(ProjectCreateDTO createDTO, MultipartFile file) throws IOException {
-
-        // --- 1. 检查项目号唯一性 (保持不变) ---
+    // 【核心修正】: 将方法参数的类型从 ProjectCreateDTO 改为 ProjectFullCreateDTO
+    public void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException {
+        log.info("【Service】开始执行“完整创建项目（带文件）”流程...");
+        
+        // 1. 检查项目号唯一性
         QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("project_number", createDTO.getProjectNumber());
         if (projectMapper.selectCount(queryWrapper) > 0) {
             throw new RuntimeException("项目号 '" + createDTO.getProjectNumber() + "' 已存在！");
         }
 
-        // --- 2. 保存项目基础信息 (保持不变) ---
+        // 2. 保存项目基础信息
         Project projectEntity = new Project();
         BeanUtils.copyProperties(createDTO, projectEntity);
+        
+        // 【现在不再报错】: 因为 createDTO (ProjectFullCreateDTO类型) 中确实有 getQuoteSize() 方法
         if (createDTO.getQuoteSize() != null) {
             projectEntity.setQuoteLength(createDTO.getQuoteSize().getLength());
             projectEntity.setQuoteWidth(createDTO.getQuoteSize().getWidth());
@@ -70,74 +108,21 @@ public class ProjectServiceImpl implements ProjectService {
             projectEntity.setActualWidth(createDTO.getActualSize().getWidth());
             projectEntity.setActualHeight(createDTO.getActualSize().getHeight());
         }
+        
         projectMapper.insert(projectEntity);
         Long newProjectId = projectEntity.getId();
-        log.info("【步骤1】项目信息已保存，新项目ID为: {}", newProjectId);
+        log.info("【Service】完整项目信息已保存，ID: {}", newProjectId);
 
-        // --- 3. 【核心修改】处理并拆分关联的Excel文件 ---
+        // 3. 处理文件（如果存在）
         if (file != null && !file.isEmpty()) {
-            // a. 保存原始Excel文件到服务器 (保持不变)
             Path sourceFilePath = saveOriginalFile(file, newProjectId);
-
-            // b. 将原始文件的信息存入 `project_files` 表 (保持不变)
-            saveProjectFileInfo(file.getOriginalFilename(), sourceFilePath, newProjectId);
-
-            // c. 【替换逻辑】调用 ExcelSplitterService 进行文件拆分
-            log.info("【步骤2c】准备调用Excel拆分服务...");
-            String splitOutputDirPath = Paths.get(uploadDir, String.valueOf(newProjectId), "split_output").toString();
-            List<File> splitFiles = excelSplitterService.splitExcel(sourceFilePath.toFile(), splitOutputDirPath);
-
-            // d. 【新增逻辑】将拆分后的每个文件信息也存入数据库
-            for (File splitFile : splitFiles) {
-                ProjectFile projectFile = new ProjectFile();
-                projectFile.setProjectId(newProjectId);
-                projectFile.setFileName(splitFile.getName());
-                // 构造相对路径
-                String relativePath = Paths.get(String.valueOf(newProjectId), "split_output", splitFile.getName()).toString().replace("\\", "/");
-                projectFile.setFilePath(relativePath);
-                projectFile.setFileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); // 文件类型是xlsx
-                projectFileMapper.insert(projectFile);
-                log.info("【步骤2d】已将拆分文件 '{}' 的信息存入数据库。", splitFile.getName());
-            }
+            saveProjectFileInfo(file.getOriginalFilename(), sourceFilePath, newProjectId, "INITIAL_DOCUMENT"); 
         }
     }
 
-    /**
-     * 辅助方法：将上传的原始Excel文件保存到服务器磁盘。 (保持不变)
-     */
-    private Path saveOriginalFile(MultipartFile file, Long projectId) throws IOException {
-        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        Path projectUploadPath = Paths.get(uploadDir, String.valueOf(projectId));
-        if (!Files.exists(projectUploadPath)) {
-            Files.createDirectories(projectUploadPath);
-        }
-        Path sourceFilePath = projectUploadPath.resolve("source_" + originalFilename);
-        Files.copy(file.getInputStream(), sourceFilePath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【步骤2a】原始Excel文件已保存至: {}", sourceFilePath);
-        return sourceFilePath;
-    }
-
-    /**
-     * 辅助方法：将原始Excel文件的元信息保存到 project_files 数据表。 (保持不变)
-     */
-    private void saveProjectFileInfo(String originalFilename, Path sourceFilePath, Long projectId) {
-        ProjectFile projectFile = new ProjectFile();
-        projectFile.setProjectId(projectId);
-        projectFile.setFileName("source_" + originalFilename);
-        String relativePath = Paths.get(String.valueOf(projectId), "source_" + originalFilename).toString().replace("\\", "/");
-        projectFile.setFilePath(relativePath);
-        String fileExtension = "";
-        int i = originalFilename.lastIndexOf('.');
-        if (i > 0) fileExtension = originalFilename.substring(i);
-        projectFile.setFileType(fileExtension);
-        projectFileMapper.insert(projectFile);
-        log.info("【步骤2b】原始文件信息已存入数据库。");
-    }
-
     // =======================================================
-    //  查询相关的 Service 方法 (保持不变，无需修改)
+    //  【补全】查询相关的 Service 方法
     // =======================================================
-
     @Override
     public List<Project> getAllProjects() {
         log.info("【Service】正在查询所有项目列表...");
@@ -162,6 +147,9 @@ public class ProjectServiceImpl implements ProjectService {
         return project;
     }
 
+    // =======================================================
+    //  【补全】uploadOrUpdateProjectFile 方法
+    // =======================================================
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void uploadOrUpdateProjectFile(Long projectId, MultipartFile file, String documentType) throws IOException {
@@ -170,49 +158,81 @@ public class ProjectServiceImpl implements ProjectService {
             throw new NoSuchElementException("无法为不存在的项目 (ID: " + projectId + ") 上传文件");
         }
 
-        // 2. 检查是否已存在同类型的文件记录
+        // 2. 查找是否已存在同类型的旧文件记录
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("project_id", projectId);
-        queryWrapper.eq("document_type", documentType);
+        queryWrapper.eq("project_id", projectId).eq("document_type", documentType);
         ProjectFile existingFileRecord = projectFileMapper.selectOne(queryWrapper);
 
-        // 3. 保存新文件到磁盘
+        // 3. 如果存在旧文件，先从磁盘删除
+        if (existingFileRecord != null) {
+            Path oldFilePath = Paths.get(uploadDir, existingFileRecord.getFilePath());
+            Files.deleteIfExists(oldFilePath);
+            log.info("【Service】已删除旧的'{}'物理文件: {}", documentType, oldFilePath);
+        }
+
+        // 4. 保存新文件到磁盘
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        // 【重要】文件名中不再包含类型，因为类型由 documentType 字段决定
-        // 这样可以确保每次上传同类型文件时，文件名一致，实现覆盖
-        String storedFileName = originalFilename;
+        String storedFileName = documentType + "-" + originalFilename;
         Path filePath = Paths.get(uploadDir, String.valueOf(projectId), storedFileName);
 
         Files.createDirectories(filePath.getParent());
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【Service】项目 {} 的'{}'文件已保存至: {}", projectId, documentType, filePath);
+        log.info("【Service】项目 {} 的新'{}'文件已保存至: {}", projectId, documentType, filePath);
 
-        // 4. 更新或插入数据库记录
+        // 5. 更新或插入数据库记录
+        String relativePath = Paths.get(String.valueOf(projectId), storedFileName).toString().replace("\\", "/");
         if (existingFileRecord != null) {
-            // 更新记录：如果文件名变了，就更新
             log.info("【Service】更新数据库中已有的'{}'记录 (ID: {})", documentType, existingFileRecord.getId());
-
-            // 【可选】如果想删除旧的物理文件，可以在这里操作
-            // Path oldFilePath = Paths.get(uploadDir, existingFileRecord.getFilePath());
-            // if (!oldFilePath.equals(filePath)) {
-            //     Files.deleteIfExists(oldFilePath);
-            // }
-
             existingFileRecord.setFileName(storedFileName);
-            String relativePath = Paths.get(String.valueOf(projectId), storedFileName).toString().replace("\\", "/");
             existingFileRecord.setFilePath(relativePath);
             projectFileMapper.updateById(existingFileRecord);
         } else {
-            // 插入新记录
             log.info("【Service】在数据库中为'{}'创建新记录", documentType);
             ProjectFile newFile = new ProjectFile();
             newFile.setProjectId(projectId);
             newFile.setDocumentType(documentType);
             newFile.setFileName(storedFileName);
-            String relativePath = Paths.get(String.valueOf(projectId), storedFileName).toString().replace("\\", "/");
             newFile.setFilePath(relativePath);
             newFile.setFileType(file.getContentType());
             projectFileMapper.insert(newFile);
         }
+    }
+
+    // =======================================================
+    //  辅助方法 (保持不变)
+    // =======================================================
+    private Path saveOriginalFile(MultipartFile file, Long projectId) throws IOException {
+        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+        Path projectUploadPath = Paths.get(uploadDir, String.valueOf(projectId));
+        if (!Files.exists(projectUploadPath)) {
+            Files.createDirectories(projectUploadPath);
+        }
+        Path sourceFilePath = projectUploadPath.resolve("source_" + originalFilename);
+        Files.copy(file.getInputStream(), sourceFilePath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【Service】原始Excel文件已保存至: {}", sourceFilePath);
+        return sourceFilePath;
+    }
+    
+    private void saveProjectFileInfo(String originalFilename, Path sourceFilePath, Long projectId, String documentType) {
+        ProjectFile projectFile = new ProjectFile();
+        projectFile.setProjectId(projectId);
+        projectFile.setFileName("source_" + originalFilename);
+        String relativePath = Paths.get(String.valueOf(projectId), "source_" + originalFilename).toString().replace("\\", "/");
+        projectFile.setFilePath(relativePath);
+        projectFile.setDocumentType(documentType);
+        
+        String fileExtension = "";
+        int i = originalFilename.lastIndexOf('.');
+        if (i > 0) fileExtension = originalFilename.substring(i);
+        projectFile.setFileType(fileExtension);
+        
+        projectFileMapper.insert(projectFile);
+        log.info("【Service】文件信息 (类型: {}) 已存入数据库。", documentType);
+    }
+
+    @Override
+    public void createProjectWithFile(ProjectCreateDTO createDTO, MultipartFile file) throws IOException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'createProjectWithFile'");
     }
 }

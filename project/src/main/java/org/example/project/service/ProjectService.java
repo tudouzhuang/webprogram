@@ -4,7 +4,7 @@ import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
 import org.springframework.web.multipart.MultipartFile;
-
+import org.example.project.dto.ProjectFullCreateDTO; 
 import java.io.IOException;
 import java.util.List;
 
@@ -49,5 +49,7 @@ public interface ProjectService {
     // 注意：saveProjectInfoInTransaction 和 saveFileInfosInTransaction 方法已从接口中移除，
     // 因为它们是内部实现细节，不应该暴露给外部调用者。
     void uploadOrUpdateProjectFile(Long projectId, MultipartFile file, String documentType) throws IOException;
+    Project createProject(ProjectCreateDTO createDTO);
 
+   void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException;
 }
