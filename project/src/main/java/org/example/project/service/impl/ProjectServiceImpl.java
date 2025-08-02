@@ -4,6 +4,7 @@ package org.example.project.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.dto.ProjectFullCreateDTO;
+import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
 import org.example.project.mapper.ProjectFileMapper;
@@ -131,7 +132,7 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public List<ProjectFile> getFilesByProjectId(Long projectId) {
-        log.info("【Service】正在查询项目ID {} 的文件列表...", projectId);
+        log.info("【Service】正在查询项目ID {} 的【所有】文件列表...", projectId);
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("project_id", projectId);
         return projectFileMapper.selectList(queryWrapper);
@@ -235,4 +236,19 @@ public class ProjectServiceImpl implements ProjectService {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'createProjectWithFile'");
     }
+
+    @Override
+    public List<ProjectFile> getFilesByRecordId(Long recordId) {
+        log.info("【Service】正在查询过程记录ID {} 的所有关联文件...", recordId);
+        QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+        // 查询条件是 record_id，完全正确
+        queryWrapper.eq("record_id", recordId);
+        return projectFileMapper.selectList(queryWrapper);
+    }
+
+        @Override
+        public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'getRecordsByProjectId'");
+        }
 }

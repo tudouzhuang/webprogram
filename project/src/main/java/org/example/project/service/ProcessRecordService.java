@@ -1,7 +1,9 @@
 package org.example.project.service;
 
+import org.example.project.entity.ProcessRecord;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * 设计过程记录表相关业务逻辑的服务接口。
@@ -17,7 +19,8 @@ public interface ProcessRecordService {
      * @throws IOException 如果在文件处理过程中发生IO错误。
      */
     void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException;
-
+    List<ProcessRecord> getRecordsByProjectId(Long projectId);
+    ProcessRecord getRecordById(Long recordId);
     // 未来可以在这里添加其他方法，例如：
     // void updateProcessRecord(...);
     // ProcessRecord getProcessRecordById(Long recordId);

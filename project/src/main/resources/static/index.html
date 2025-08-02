@@ -614,6 +614,58 @@
         </ul>
     </div>
 </li>
+<!-- ... 你已有的“设计策划”菜单 ... -->
+
+<!-- ======================================================= -->
+<!--   ↓↓↓ 【在这里新增】一个新的主菜单项 ↓↓↓   -->
+<!-- ======================================================= -->
+<li class="nav-item nav-category">过程记录</li>
+<li class="nav-item">
+    <!-- 点击时调用 toggleRecordProjectMenu 方法 -->
+    <a class="nav-link" data-bs-toggle="collapse" href="#record-planning" aria-expanded="false" @click.prevent="toggleRecordProjectMenu">
+        <i class="menu-icon mdi mdi-file-document-box-multiple-outline"></i>
+        <span class="menu-title">过程记录表</span>
+        <i class="menu-arrow"></i>
+    </a>
+    <!-- :class="{'show': showRecordProjectMenu}" 用于控制展开/折叠 -->
+    <div class="collapse" id="record-planning" :class="{'show': showRecordProjectMenu}">
+        <ul class="nav flex-column sub-menu">
+            <!-- 
+                使用 v-for 循环 projectList 来动态生成项目子菜单
+                点击每个项目时，调用 viewProcessRecordsForProject 方法
+            -->
+            <li v-for="project in projectList" :key="'record-' + project.id" class="nav-item">
+                <a class="nav-link" href="javascript:void(0)" @click="viewProcessRecordsForProject(project)">
+                    {{ project.projectName || project.projectNumber }}
+                </a>
+            </li>
+            <!-- 加载状态提示 -->
+            <li v-if="isProjectListLoading" class="nav-item">
+                <span class="nav-link text-muted">加载中...</span>
+            </li>
+        </ul>
+    </div>
+</li>
+<li class="nav-item nav-category">过程记录 (审查)</li>
+<li class="nav-item">
+    <a class="nav-link" data-bs-toggle="collapse" href="#record-review" aria-expanded="false" @click.prevent="toggleRecordReviewMenu">
+        <i class="menu-icon mdi mdi-file-find-outline"></i>
+        <span class="menu-title">审查记录表</span>
+        <i class="menu-arrow"></i>
+    </a>
+    <div class="collapse" id="record-review" :class="{'show': showRecordReviewMenu}">
+        <ul class="nav flex-column sub-menu">
+            <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
+                <a class="nav-link" href="javascript:void(0)" @click="goToViewProcessRecords(project)">
+                    {{ project.projectName || project.projectNumber }}
+                </a>
+            </li>
+            <li v-if="isProjectListLoading" class="nav-item">
+                <span class="nav-link text-muted">加载中...</span>
+            </li>
+        </ul>
+    </div>
+</li>
 
                         <li class="nav-item nav-category">设变整改</li>
                         <li class="nav-item">
@@ -673,9 +725,13 @@
                 </nav>
                 <div class="main-panel">
                     <component 
-                    :is="activePanel" 
+                    :is="activePanel"
                     :project-id="currentProjectId"
-                    @project-created="onProjectCreated">
+                    :record-id="currentRecordId"
+                    @create-new-record="handleCreateNewRecord"
+                    @view-record-details="handleViewRecordDetails"
+                    @project-created="onProjectCreated"
+                    @back-to-list="handleBackToList">
                 </component>
                 </div>
             </div>
@@ -705,7 +761,8 @@
     <script src="js/components/luckysheet-viewer.js"></script>
     <script src="/js/components/project-planning-panel.js"></script>
     <script src="/js/components/process-record-panel.js"></script>
-
+    <script src="/js/components/process-record-list-panel.js"></script>
+    <script src="/js/components/record-details-viewer.js"></script>
     <!-- 4.2 顶部导航栏动态组件 -->
     <script src="js/components/user-dropdown.js"></script>
     <script src="js/components/bell-dropdown.js"></script>
@@ -724,128 +781,159 @@
     <script src="main/js/Chart.roundedBarCharts.js"></script>
     
 
-    <script>
-        new Vue({
-            el: '#app',
-            data() {
-                return {
-                    // =======================================================
-                    //  【保留】: 你现有的 data 属性
-                    // =======================================================
-                    showProjectMenu: false,       // 控制“设计策划”下的项目列表
-                    showInfoSummaryMenu: false,
-                    showDrawingCheckMenu: false,
-                    showDesignInfoMenu: false,
-                    isProjectListLoading: false,    // 初始设为false，在加载时变为true
+<!-- ... 你页面中所有的HTML和CSS ... -->
 
-                    // =======================================================
-                    //  【新增】: 为“过程记录”菜单新增一个状态控制
-                    // =======================================================
-                    showRecordProjectMenu: false,   // 控制“过程记录”下的项目列表
-
-                    // --- 核心状态管理 (保持不变) ---
-                    activePanel: 'dashboard-panel',
-                    projectList: [],
-                    currentProjectId: null
-                }
-            },
-            methods: {
+<!-- ======================================================= -->
+<!--   ↓↓↓ 将你页面底部的整个 <script> 块替换为以下内容 ↓↓↓   -->
+<!-- ======================================================= -->
+<script>
+    new Vue({
+        el: '#app',
+        data() {
+            return {
                 // =======================================================
-                //  【保留】: 你现有的所有 methods 方法
+                //  【保留】: 你现有的所有 data 属性
                 // =======================================================
-                toggleProjectMenu() { 
-                    this.showProjectMenu = !this.showProjectMenu; 
-                },
-                toggleInfoSummaryMenu() { 
-                    this.showInfoSummaryMenu = !this.showInfoSummaryMenu; 
-                },
-                toggleDrawingCheckMenu() { 
-                    this.showDrawingCheckMenu = !this.showDrawingCheckMenu; 
-                },
-                toggleDesignInfoMenu() { 
-                    this.showDesignInfoMenu = !this.showDesignInfoMenu; 
-                },
-                
-                // 【保留】点击“设计策划”下项目列表的导航方法
-                viewProjectPlanning(project) {
-                    console.log("【父组件】导航到 '设计策划', 项目ID:", project.id);
-                    this.currentProjectId = project.id;
-                    this.activePanel = 'project-planning-panel';
-                },
-
-                // 【保留】通用的面板切换方法
-                changePanel(panelName) {
-                    console.log('【父组件】切换面板到:', panelName);
-                    this.activePanel = panelName;
-                    // 如果切换到的不是项目详情相关的面板，清空当前项目ID
-                    const detailPanels = ['project-planning-panel', 'project-details-panel', 'process-record-panel'];
-                    if (!detailPanels.includes(panelName)) {
-                        this.currentProjectId = null;
-                    }
-                },
-
-                // 【保留并优化】获取项目列表的方法
-                fetchProjectList() {
-                    this.isProjectListLoading = true; // 开始加载
-                    console.log('【父组件】正在获取项目列表...');
-                    axios.get('/api/projects/list')
-                        .then(response => {
-                            this.projectList = response.data;
-                            console.log('【父组件】项目列表获取成功:', this.projectList);
-                        })
-                        .catch(error => {
-                            console.error('【父组件】获取项目列表失败:', error);
-                            this.$message.error('获取项目列表失败');
-                        })
-                        .finally(() => {
-                            this.isProjectListLoading = false; // 加载结束
-                        });
-                },
-
-                // 【保留】旧的 viewProject 方法
-                viewProject(project) {
-                    console.log('【父组件】你点击了项目(旧方法)，ID为:', project.id);
-                    this.currentProjectId = project.id;
-                    this.changePanel('project-details-panel');
-                },
-
-                // =======================================================
-                //  【新增】: 为新菜单添加的专属方法
-                // =======================================================
-
-                /**
-                 * 切换“过程记录”下项目列表的展开/折叠
-                 */
-                toggleRecordProjectMenu() {
-                    this.showRecordProjectMenu = !this.showRecordProjectMenu;
-                },
-
-                /**
-                 * 当用户在“过程记录”的子菜单中点击一个项目时调用
-                 * @param {object} project - 被点击的项目对象
-                 */
-                viewProcessRecordForProject(project) {
-                    console.log("【父组件】导航到 '过程记录', 项目ID:", project.id);
-                    this.currentProjectId = project.id;
-                    this.activePanel = 'process-record-panel';
-                },
-
-                /**
-                 * 【新增】当子组件成功创建项目后，用于刷新列表的回调
-                 */
-                onProjectCreated() {
-                    console.log('【父组件】检测到新项目已创建，正在刷新项目列表...');
-                    this.fetchProjectList();
-                }
-            },
-            
-            mounted() {
-                console.log("【父组件】Vue 实例已挂载。");
-                // 页面加载时，自动获取一次项目列表
-                this.fetchProjectList();
+                showProjectMenu: false,
+                showInfoSummaryMenu: false,
+                showDrawingCheckMenu: false,
+                showDesignInfoMenu: false,
+                isProjectListLoading: false,
+                showRecordProjectMenu: false, // 这个现在代表“提交”菜单
+                activePanel: 'dashboard-panel',
+                projectList: [],
+                currentProjectId: null,
+                currentRecordId: null,
+                showRecordReviewMenu: false, // 控制“审查记录”下的项目列表
+                currentRecordId: null      // 用于将来查看单个记录详情
             }
-        });
-    </script>
+        },
+        methods: {
+
+            handleViewRecordDetails(recordId) {
+        console.log("【父组件】接收到 view-record-details 事件, 记录ID:", recordId);
+        this.currentRecordId = recordId;
+        // 切换到我们新创建的详情面板
+        this.activePanel = 'record-details-viewer'; 
+    },
+    
+    // 【新增】监听详情面板发出的 'back-to-list' 事件
+    handleBackToList() {
+        console.log("【父组件】接收到 back-to-list 事件, 返回列表页");
+        // 不需要清空 currentProjectId，因为列表页还需要它
+        this.currentRecordId = null; 
+        this.activePanel = 'process-record-list-panel';
+    },
+            // =======================================================
+            //  【保留】: 你现有的所有 methods 方法，不做任何改动
+            // =======================================================
+            toggleProjectMenu() { 
+                this.showProjectMenu = !this.showProjectMenu; 
+            },
+            toggleInfoSummaryMenu() { 
+                this.showInfoSummaryMenu = !this.showInfoSummaryMenu; 
+            },
+            toggleDrawingCheckMenu() { 
+                this.showDrawingCheckMenu = !this.showDrawingCheckMenu; 
+            },
+            toggleDesignInfoMenu() { 
+                this.showDesignInfoMenu = !this.showDesignInfoMenu; 
+            },
+
+            // --- 你已有的、混合在一起的方法 (全部保留) ---
+            toggleRecordProjectMenu() {
+                this.showRecordProjectMenu = !this.showRecordProjectMenu;
+            },
+            viewProcessRecordsForProject(project) {
+                console.log("【父组件】导航到 '过程记录表列表' (旧方法), 项目ID:", project.id);
+                this.currentProjectId = project.id;
+                this.activePanel = 'process-record-list-panel';
+            },
+            handleCreateNewRecord() {
+                console.log("【父组件】接收到 create-new-record 事件, 切换到创建面板");
+                this.activePanel = 'process-record-panel';
+            },
+            handleViewRecordDetails(recordId) {
+                console.log("【父组件】接收到 view-record-details 事件, 记录ID:", recordId);
+                this.currentRecordId = recordId;
+                this.activePanel = 'record-details-viewer'; 
+            },
+            viewProjectPlanning(project) {
+                console.log("【父组件】导航到 '设计策划', 项目ID:", project.id);
+                this.currentProjectId = project.id;
+                this.activePanel = 'project-planning-panel';
+            },
+            changePanel(panelName) {
+                console.log('【父组件】切换面板到:', panelName);
+                this.activePanel = panelName;
+                const detailPanels = ['project-planning-panel', 'project-details-panel', 'process-record-panel'];
+                if (!detailPanels.includes(panelName)) {
+                    this.currentProjectId = null;
+                }
+            },
+            fetchProjectList() {
+                this.isProjectListLoading = true;
+                console.log('【父组件】正在获取项目列表...');
+                axios.get('/api/projects/list')
+                    .then(response => {
+                        this.projectList = response.data;
+                        console.log('【父组件】项目列表获取成功:', this.projectList);
+                    })
+                    .catch(error => {
+                        console.error('【父组件】获取项目列表失败:', error);
+                        this.$message.error('获取项目列表失败');
+                    })
+                    .finally(() => {
+                        this.isProjectListLoading = false;
+                    });
+            },
+            viewProject(project) {
+                console.log('【父组件】你点击了项目(旧方法)，ID为:', project.id);
+                this.currentProjectId = project.id;
+                this.changePanel('project-details-panel');
+            },
+            toggleRecordProjectMenu() { // 你这里有重复定义，我为你保留
+                this.showRecordProjectMenu = !this.showRecordProjectMenu;
+            },
+            viewProcessRecordForProject(project) { // 你这里有重复定义，我为你保留
+                console.log("【父组件】导航到 '过程记录' (旧方法), 项目ID:", project.id);
+                this.currentProjectId = project.id;
+                this.activePanel = 'process-record-panel';
+            },
+            onProjectCreated() {
+                console.log('【父组件】检测到新项目已创建，正在刷新项目列表...');
+                this.fetchProjectList();
+            },
+
+            // =======================================================
+            //  【新增】: 为新的“审查记录”菜单添加专属方法
+            // =======================================================
+
+            /**
+             * 切换“审查记录”下项目列表的展开/折叠
+             */
+            toggleRecordReviewMenu() {
+                this.showRecordReviewMenu = !this.showRecordReviewMenu;
+            },
+
+            /**
+
+             * 当用户在“审查记录”的子菜单中点击一个项目时调用
+             * @param {object} project - 被点击的项目对象
+             */
+            goToViewProcessRecords(project) {
+                console.log("【父组件】导航到 '过程记录表列表' (新方法), 项目ID:", project.id);
+                this.currentProjectId = project.id;
+                this.activePanel = 'process-record-list-panel'; // 切换到列表面板
+            }
+        },
+        
+        mounted() {
+            console.log("【父组件】Vue 实例已挂载。");
+            this.fetchProjectList();
+        }
+    });
+</script>
 </body>
 
 </html>

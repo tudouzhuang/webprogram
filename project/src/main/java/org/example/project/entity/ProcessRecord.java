@@ -25,10 +25,11 @@ public class ProcessRecord {
 
     // This is used to store JSON data in the database, which will be handled by MyBatis-Plus's JsonTypeHandler.
     private String specificationsJson; 
-
+    private String sourceFilePath; // 对应数据库的 source_file_path 列
     private String status;  // The status of the process record (e.g., "Pending", "Completed").
 
     private Long assigneeId;  // ID of the user assigned to this process.
+    
 }
 
 
