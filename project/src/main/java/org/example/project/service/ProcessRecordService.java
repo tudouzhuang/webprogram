@@ -21,8 +21,5 @@ public interface ProcessRecordService {
     void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException;
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     ProcessRecord getRecordById(Long recordId);
-    // 未来可以在这里添加其他方法，例如：
-    // void updateProcessRecord(...);
-    // ProcessRecord getProcessRecordById(Long recordId);
-    // List<ProcessRecord> getRecordsByProjectId(Long projectId);
+
 }

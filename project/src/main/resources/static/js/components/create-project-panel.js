@@ -1,8 +1,7 @@
 Vue.component('create-project-panel', {
     // 【模板】: 简化到极致，只剩下一个输入框和两个按钮
     template: `
-        <div class="main-panel">
-            <div class="content-wrapper">
+            <div class="content-wrapper" style="width:100%;height:100%">
                 <div class="card">
                     <div class="card-body">
                         <h4 class="card-title">新建项目</h4>
@@ -24,7 +23,6 @@ Vue.component('create-project-panel', {
                     </div>
                 </div>
             </div>
-        </div>
     `,
     
     // 【数据】: 只保留 projectNumber

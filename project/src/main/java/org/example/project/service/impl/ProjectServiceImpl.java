@@ -53,23 +53,35 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public Project createProject(ProjectCreateDTO createDTO) {
-        // 前端现在只传 projectName
+        // 前端传的是 projectName
         if (!StringUtils.hasText(createDTO.getProjectNumber())) {
             throw new IllegalArgumentException("项目名称不能为空！");
         }
 
-        // 检查项目名称唯一性 (假设项目名称即项目号)
+        // =======================================================
+        //  ↓↓↓ 【核心修正】在这里修改查询的列名 ↓↓↓
+        // =======================================================
         QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("project_name", createDTO.getProjectNumber());
+        
+        // 【修正前，错误的】:
+        // queryWrapper.eq("project_name", createDTO.getProjectName());
+        
+        // 【修正后，正确的】: 
+        // 使用数据库中真实存在的列 `project_number` 来进行唯一性检查。
+        queryWrapper.eq("project_number", createDTO.getProjectNumber()); 
+
         if (projectMapper.selectCount(queryWrapper) > 0) {
-            throw new RuntimeException("项目名称 '" + createDTO.getProjectNumber() + "' 已存在！");
+            // 提示信息也应该更准确
+            throw new RuntimeException("项目号 '" + createDTO.getProjectNumber() + "' 已存在！");
         }
 
         // 创建实体对象
         Project projectEntity = new Project();
-        projectEntity.setProjectNumber(createDTO.getProjectNumber());
-        // 在创建初期，项目号也使用项目名称
-        projectEntity.setProjectNumber(createDTO.getProjectNumber()); 
+        
+        // 【关键】确保为数据库中所有 NOT NULL 的列都提供了值
+        // 根据你的表结构，project_number 和 product_name 很可能都是 NOT NULL
+        projectEntity.setProjectNumber(createDTO.getProjectNumber()); // 用 projectName 填充 project_number
+        projectEntity.setProductName(createDTO.getProjectNumber()); // 同时也填充 product_name
         
         // 插入数据库
         projectMapper.insert(projectEntity);

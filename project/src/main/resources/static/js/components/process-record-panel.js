@@ -6,7 +6,7 @@ Vue.component('process-record-panel', {
         }
     },
     template: `
-            <div class="main-panel">
+            <div class="main-panel" style="width:100%;height:100%">
                 <div class="content-wrapper">
                     <div class="card">
                         <div class="card-body">
