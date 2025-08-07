@@ -3,16 +3,17 @@ package org.example.project.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data; // 确保已添加Lombok依赖
+import lombok.Data;
 
 import java.time.LocalDateTime;
 
 /**
  * 项目关联文件实体类
- * 对应数据库中的 `project_files` 表
+ * 对应数据库中的 `project_files` 表。
+ * 用于存储所有与项目或过程记录表相关联的文件信息。
  */
-@Data // Lombok注解，自动生成getters, setters, toString等方法
-@TableName("project_files") // 告诉MyBatis-Plus这个类对应哪张表
+@Data
+@TableName("project_files")
 public class ProjectFile {
 
     /**
@@ -22,25 +23,32 @@ public class ProjectFile {
     private Long id;
 
     /**
-     * 关联的项目ID，对应projects表的主键
+     * 关联的项目ID，对应 projects.id
      */
     private Long projectId;
 
     /**
-     * 文件名 (例如: Sheet1.png)
+     * 关联的过程记录表ID，对应 process_records.id
+     */
+    private Long recordId;
+
+    /**
+     * 文件在服务器上存储的名称 (例如: PLAN-document.xlsx)
      */
     private String fileName;
 
-
-    private String documentType; 
     /**
-     * 文件在服务器上的相对存储路径
-     * (例如: 123/images/Sheet1.png)
+     * 文件的业务类型 (例如: PLAN, CHECK_RECORD, REVIEW_SHEET, SOURCE)
+     */
+    private String documentType; 
+
+    /**
+     * 文件在服务器上的相对存储路径 (例如: 78/PLAN-document.xlsx)
      */
     private String filePath;
 
     /**
-     * 文件MIME类型 (例如: image/png)
+     * 文件的MIME类型 (例如: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
      */
     private String fileType;
 
@@ -48,14 +56,4 @@ public class ProjectFile {
      * 文件记录的创建时间
      */
     private LocalDateTime createdAt;
-
-    public void setDocumentType(String documentType) {
-        this.documentType = documentType;
-    }
-    public String getDocumentType() {
-        return this.documentType;
-    }
-
-    private Long recordId; // 新增字段
-
 }

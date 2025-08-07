@@ -35,12 +35,12 @@ public class SecurityConfig {
             // 【第一优先级】：白名单，放行所有公共资源和静态文件
             .antMatchers(
                     // 公共页面
-                    "/login", "/signup", "/reset", "/404",
+                    "/login", "/signup", "/reset", "/404", 
                     // 公共API
                     "/api/users/login", "/api/users/register",
                     // 所有静态资源 - 这是解决CSS问题的关键
                     "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**", 
-                    "/luckysheet/**", "/luckyexcel/**", "/favicon.ico","/material/**"
+                    "/luckysheet/**", "/luckyexcel/**", "/favicon.ico","/material/**","/templates/**"
             ).permitAll()
 
             // 【第二优先级】：黑名单，保护所有需要登录才能访问的资源

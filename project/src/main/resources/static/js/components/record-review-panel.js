@@ -1,21 +1,18 @@
 Vue.component('record-review-panel', {
-    // 【Props】: 同样接收 recordId
     props: {
         recordId: {
             type: [String, Number],
             required: true
         }
     },
-    // 【模板】: 核心修改在这里，使用了el-row和el-col来实现左右分栏布局
     template: `
-            <div class="content-wrapper" style="width:100%;height:100%">
+        <div class="main-panel">
+            <div class="content-wrapper">
                 
                 <!-- 1. 过程记录表主信息 (保持不变) -->
                 <div class="card mb-4">
                     <div class="card-body">
-                        <div v-if="isLoading" class="text-center p-3">
-                            <p>正在加载过程记录表信息...</p>
-                        </div>
+                        <div v-if="isLoading" class="text-center p-3"><p>正在加载...</p></div>
                         <div v-else-if="loadError" class="alert alert-danger">{{ loadError }}</div>
                         <div v-else-if="recordInfo">
                             <el-descriptions title="过程记录表详情" :column="2" border>
@@ -28,70 +25,45 @@ Vue.component('record-review-panel', {
                     </div>
                 </div>
 
-                <!-- 2. 【核心布局修改】使用 el-row 和 el-col 将预览和审核表单左右并排显示 -->
                 <el-row :gutter="20">
-                    <!-- 2a. 左侧：Luckysheet 预览区域 -->
+                    <!-- 左侧：Luckysheet 只读预览区域 (保持不变) -->
                     <el-col :span="16">
                         <div class="card">
-                            <div class="card-body">
-                                <h4 class="card-title mb-0">文件预览</h4>
+                             <div class="card-body">
+                                <h4 class="card-title mb-0">文件预览 (只读)</h4>
                                 <hr>
-                                <div v-if="!recordInfo || !recordInfo.sourceFilePath" class="text-muted p-5 text-center">
-                                    此记录表没有关联可供预览的Excel文件。
-                                </div>
+                                <div v-if="!recordInfo || !recordInfo.sourceFilePath" class="text-muted p-5 text-center">此记录没有关联可预览的Excel文件。</div>
                                 <div v-else>
-                                    <div v-if="isLoadingSheet" class="text-center p-5">
-                                        <p>正在加载和转换预览文件...</p>
-                                    </div>
+                                    <div v-if="isLoadingSheet" class="text-center p-5"><p>正在加载预览文件...</p></div>
                                     <div id="luckysheet-review-container" v-show="!isLoadingSheet" style="width: 100%; height: 80vh;"></div>
-                                    <div v-if="loadSheetError" class="alert alert-warning mt-3">
-                                        <strong>预览失败：</strong> {{ loadSheetError }}
-                                    </div>
+                                    <div v-if="loadSheetError" class="alert alert-warning mt-3"><strong>预览失败：</strong> {{ loadSheetError }}</div>
                                 </div>
                             </div>
                         </div>
                     </el-col>
 
-                    <!-- 2b. 右侧：审核表单区域 -->
+                    <!-- 右侧：【核心】可编辑的在线审核模板区域 -->
                     <el-col :span="8">
                         <div class="card">
                             <div class="card-body">
-                                <h4 class="card-title">审核操作</h4>
-                                <p class="card-description">请根据左侧预览内容进行审核。</p>
+                                <h4 class="card-title">在线审核与批注 (可编辑)</h4>
+                                <p class="card-description">可直接在下方表格中填写，完成后点击保存。</p>
                                 
-                                <el-form ref="reviewForm" :model="reviewForm" label-position="top">
-                                    <el-form-item label="审核结果" prop="status">
-                                        <el-radio-group v-model="reviewForm.status">
-                                            <el-radio label="APPROVED">审核通过</el-radio>
-                                            <el-radio label="REJECTED">驳回</el-radio>
-                                        </el-radio-group>
-                                    </el-form-item>
-
-                                    <el-form-item label="审核意见" prop="comments">
-                                        <el-input 
-                                            type="textarea" 
-                                            :rows="10" 
-                                            placeholder="请输入详细的审核意见，如果驳回，请说明原因。" 
-                                            v-model="reviewForm.comments">
-                                        </el-input>
-                                    </el-form-item>
-
-                                    <!-- 更多审核项，例如： -->
-                                    <el-form-item label="风险等级评估">
-                                        <el-rate v-model="reviewForm.riskLevel" :colors="['#99A9BF', '#F7BA2A', '#FF9900']"></el-rate>
-                                    </el-form-item>
-                                    
-                                    <el-form-item>
-                                        <el-button type="primary" @click="submitReview" :loading="isSubmitting">提交审核</el-button>
-                                        <el-button @click="resetReviewForm">重置</el-button>
-                                    </el-form-item>
-                                </el-form>
+                                <div v-if="isLoadingReviewSheet" class="text-center p-5"><p>正在加载审核模板...</p></div>
+                                <div id="luckysheet-review-form-container" v-show="!isLoadingReviewSheet" style="width: 100%; height: 70vh;"></div>
+                                
+                                <div class="mt-3 text-center">
+                                    <el-button type="primary" @click="saveReviewSheet" :loading="isSavingSheet">
+                                        <i class="el-icon-document-checked"></i> 保存审核结果
+                                    </el-button>
+                                </div>
                             </div>
                         </div>
                     </el-col>
                 </el-row>
 
             </div>
+        </div>
     `,
     
     data() {
@@ -99,17 +71,12 @@ Vue.component('record-review-panel', {
             isLoading: true,
             recordInfo: null,
             loadError: null,
-            
             isLoadingSheet: false,
             loadSheetError: null,
             
-            isSubmitting: false,
-            // 审核表单的数据模型
-            reviewForm: {
-                status: 'APPROVED', // 默认选中“通过”
-                comments: '',
-                riskLevel: 0
-            }
+            isLoadingReviewSheet: false,
+            isSavingSheet: false,
+            reviewTemplateUrl: '/templates/review_template.xlsx'
         }
     },
 
@@ -117,96 +84,126 @@ Vue.component('record-review-panel', {
         // --- 核心数据获取方法 (保持不变) ---
         fetchRecordData() {
             if (!this.recordId) return;
-            this.isLoading = true;
-            this.loadError = null;
-            
+            this.isLoading = true; this.loadError = null;
             axios.get(`/api/process-records/${this.recordId}`)
                 .then(response => {
                     this.recordInfo = response.data;
-                    // 【联动】获取到数据后，如果有关联文件，则自动加载预览
                     if (this.recordInfo && this.recordInfo.sourceFilePath) {
                         this.$nextTick(() => {
                             const fileUrl = '/uploads/' + this.recordInfo.sourceFilePath;
-                            this.renderSheetFromUrl(fileUrl);
+                            this.renderSheetFromUrl(fileUrl, 'luckysheet-review-container', false); // 只读
                         });
                     }
                 })
-                .catch(error => { /* ... 错误处理 ... */ })
+                .catch(error => { this.loadError = "加载过程记录表信息失败"; })
                 .finally(() => { this.isLoading = false; });
         },
 
-        // --- Luckysheet 渲染逻辑 (保持不变) ---
-        renderSheetFromUrl(fileUrl) {
-            this.isLoadingSheet = true;
-            this.loadSheetError = null;
-            if (!window.LuckyExcel || !window.luckysheet) { /* ... */ return; }
+        // --- Luckysheet 渲染逻辑 (被重构为通用方法) ---
+        renderSheetFromUrl(fileUrl, containerId, allowUpdate) {
+            const loadingFlag = containerId === 'luckysheet-review-container' ? 'isLoadingSheet' : 'isLoadingReviewSheet';
+            const errorFlag = containerId === 'luckysheet-review-container' ? 'loadSheetError' : 'loadReviewSheetError'; // 可以为审核模板也添加一个错误状态
+            
+            this[loadingFlag] = true;
+            this[errorFlag] = null;
+
+            if (!window.LuckyExcel || !window.luckysheet) {
+                this[errorFlag] = "Luckysheet核心库未能加载。";
+                this[loadingFlag] = false;
+                return;
+            }
 
             axios.get(fileUrl, { responseType: 'blob' })
                 .then(response => {
                     window.LuckyExcel.transformExcelToLucky(response.data,
                         (exportJson) => {
-                            this.isLoadingSheet = false;
+                            this[loadingFlag] = false;
                             if (!exportJson.sheets || exportJson.sheets.length === 0) {
-                                this.loadSheetError = "文件内容为空。";
+                                this[errorFlag] = "文件内容为空或无法解析。";
                                 return;
                             }
-                            if (window.luckysheet) window.luckysheet.destroy();
-                            
+                            // 为了管理多实例，我们在创建前不调用destroy
                             window.luckysheet.create({
-                                container: 'luckysheet-review-container', // 注意ID已更改
+                                container: containerId,
                                 data: exportJson.sheets, title: exportJson.info.name, lang: 'zh',
-                                showtoolbar: false, showinfobar: false, showsheetbar: true,
-                                showstatisticBar: false, sheetFormulaBar: false, allowUpdate: false
+                                showtoolbar: allowUpdate, // 根据参数决定是否显示工具栏
+                                showinfobar: false, showsheetbar: true,
+                                showstatisticBar: false, sheetFormulaBar: false, 
+                                allowUpdate: allowUpdate // 根据参数决定是否可编辑
                             });
                         },
-                        (error) => { /* ... 错误处理 ... */ }
+                        (error) => {
+                            this[loadingFlag] = false;
+                            this[errorFlag] = "LuckyExcel转换文件时出错。";
+                        }
                     );
-                }).catch(error => { /* ... 错误处理 ... */ });
+                }).catch(error => {
+                    this[loadingFlag] = false;
+                    this[errorFlag] = "从服务器获取文件失败。";
+                });
+        },
+        
+        // --- 【新】加载并渲染右侧可编辑的审核模板 ---
+        loadReviewTemplate() {
+            this.renderSheetFromUrl(this.reviewTemplateUrl, 'luckysheet-review-form-container', true); // 可编辑
         },
 
-        // --- 新增的审核表单方法 ---
-        submitReview() {
-            this.$refs.reviewForm.validate((valid) => {
-                if (valid) {
-                    this.isSubmitting = true;
-                    console.log("准备提交审核数据:", this.reviewForm);
+        // --- 【新】保存可编辑审核结果的方法 ---
+        saveReviewSheet() {
+            if (this.isSavingSheet) return;
+            this.isSavingSheet = true;
 
-                    // 【后端API】调用后端的审核接口
-                    axios.post(`/api/process-records/${this.recordId}/review`, this.reviewForm)
-                        .then(response => {
-                            this.$message.success("审核意见提交成功！");
-                            // 审核成功后，可以触发事件通知父组件刷新列表
-                            this.$emit('record-reviewed', response.data);
+            // 【关键】获取指定容器的Luckysheet实例数据
+            // Luckysheet的API本身不直接支持多实例，这是一个变通方法
+            // 我们假设最后创建的实例是我们要操作的
+            const allSheetsData = window.luckysheet.getAllSheets();
+
+            window.LuckyExcel.transformLuckyToExcel(
+                allSheetsData,
+                (exportBlob) => {
+                    const formData = new FormData();
+                    // 构造一个有意义的文件名
+                    const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
+                    formData.append('file', exportBlob, reviewFileName);
+                    
+                    const documentType = 'REVIEW_SHEET';
+                    // 【重要】文件应该关联到项目ID，而不是记录ID
+                    const apiUrl = `/api/projects/${this.recordInfo.projectId}/files/${documentType}`;
+
+                    axios.post(apiUrl, formData)
+                        .then((response) => {
+                            this.$message.success("在线审核表格已成功保存！");
+                            // 可选：更新文件列表，将新保存的审核文件显示出来
+                            this.$emit('file-list-updated', response.data);
                         })
                         .catch(error => {
-                            this.$message.error((error.response && error.response.data) || "提交失败");
+                            this.$message.error("保存在线审核表格失败！");
                         })
                         .finally(() => {
-                            this.isSubmitting = false;
+                            this.isSavingSheet = false;
                         });
+                },
+                (error) => {
+                    this.isSavingSheet = false;
+                    this.$message.error("导出审核表格时出错！");
                 }
-            });
-        },
-        resetReviewForm() {
-            this.$refs.reviewForm.resetFields();
-            // 手动重置非表单项的数据
-            this.reviewForm.status = 'APPROVED';
-            this.reviewForm.riskLevel = 0;
+            );
         }
     },
 
     watch: {
-        // 监听 recordId 变化 (保持不变)
         recordId: {
             immediate: true,
             handler(newId) {
                 if (newId) {
                     this.fetchRecordData();
+                    this.loadReviewTemplate();
                 }
             }
         }
     },
     beforeDestroy() {
+        // Luckysheet 的 destroy API 会销毁页面上所有实例
         if (window.luckysheet) {
             window.luckysheet.destroy();
         }
