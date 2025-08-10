@@ -7,6 +7,8 @@
     <title>江福模具 </title>
     <script src="material/vue.js"></script>
     <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
     <link rel="stylesheet" href="main/vendors/feather/feather.css">
     <link rel="stylesheet" href="main/vendors/mdi/css/materialdesignicons.min.css">
     <link rel="stylesheet" href="main/vendors/ti-icons/css/themify-icons.css">
@@ -17,7 +19,6 @@
     <link rel="stylesheet" href="main/js/select.dataTables.min.css">
     <link rel="stylesheet" href="main/css/vertical-layout-light/style.css">
     <link rel="shortcut icon" href="main/images/favicon.png" />
-    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
     <link rel='stylesheet' href='/luckysheet/plugins/css/pluginsCss.css' />
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
     <link rel='stylesheet' href='/luckysheet/assets/iconfont/iconfont.css' />
@@ -760,6 +761,8 @@
     <script src="/luckysheet/luckysheet.umd.js"></script>
     <script src="/luckysheet/luckyexcel.umd.js"></script>
 
+<!-- 在引入 luckysheet 和 luckyexcel 之后，引入 SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
     <!-- 4. 自定义的Vue组件 -->
     <!-- 4.1 页面主要面板组件 -->

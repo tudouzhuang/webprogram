@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Luckysheet Iframe Loader</title>
+    <!-- 引入所有必要的本地CSS -->
+    <link rel='stylesheet' href='/luckysheet/plugins/css/pluginsCss.css' />
+    <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
+    <style>
+        /* 确保Luckysheet占满整个iframe */
+        body, html { margin: 0; padding: 0; overflow: hidden; }
+        #luckysheet-container { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="luckysheet-container"></div>
+
+    <!-- 引入所有必要的本地JS -->
+    <script src="/luckysheet/plugins/js/plugin.js"></script>
+    <script src="/luckysheet/luckysheet.umd.js"></script>
+    <script src="/luckysheet/luckyexcel.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script> <!-- iframe内部也需要axios -->
+
+    <script>
+        // 这个脚本将监听来自父窗口的消息
+        window.addEventListener('message', function(event) {
+            // 安全性检查：可以检查 event.origin 是否是你期望的来源
+            
+            const { type, payload } = event.data;
+
+            if (type === 'LOAD_SHEET') {
+                const { fileUrl, options } = payload;
+                console.log(`[Iframe] 收到加载指令，URL: ${fileUrl}`);
+                
+                // 销毁旧实例
+                if (window.luckysheet) {
+                    luckysheet.destroy();
+                }
+
+                axios.get(fileUrl, { responseType: 'blob' })
+                    .then(response => {
+                        LuckyExcel.transformExcelToLucky(response.data, (exportJson) => {
+                            if (!exportJson.sheets || exportJson.sheets.length === 0) {
+                                document.body.innerHTML = '文件内容为空或无法解析。';
+                                return;
+                            }
+                            // 使用父窗口传递过来的配置创建实例
+                            luckysheet.create({
+                                container: 'luckysheet-container',
+                                ...options, // 将父窗口的配置展开
+                                data: exportJson.sheets,
+                                title: exportJson.info.name
+                            });
+                        });
+                    }).catch(error => {
+                        document.body.innerHTML = '加载文件失败。';
+                    });
+            } else if (type === 'GET_DATA') {
+                // 当父窗口需要数据时，我们导出并发送回去
+                const allSheetsData = luckysheet.getAllSheets();
+                // 将数据发送回父窗口
+                event.source.postMessage({ type: 'SHEET_DATA_RESPONSE', payload: allSheetsData }, event.origin);
+            }
+        });
+    </script>
+</body>
+</html>

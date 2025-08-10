@@ -3,9 +3,10 @@ package org.example.project.controller;
 // --- 基础 Spring 依赖 ---
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource; // 【新增】: 导入 ClassPathResource
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource; // 【修改】: 引入 UrlResource
-import org.springframework.http.HttpHeaders;   // 【新增】: 引入 HttpHeaders
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +44,42 @@ public class FileController {
 
     @Value("${file.upload-dir}")
     private String uploadDir;
+
+    // =======================================================
+    //  ↓↓↓ 【新增功能】: 提供审核模板文件的API ↓↓↓
+    // =======================================================
+    /**
+     * 【API - 获取模板】
+     * 提供固定的审核表单模板文件下载。
+     * @return 审核模板的Excel文件流
+     */
+    @GetMapping("/templates/review-sheet")
+    public ResponseEntity<Resource> getReviewTemplate() {
+        log.info("【Controller】接收到获取审核模板文件的请求...");
+        try {
+            // ClassPathResource 从 /src/main/resources/ 目录开始查找
+            Resource resource = new ClassPathResource("static/templates/review_template.xlsx");
+
+            if (resource.exists() && resource.isReadable()) {
+                log.info("【Controller】成功找到并准备返回审核模板文件: {}", resource.getFilename());
+                return ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
+                        .body(resource);
+            } else {
+                log.warn("【Controller】审核模板文件未找到！请检查路径: src/main/resources/static/templates/review_template.xlsx");
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            log.error("【Controller】获取审核模板文件时发生严重错误", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+
+    // =======================================================
+    //  ↓↓↓ 【已有功能】: 你的原有代码，保持不变 ↓↓↓
+    // =======================================================
 
     @GetMapping("/content/{fileId}")
     public ResponseEntity<Resource> getFileStreamById(@PathVariable Long fileId) {
@@ -116,7 +153,8 @@ public class FileController {
         
         return "application/octet-stream";
     }
-        @DeleteMapping("/{fileId}")
+
+    @DeleteMapping("/{fileId}")
     public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
         log.info("接收到删除文件的请求，文件ID: {}", fileId);
         try {
@@ -152,6 +190,4 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除文件时发生服务器内部错误。");
         }
     }
-
-    
 }
