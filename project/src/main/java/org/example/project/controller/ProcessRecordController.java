@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 /**
  * 【专用控制器】: 负责处理所有与“设计过程记录表”相关的API请求。
@@ -99,6 +100,26 @@ public class ProcessRecordController {
         } catch (Exception e) {
             log.error("获取过程记录表 {} 的文件列表失败", recordId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("获取文件列表失败");
+        }
+    }
+
+       /**
+     * 【新增API】：查询指定过程记录的审核表文件信息。
+     * @param recordId 过程记录的ID
+     * @return 如果审核表存在，返回文件信息；如果不存在，返回404 Not Found。
+     */
+    @GetMapping("/{recordId}/review-sheet-info")
+    public ResponseEntity<ProjectFile> getReviewSheetInfo(@PathVariable Long recordId) {
+        try {
+            // Service层会处理查找逻辑
+            ProjectFile reviewSheet = processRecordService.findReviewSheetByRecordId(recordId);
+            return ResponseEntity.ok(reviewSheet);
+        } catch (NoSuchElementException e) {
+            // Service层在找不到时会抛出此异常
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("查询审核表信息时出错, recordId: {}", recordId, e);
+            return ResponseEntity.status(500).build();
         }
     }
 }

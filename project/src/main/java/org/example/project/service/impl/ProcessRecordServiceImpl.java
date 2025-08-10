@@ -36,6 +36,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 /**
@@ -277,5 +278,22 @@ public class ProcessRecordServiceImpl implements ProcessRecordService {
             throw new java.util.NoSuchElementException("找不到ID为 " + recordId + " 的过程记录表");
         }
         return record;
+    }
+
+    @Override
+    public ProjectFile findReviewSheetByRecordId(Long recordId) {
+        QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+        queryWrapper
+            .eq("record_id", recordId)
+            .eq("document_type", "REVIEW_SHEET") // 精确查找审核表类型
+            .last("LIMIT 1"); // 确保只返回一个（最新的）
+
+        ProjectFile reviewSheet = projectFileMapper.selectOne(queryWrapper);
+
+        if (reviewSheet == null) {
+            // 抛出异常，让Controller层能捕获并返回404
+            throw new NoSuchElementException("未找到ID为 " + recordId + " 的过程记录所对应的审核表。");
+        }
+        return reviewSheet;
     }
 }

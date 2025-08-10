@@ -1,6 +1,7 @@
 package org.example.project.service;
 
 import org.example.project.entity.ProcessRecord;
+import org.example.project.entity.ProjectFile;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
@@ -21,5 +22,5 @@ public interface ProcessRecordService {
     void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException;
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     ProcessRecord getRecordById(Long recordId);
-
+    ProjectFile findReviewSheetByRecordId(Long recordId);
 }
