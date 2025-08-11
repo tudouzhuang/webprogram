@@ -32,31 +32,47 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
         .authorizeRequests(authorize -> authorize
-            // 【第一优先级】：白名单，放行所有公共资源和静态文件 (保持不变)
+            // =======================================================
+            //  【白名单】：所有允许匿名访问的路径都放在这里
+            // =======================================================
             .antMatchers(
-                    "/login", "/signup", "/reset", "/404", 
-                    "/api/users/login", "/api/users/register",
-                    "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**", 
-                    "/luckysheet/**", "/luckyexcel/**", "/favicon.ico", "/material/**",
-                    // 【重要】确保你的iframe加载器HTML也被放行
-                    "/luckysheet-iframe-loader.html", 
-                    // 【重要】确保模板文件API被放行（如果模板对未登录用户也可见）
-                    "/templates/**" 
-            ).permitAll()
-
-            // 【第二优先级】：黑名单，保护所有需要登录才能访问的资源 (保持不变)
-            .antMatchers(
-                    "/", 
-                    "/index",
-                    "/api/projects/**",
-                    "/api/files/**"
-            ).authenticated()
-
-            // 【最低优先级】：其他任何未匹配的请求，也需要登录 (保持不变)
-            .anyRequest().authenticated()
+                    // 1. 核心公共页面和API
+                    "/login", 
+                    "/signup", 
+                    "/reset", 
+                    "/404",
+                    "/api/users/login", 
+                    "/api/users/register",
+                    
+                    // 2. 网站基础静态资源
+                    "/static/**", 
+                    "/assets/**", 
+                    "/main/**", 
+                    "/js/**", 
+                    "/css/**", 
+                    "/luckysheet/**", 
+                    "/luckyexcel/**", 
+                    "/favicon.ico", 
+                    "/material/**",
+                    "/pdfjs/**", // 如果你还用pdf.js的话
+                    "/luckysheet-iframe-loader.html", // iframe加载器
+                    
+                    // 3. 【核心修正】所有上传的文件和模板，需要公开给iframe访问
+                    "/uploads/**",
+                    "/templates/**",
+                    
+                    // 【重要】如果你有专门的文件下载API，也需要放行
+                    "/api/files/content/**",
+                    "/api/files/templates/**"
+                    
+            ).permitAll() // <-- 告诉Spring，以上所有路径都无需登录
+        
+            // =======================================================
+            //  【黑名单】：除了上面白名单里的，其他所有请求都需要登录
+            // =======================================================
+            .anyRequest().authenticated() // <-- 这一行就足够了，它会处理所有未被上面permitAll()匹配到的请求
         )
-
-        // 【第三步：配置表单登录】(保持不变)
+        // 【配置表单登录】(保持不变)
         .formLogin(form -> form
             .loginPage("/login")
             .loginProcessingUrl("/api/users/login")
@@ -79,7 +95,7 @@ public class SecurityConfig {
             })
         )
 
-        // 【第四步：配置登出】(保持不变)
+        // 【配置登出】(保持不变)
         .logout(logout -> logout
             .logoutUrl("/api/users/logout")
             .logoutSuccessHandler((request, response, authentication) -> {
@@ -95,15 +111,15 @@ public class SecurityConfig {
         )
         
         // =======================================================
-        //  ↓↓↓ 【核心修正】在这里添加解决 iframe 问题的 headers 配置 ↓↓↓
+        //  ↓↓↓ 【新增配置】解决 Iframe 嵌套显示问题 ↓↓↓
         // =======================================================
         .headers(headers -> headers
             .frameOptions(frameOptions -> frameOptions
-                .sameOrigin() // 允许来自同源的页面嵌套在iframe中
+                .sameOrigin() // 允许来自同源(same-origin)的页面将本站页面嵌套在 <frame> 或 <iframe> 中
             )
         )
 
-        // 【第五步：关闭CSRF保护】(保持不变)
+        // 【关闭CSRF保护】(保持不变)
         .csrf(csrf -> csrf.disable());
 
         return http.build();
