@@ -8,7 +8,8 @@ Vue.component('record-review-panel', {
     },
     // 【模板】: 完整模板，包含iframe和按钮
     template: `
-            <div class="content-wrapper" style="width:100%;height:100%">
+        <div class="main-panel">
+            <div class="content-wrapper">
                 
                 <!-- 1. 过程记录表主信息 -->
                 <div class="card mb-4">
@@ -62,6 +63,7 @@ Vue.component('record-review-panel', {
                 </el-row>
 
             </div>
+        </div>
     `,
     
     data() {
@@ -70,14 +72,15 @@ Vue.component('record-review-panel', {
             recordInfo: null,
             loadError: null,
             isSavingSheet: false,
-            reviewTemplateUrl: '/templates/review_template.xlsx',
+            reviewTemplateUrl: '/api/files/templates/review-sheet',
             previewIframeLoaded: false,
             reviewIframeLoaded: false,
+            reviewSheetUrl: ''
         }
     },
 
     methods: {
-        // --- 核心数据获取方法 ---
+        // --- 核心数据获取方法 (保持不变) ---
         fetchRecordData() {
             if (!this.recordId) return;
             this.isLoading = true;
@@ -88,50 +91,71 @@ Vue.component('record-review-panel', {
                     this.recordInfo = response.data;
                     console.log('✅ 【ReviewPanel】获取到记录信息:', this.recordInfo);
 
-                    // 如果预览iframe已经加载好了，就立即发送加载指令
                     if (this.previewIframeLoaded && this.recordInfo.sourceFilePath) {
-                        this.sendMessageToIframe(this.$refs.previewIframe, {
-                            type: 'LOAD_SHEET',
-                            payload: {
-                                fileUrl: '/uploads/' + this.recordInfo.sourceFilePath,
-                                options: { lang: 'zh', showtoolbar: false, showinfobar: false, allowUpdate: false, showsheetbar: true }
-                            }
-                        });
+                        this.loadPreviewSheet();
                     }
+                    this.determineReviewSheetUrl();
                 })
                 .catch(error => {
                     this.loadError = "加载过程记录表信息失败，请刷新重试。";
                     this.$message.error("加载数据失败！");
-                    console.error("❌ 【ReviewPanel】获取过程记录表信息失败:", error);
                 })
                 .finally(() => {
                     this.isLoading = false;
                 });
         },
         
-        // --- Iframe加载完成后的回调函数 ---
+        // --- 决定加载模板还是已保存的审核表 (保持不变) ---
+        determineReviewSheetUrl() {
+            axios.get(`/api/process-records/${this.recordId}/review-sheet-info`)
+                .then(response => {
+                    const savedReviewSheet = response.data;
+                    this.reviewSheetUrl = `/api/files/content/${savedReviewSheet.id}`;
+                    if (this.reviewIframeLoaded) this.loadReviewSheet();
+                })
+                .catch(error => {
+                    if (error.response && error.response.status === 404) {
+                        this.reviewSheetUrl = this.reviewTemplateUrl;
+                        if (this.reviewIframeLoaded) this.loadReviewSheet();
+                    } else {
+                        this.loadError = "查询历史审核表失败！";
+                    }
+                });
+        },
+        
+        // --- Iframe加载完成后的回调 (保持不变) ---
         onPreviewIframeLoad() {
             console.log("【ReviewPanel】左侧预览iframe已加载完成。");
             this.previewIframeLoaded = true;
-            // 如果主数据已经先获取到了，就立即发送消息
             if (this.recordInfo && this.recordInfo.sourceFilePath) {
-                this.sendMessageToIframe(this.$refs.previewIframe, {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: '/uploads/' + this.recordInfo.sourceFilePath,
-                        options: { lang: 'zh', showtoolbar: false, showinfobar: false, allowUpdate: false, showsheetbar: true }
-                    }
-                });
+                this.loadPreviewSheet();
             }
         },
         onReviewIframeLoad() {
             console.log("【ReviewPanel】右侧审核iframe已加载完成。");
             this.reviewIframeLoaded = true;
-            // 立即发送加载模板的指令
+            if (this.reviewSheetUrl) {
+                this.loadReviewSheet();
+            }
+        },
+
+        // --- 向Iframe发送加载指令 ---
+        loadPreviewSheet() {
+            this.sendMessageToIframe(this.$refs.previewIframe, {
+                type: 'LOAD_SHEET',
+                payload: {
+                    // 【修正】: 不再需要 instanceId
+                    fileUrl: '/uploads/' + this.recordInfo.sourceFilePath,
+                    options: { lang: 'zh', showtoolbar: false, showinfobar: false, allowUpdate: false, showsheetbar: true }
+                }
+            });
+        },
+        loadReviewSheet() {
             this.sendMessageToIframe(this.$refs.reviewIframe, {
                 type: 'LOAD_SHEET',
                 payload: {
-                    fileUrl: this.reviewTemplateUrl,
+                    // 【修正】: 不再需要 instanceId
+                    fileUrl: this.reviewSheetUrl,
                     options: { lang: 'zh', allowUpdate: true, showtoolbar: true, showsheetbar: true }
                 }
             });
@@ -139,65 +163,55 @@ Vue.component('record-review-panel', {
         
         // --- 保存逻辑 ---
         saveReviewSheet() {
-            if (this.isSavingSheet) return;
-            if (!this.reviewIframeLoaded) {
-                 this.$message.warning("请等待审核模板加载完成。");
-                 return;
-            }
+            if (this.isSavingSheet || !this.reviewIframeLoaded) return;
             this.isSavingSheet = true;
             console.log("【ReviewPanel】请求右侧iframe返回数据...");
+            // 【修正】: 不再需要 payload.instanceId
             this.sendMessageToIframe(this.$refs.reviewIframe, { type: 'GET_DATA' });
         },
         
-        // --- 辅助方法 ---
+        // --- 消息处理与辅助方法 ---
         sendMessageToIframe(iframe, message) {
             if (iframe && iframe.contentWindow) {
                  iframe.contentWindow.postMessage(message, window.location.origin);
             } else {
-                console.error("【ReviewPanel】尝试向iframe发送消息失败，iframe不存在或contentWindow未准备好。");
+                console.error("【ReviewPanel】尝试向iframe发送消息失败，iframe未准备好。");
             }
         },
-
-        // --- 消息监听器 ---
         messageEventListener(event) {
-            if (event.origin !== window.location.origin) return; // 安全检查
-            const { type, payload } = event.data;
+            if (event.origin !== window.location.origin) return;
+            const { type, payload } = event.data; // 【修正】: 移除了 instanceId
             
+            // 【修正】: 不再需要 instanceId 检查，我们通过事件监听器的上下文来判断
+            // 这个监听器是属于 record-review-panel 的，我们假设 GET_DATA 只从审核iframe触发
             if (type === 'SHEET_DATA_RESPONSE') {
-                console.log("【ReviewPanel】收到来自iframe的Luckysheet数据，准备使用SheetJS导出...");
+                console.log("【ReviewPanel】收到来自iframe的Luckysheet数据，准备导出...");
                 
-                // 确保 SheetJS 库 (xlsx) 已经通过 <script> 标签加载到全局
                 if (typeof XLSX === 'undefined') {
-                    console.error("【ReviewPanel】SheetJS (xlsx) 库未找到！请在 index.html 中引入。");
-                    this.$message.error("导出功能核心库缺失！");
+                    this.$message.error("导出功能核心库(SheetJS)缺失！");
                     this.isSavingSheet = false;
                     return;
                 }
                 
                 try {
-                    // 1. 将Luckysheet的JSON数据格式转换为SheetJS需要的数据格式
                     const sheetJSData = this.convertLuckyToSheetJS(payload);
-                    // 2. 使用SheetJS创建工作簿
                     const workbook = XLSX.utils.book_new();
                     Object.keys(sheetJSData).forEach(sheetName => {
                         XLSX.utils.book_append_sheet(workbook, sheetJSData[sheetName], sheetName);
                     });
-                    // 3. 将工作簿写入Blob
                     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
                     const exportBlob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-                    // 4. 上传Blob
                     const formData = new FormData();
                     const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
                     formData.append('file', exportBlob, reviewFileName);
                     
-                    // 【重要】后端API修改为保存审核表
                     const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
 
                     axios.post(apiUrl, formData)
                         .then((response) => {
                             this.$message.success("在线审核表格已成功保存！");
-                            this.$emit('record-reviewed', response.data); // 触发事件通知父组件
+                            this.$emit('record-reviewed', response.data);
                         })
                         .catch(error => {
                             const errorMessage = (error.response && error.response.data) || "保存在线审核表格失败！";
@@ -214,11 +228,8 @@ Vue.component('record-review-panel', {
                 }
             } else if (type === 'SHEET_LOAD_ERROR') {
                 console.error("【ReviewPanel】Iframe内部加载Sheet时出错:", payload.error);
-                // 可以在这里更新UI，显示错误信息
             }
         },
-        
-        // ---【新增】将Luckysheet数据格式转换为SheetJS数据格式的辅助函数 ---
         convertLuckyToSheetJS(luckySheets) {
             const sheetJSData = {};
             if (!luckySheets || !Array.isArray(luckySheets)) return sheetJSData;
@@ -234,8 +245,7 @@ Vue.component('record-review-panel', {
                         if (cell.c > maxCol) maxCol = cell.c;
 
                         if (!cellMap[cell.r]) cellMap[cell.r] = {};
-                        // 使用 .m (原始值) 或 .v (显示值)
-                        cellMap[cell.r][cell.c] = cell.v ? cell.v.m || cell.v.v : '';
+                        cellMap[cell.r][cell.c] = cell.v ? (cell.v.m !== undefined ? cell.v.m : cell.v.v) : '';
                     });
                     
                     for (let r = 0; r <= maxRow; r++) {
@@ -247,7 +257,6 @@ Vue.component('record-review-panel', {
                     }
                 }
                 sheetJSData[sheet.name] = XLSX.utils.aoa_to_sheet(sheetData);
-                // TODO: 在这里可以添加对合并单元格、样式等的转换
             });
             return sheetJSData;
         }
@@ -256,19 +265,16 @@ Vue.component('record-review-panel', {
     // --- 生命周期钩子 ---
     mounted() {
         console.log("【ReviewPanel】组件已挂载, recordId:", this.recordId);
-        // 在组件挂载时，开始监听来自iframe的消息
         window.addEventListener('message', this.messageEventListener);
     },
     beforeDestroy() {
         console.log("【ReviewPanel】组件将被销毁，移除消息监听器...");
-        // 在组件销毁前，必须移除事件监听器，防止内存泄漏
         window.removeEventListener('message', this.messageEventListener);
     },
     watch: {
         recordId: {
             immediate: true,
-            handler(newId, oldId) {
-                console.log(`【ReviewPanel】检测到 recordId 从 ${oldId} 变为 ${newId}`);
+            handler(newId) {
                 if (newId) {
                     this.fetchRecordData();
                 }

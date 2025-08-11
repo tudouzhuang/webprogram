@@ -282,18 +282,104 @@ public class ProcessRecordServiceImpl implements ProcessRecordService {
 
     @Override
     public ProjectFile findReviewSheetByRecordId(Long recordId) {
+        log.info("【SERVICE】正在查询 recordId {} 对应的审核表...", recordId);
+        
+        // 1. 创建查询条件
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+
+        // 2. 设置精确的查询条件
         queryWrapper
+            // 条件一: 记录ID必须匹配
             .eq("record_id", recordId)
-            .eq("document_type", "REVIEW_SHEET") // 精确查找审核表类型
-            .last("LIMIT 1"); // 确保只返回一个（最新的）
+            // 条件二: 文件类型必须是 'REVIEW_SHEET'
+            .eq("document_type", "REVIEW_SHEET");
 
-        ProjectFile reviewSheet = projectFileMapper.selectOne(queryWrapper);
+        // 3. 按ID降序排序，以确保我们总是获取到最新提交的那一份审核表
+        queryWrapper.orderByDesc("id");
+        
+        // 4. 使用 selectList 并取第一个，这比 selectOne 更能避免因意外查出多条记录而报错
+        List<ProjectFile> reviewSheets = projectFileMapper.selectList(queryWrapper);
 
-        if (reviewSheet == null) {
-            // 抛出异常，让Controller层能捕获并返回404
+        // 5. 判断结果
+        if (reviewSheets == null || reviewSheets.isEmpty()) {
+            // 如果列表为空，说明没找到，抛出异常，Controller会将其转换为404
+            log.warn("【SERVICE】未找到 recordId {} 对应的审核表。", recordId);
             throw new NoSuchElementException("未找到ID为 " + recordId + " 的过程记录所对应的审核表。");
         }
-        return reviewSheet;
+        
+        // 返回列表中的第一个（也就是最新的那一个）
+        ProjectFile latestReviewSheet = reviewSheets.get(0);
+        log.info("【SERVICE】已成功找到 recordId {} 对应的审核表，文件ID为: {}", recordId, latestReviewSheet.getId());
+        return latestReviewSheet;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException {
+        
+        // --- 步骤 1: 验证过程记录是否存在 (不变) ---
+        ProcessRecord record = processRecordMapper.selectById(recordId);
+        if (record == null) {
+            throw new NoSuchElementException("找不到ID为 " + recordId + " 的过程记录，无法保存审核表。");
+        }
+
+        // --- 步骤 2: 查找是否已存在同类型的审核表记录 ---
+        QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("record_id", recordId).eq("document_type", "REVIEW_SHEET");
+        // 【重要】改用selectList，避免因意外数据导致TooManyResultsException
+        List<ProjectFile> existingFiles = projectFileMapper.selectList(queryWrapper);
+        ProjectFile fileRecordToUpdate = existingFiles.isEmpty() ? null : existingFiles.get(0);
+
+        // --- 步骤 3: 保存新的物理文件，并删除旧文件 ---
+        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+        // 【优化】文件名不再需要时间戳，因为我们总是覆盖
+        String storedFileName = "REVIEW_" + originalFilename; 
+        Path filePath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
+        
+        // 【优化】如果存在旧文件记录，先从磁盘删除对应的物理文件
+        if (fileRecordToUpdate != null) {
+            Path oldFilePath = Paths.get(uploadDir, fileRecordToUpdate.getFilePath());
+            Files.deleteIfExists(oldFilePath);
+            log.info("【Service】已删除旧的审核物理文件: {}", oldFilePath);
+        }
+        
+        // 保存新文件
+        Files.createDirectories(filePath.getParent());
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【Service】已将新的审核表保存至物理路径: {}", filePath);
+        
+        String relativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
+
+        // --- 步骤 4: 更新或插入数据库记录 ---
+        if (fileRecordToUpdate == null) {
+            // 【Insert路径】: 如果记录不存在，则创建新记录
+            log.info("【Service】在数据库中为 recordId {} 创建新的审核表记录", recordId);
+            fileRecordToUpdate = new ProjectFile();
+            fileRecordToUpdate.setProjectId(record.getProjectId());
+            fileRecordToUpdate.setRecordId(recordId);
+            fileRecordToUpdate.setDocumentType("REVIEW_SHEET");
+        }
+
+        // 统一更新记录的属性
+        fileRecordToUpdate.setFileName(storedFileName);
+        fileRecordToUpdate.setFilePath(relativePath);
+        fileRecordToUpdate.setFileType(file.getContentType());
+        
+        if (fileRecordToUpdate.getId() == null) {
+            // 执行插入
+            projectFileMapper.insert(fileRecordToUpdate);
+            log.info("【Service】新的审核表文件信息已存入数据库, 文件ID: {}", fileRecordToUpdate.getId());
+        } else {
+            // 【Update路径】: 更新现有记录
+            log.info("【Service】更新数据库中已有的审核表记录 (ID: {})", fileRecordToUpdate.getId());
+            projectFileMapper.updateById(fileRecordToUpdate);
+        }
+        
+        // --- 步骤 5: 更新主记录状态 (保持不变) ---
+        record.setStatus("REVIEWED"); 
+        processRecordMapper.updateById(record);
+        log.info("【Service】过程记录 {} 的状态已更新为 'REVIEWED'。", recordId);
+
+        return fileRecordToUpdate;
     }
 }

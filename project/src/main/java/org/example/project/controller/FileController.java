@@ -55,23 +55,23 @@ public class FileController {
      */
     @GetMapping("/templates/review-sheet")
     public ResponseEntity<Resource> getReviewTemplate() {
-        log.info("【Controller】接收到获取审核模板文件的请求...");
         try {
-            // ClassPathResource 从 /src/main/resources/ 目录开始查找
             Resource resource = new ClassPathResource("static/templates/review_template.xlsx");
 
             if (resource.exists() && resource.isReadable()) {
-                log.info("【Controller】成功找到并准备返回审核模板文件: {}", resource.getFilename());
+                log.info("正在提供审核模板文件: {}", resource.getFilename());
+                // 【关键修改】: 移除了 .header(HttpHeaders.CONTENT_DISPOSITION, ...)
+                // 只设置 Content-Type 和 Content-Length，让浏览器将它作为普通的数据流处理。
                 return ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
+                        .contentLength(resource.contentLength())
                         .body(resource);
             } else {
-                log.warn("【Controller】审核模板文件未找到！请检查路径: src/main/resources/static/templates/review_template.xlsx");
+                log.error("审核模板文件 'static/templates/review_template.xlsx' 未找到！");
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
-            log.error("【Controller】获取审核模板文件时发生严重错误", e);
+            log.error("获取审核模板文件时出错", e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -85,6 +85,7 @@ public class FileController {
     public ResponseEntity<Resource> getFileStreamById(@PathVariable Long fileId) {
         log.info("接收到获取文件内容的请求，文件ID: {}", fileId);
 
+        // 1. 从数据库查找文件记录 (逻辑正确)
         ProjectFile fileRecord = projectFileMapper.selectById(fileId);
         if (fileRecord == null) {
             log.warn("在数据库中找不到文件记录，ID: {}", fileId);
@@ -92,11 +93,10 @@ public class FileController {
         }
 
         try {
-            // 【修改】: 增加 .normalize() 来处理路径安全问题
+            // 2. 构建并验证物理文件路径 (逻辑正确)
             Path filePath = Paths.get(uploadDir).resolve(fileRecord.getFilePath()).normalize();
             log.info("准备从物理路径读取文件: {}", filePath);
 
-            // 【修改】: 使用 UrlResource 代替 InputStreamResource
             Resource resource = new UrlResource(filePath.toUri());
 
             if (!resource.exists() || !resource.isReadable()) {
@@ -104,16 +104,12 @@ public class FileController {
                 return ResponseEntity.notFound().build();
             }
 
+            // 3. 确定MIME类型 (逻辑正确)
             String contentType = determineContentType(filePath, fileRecord.getFileName());
             log.info("确定文件 {} 的 Content-Type 为: {}", fileRecord.getFileName(), contentType);
-
-            // 【核心修改】: 移除 attachment 头，改为 inline 头，更适合预览场景
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
                     .contentLength(resource.contentLength())
-                    // "inline" 建议浏览器在页面内预览文件，而不是触发下载
-                    // "filename" 提供了文件的原始名称，增强了兼容性
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileRecord.getFileName() + "\"")
                     .body(resource);
 
         } catch (MalformedURLException e) {

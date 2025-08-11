@@ -6,11 +6,13 @@
     <link rel='stylesheet' href='/luckysheet/plugins/css/pluginsCss.css' />
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
     <style>
-        html, body, #luckysheet-container { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-        .loader { text-align: center; padding-top: 20%; font-family: sans-serif; color: #888; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #luckysheet-container { width: 100%; height: 100%; }
+        .loader { display: flex; justify-content: center; align-items: center; height: 100%; font-family: sans-serif; color: #888; font-size: 1.1em; }
     </style>
 </head>
 <body>
+    <!-- 【核心修改】: 这个容器ID现在是固定的，不会动态变化 -->
     <div id="luckysheet-container">
         <div class="loader">正在初始化加载器...</div>
     </div>
@@ -21,20 +23,36 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
     <script>
+        console.log('[Iframe] Loader HTML and all scripts have been initially parsed.');
         const container = document.getElementById('luckysheet-container');
+        
+        // 【关键】全局变量来保存当前Luckysheet实例。
+        // 由于只有一个DOM容器，所以理论上只有一个活跃实例
+        let currentLuckysheetInstance = null; 
 
+        // 监听来自父窗口的消息
         window.addEventListener('message', function(event) {
             if (event.origin !== window.location.origin) return;
             const { type, payload } = event.data;
+            console.log('[Iframe] 收到消息:', { type, payload });
+
             if (type === 'LOAD_SHEET') {
                 loadSheet(payload.fileUrl, payload.options);
+            } else if (type === 'GET_DATA') {
+                // 【核心修改】: 直接从全局 luckysheet 获取数据
+                if (window.luckysheet) {
+                    const allSheetData = luckysheet.getAllSheets();
+                    window.parent.postMessage({
+                        type: 'SHEET_DATA_RESPONSE',
+                        payload: allSheetData
+                    }, window.location.origin);
+                } else {
+                    console.error('[Iframe] GET_DATA 失败: 全局 luckysheet 实例未定义！');
+                }
             }
         });
 
-        /**
-         * 【核心修正】: 改造 loadSheet 函数
-         * 先用 fetch 下载文件为 Blob，再将 Blob 交给 LuckyExcel 解析
-         */
+        // 加载和渲染 Luckysheet 的函数
         function loadSheet(fileUrl, options) {
             if (!fileUrl) return;
 
@@ -46,48 +64,56 @@
             container.innerHTML = '<div class="loader">正在下载文件...</div>';
             console.log(`[Iframe] 准备使用 fetch 从URL下载: ${fileUrl}`);
 
-            // 1. 使用 fetch API 下载文件，并明确要求返回一个 Blob 对象
             fetch(fileUrl)
                 .then(response => {
-                    if (!response.ok) {
-                        // 如果HTTP状态码不是2xx，则抛出错误
-                        throw new Error(`网络响应错误: ${response.status} ${response.statusText}`);
-                    }
-                    return response.blob(); // 将响应体转换为 Blob
+                    if (!response.ok) throw new Error(`网络响应错误: ${response.status}`);
+                    return response.blob();
                 })
                 .then(fileBlob => {
-                    // --- 文件下载成功 ---
                     container.innerHTML = '<div class="loader">下载成功，正在转换文件...</div>';
-                    console.log(`[Iframe] 文件下载成功，得到 Blob 对象，准备交给 LuckyExcel 解析。`);
-                    
-                    // 2. 将获取到的 Blob 对象传递给 LuckyExcel
                     LuckyExcel.transformExcelToLucky(
-                        fileBlob, // <-- 【关键】这里传入的是 Blob，而不是 URL 字符串
+                        fileBlob,
                         function(exportJson, luckysheetfile) {
                             console.log(`[Iframe] 文件转换成功。`, exportJson);
-                            container.innerHTML = '';
-                            if (window.luckysheet) luckysheet.destroy();
+                            container.innerHTML = ''; 
+
+                            // 【核心修改】: 销毁并重建全局 luckysheet 实例
+                            if (window.luckysheet) {
+                                try { luckysheet.destroy(); } catch(e) { console.warn('[Iframe] 销毁旧实例时出错:', e); }
+                            }
+                            
                             if (!exportJson.sheets || exportJson.sheets.length === 0) {
                                 container.innerHTML = '<div class="loader">错误: 文件内容为空或格式无法解析。</div>';
                                 return;
                             }
                             
                             const finalOptions = Object.assign({
-                                container: 'luckysheet-container',
+                                // 【关键】: container 现在总是这个 iframe 内部的固定ID
+                                container: 'luckysheet-container', 
                                 data: exportJson.sheets,
                                 title: exportJson.info.name
                             }, options);
                             
-                            luckysheet.create(finalOptions);
+                            try {
+                                // 【关键】: 创建实例
+                                currentLuckysheetInstance = luckysheet.create(finalOptions); // 保存到局部变量
+                                console.log('[Iframe] luckysheet.create 调用成功！');
+                            } catch (e) {
+                                 console.error('[Iframe] luckysheet.create 执行时发生严重错误:', e);
+                                 container.innerHTML = `<div class="loader">Luckysheet渲染时发生错误: ${e.message}</div>`;
+                            }
                         },
                         function(error) {
                             console.error(`[Iframe] LuckyExcel 解析 Blob 时失败:`, error);
                             container.innerHTML = `<div class="loader">文件解析失败，可能是文件格式损坏。</div>`;
+                            window.parent.postMessage({
+                                type: 'SHEET_LOAD_ERROR',
+                                payload: { error: `文件 ${fileUrl} 解析失败` }
+                            }, window.location.origin);
                         }
                     );
                 })
                 .catch(error => {
-                    // --- 文件下载失败 ---
                     console.error(`[Iframe] 使用 fetch 下载文件 ${fileUrl} 时失败:`, error);
                     container.innerHTML = `<div class="loader">文件下载失败，请检查URL是否正确以及网络连接。</div>`;
                     window.parent.postMessage({

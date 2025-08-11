@@ -23,4 +23,5 @@ public interface ProcessRecordService {
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     ProcessRecord getRecordById(Long recordId);
     ProjectFile findReviewSheetByRecordId(Long recordId);
+    ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException;
 }

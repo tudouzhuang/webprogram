@@ -108,7 +108,7 @@ public class ProcessRecordController {
      * @param recordId 过程记录的ID
      * @return 如果审核表存在，返回文件信息；如果不存在，返回404 Not Found。
      */
-    @GetMapping("/{recordId}/review-sheet-info")
+    @GetMapping("/process-records/{recordId}/review-sheet-info")
     public ResponseEntity<ProjectFile> getReviewSheetInfo(@PathVariable Long recordId) {
         try {
             // Service层会处理查找逻辑
@@ -122,4 +122,25 @@ public class ProcessRecordController {
             return ResponseEntity.status(500).build();
         }
     }
+
+   @PostMapping(value = "/process-records/{recordId}/save-review-sheet", consumes = "multipart/form-data")
+   public ResponseEntity<String> saveReviewSheet(
+           @PathVariable Long recordId,
+           @RequestParam("file") MultipartFile file) {
+       
+       log.info("【Controller】接收到保存审核表的请求, recordId: {}", recordId);
+       
+       if (file == null || file.isEmpty()) {
+           return ResponseEntity.badRequest().body("上传的审核表文件不能为空！");
+       }
+
+       try {
+           // 调用 Service 层去执行真正的保存逻辑
+           processRecordService.saveReviewSheet(recordId, file);
+           return ResponseEntity.ok("审核表保存成功！");
+       } catch (Exception e) {
+           log.error("【Controller】保存审核表时失败, recordId: {}", recordId, e);
+           return ResponseEntity.status(500).body("服务器内部错误: " + e.getMessage());
+       }
+   }
 }
