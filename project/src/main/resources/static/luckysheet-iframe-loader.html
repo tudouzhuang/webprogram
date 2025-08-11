@@ -40,8 +40,10 @@
 
     <script>
         const container = document.getElementById('luckysheet-container');
-        // 【重要修正】不再需要 currentInstance 变量
-        // let currentInstance = null;
+        
+        // 【核心】: 使用一个对象来存储所有的Luckysheet实例
+        // 键是父窗口传来的 instanceId，值是Luckysheet创建的实例对象
+        const sheetInstances = {};
 
         // =======================================================
         //  1. 监听来自父窗口的消息
@@ -56,16 +58,28 @@
             console.log('[Iframe] 收到消息:', { type, payload });
 
             if (type === 'LOAD_SHEET') {
-                // 接收父窗口传来的所有信息
-                loadSheet(payload.fileUrl, payload.fileName, payload.options);
-            } else if (type === 'GET_DATA') {
-                // 【重要修正】直接使用全局的 window.luckysheet
-                if (window.luckysheet) {
-                    const allSheetData = window.luckysheet.getAllSheets();
-                    console.log('[Iframe] 已通过 window.luckysheet 获取数据，准备发回父窗口。');
-                    window.parent.postMessage({ type: 'SHEET_DATA_RESPONSE', payload: allSheetData }, window.location.origin);
+                loadSheet(payload.instanceId, payload.fileUrl, payload.fileName, payload.options);
+            } else if (type === 'GET_DATA_AND_IMAGES') {
+                const instanceId = payload.instanceId;
+                // 从我们自己维护的 sheetInstances 对象中获取指定的实例
+                const instance = sheetInstances[instanceId];
+
+                if (instance) {
+                    const allSheetData = instance.getAllSheets();
+                    const luckysheetFile = instance.getLuckysheetfile();
+                    const allImages = (luckysheetFile && luckysheetFile[0] && luckysheetFile[0].images) ? luckysheetFile[0].images : {};
+                    
+                    console.log(`[Iframe] 已从实例 '${instanceId}' 获取数据和图片，准备发回父窗口。`);
+                    
+                    window.parent.postMessage({ 
+                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE', 
+                        payload: {
+                            sheets: allSheetData,
+                            images: allImages
+                        }
+                    }, window.location.origin);
                 } else {
-                    console.error('[Iframe] GET_DATA 失败: 全局的 window.luckysheet 实例不存在。');
+                    console.error(`[Iframe] GET_DATA_AND_IMAGES 失败: 找不到实例 '${instanceId}'`);
                 }
             }
         });
@@ -73,9 +87,9 @@
         // =======================================================
         //  2. 加载和渲染 Luckysheet 的核心函数
         // =======================================================
-        function loadSheet(fileUrl, fileName, options) {
-            if (!fileUrl) {
-                container.innerHTML = `<div class="loader">错误：未提供文件URL。</div>`;
+        function loadSheet(instanceId, fileUrl, fileName, options) {
+            if (!instanceId || !fileUrl) {
+                container.innerHTML = `<div class="loader">错误：未提供实例ID或文件URL。</div>`;
                 return;
             }
 
@@ -93,35 +107,40 @@
                     
                     LuckyExcel.transformExcelToLucky(fileBlob, 
                         function(exportJson) {
-                            if (window.luckysheet) {
+                            // 销毁旧的同名实例
+                            const oldInstance = sheetInstances[instanceId];
+                            if (oldInstance) {
                                 try {
-                                    window.luckysheet.destroy();
-                                } catch(e) { console.warn('[Iframe] 销毁旧实例时出错:', e); }
+                                    oldInstance.destroy();
+                                } catch(e) { console.warn(`[Iframe] 销毁旧实例 '${instanceId}' 时出错:`, e); }
                             }
+
                             if (!exportJson.sheets || exportJson.sheets.length === 0) {
                                 container.innerHTML = '<div class="loader">文件内容为空或格式无法解析。</div>';
                                 return;
                             }
                             container.innerHTML = '';
                             
-                            // 【重要修正】使用父窗口传递过来的文件名
                             const finalFileName = fileName || (exportJson.info ? exportJson.info.name : "未命名文件");
-                            console.log(`[Iframe] 文件转换成功！当前显示的文件名是: ${finalFileName}`);
                             
                             const finalOptions = Object.assign({
                                 container: 'luckysheet-container',
                                 data: exportJson.sheets,
-                                title: finalFileName // 使用我们确定的文件名
+                                title: finalFileName
                             }, options);
                             
                             setTimeout(() => {
                                 try {
-                                    console.log('[Iframe] 准备调用 luckysheet.create, 配置:', finalOptions);
-                                    // 【重要修正】luckysheet.create 不再赋值，它会自动更新 window.luckysheet
+                                    console.log(`[Iframe] 准备为实例 '${instanceId}' 调用 luckysheet.create, 配置:`, finalOptions);
+                                    
+                                    // 【最终修正】: luckysheet.create 不返回实例，但它会更新全局的 window.luckysheet
+                                    // 我们在创建后，立即捕获这个全局实例，并存入我们自己的管理对象中。
                                     luckysheet.create(finalOptions);
-                                    console.log('[Iframe] luckysheet.create 调用成功！现在 window.luckysheet 应该已更新。');
+                                    sheetInstances[instanceId] = window.luckysheet; // 捕获并保存实例
+                                    
+                                    console.log(`[Iframe] 实例 '${instanceId}' 创建成功！`);
                                 } catch(e) {
-                                     console.error('[Iframe] luckysheet.create 失败:', e);
+                                     console.error(`[Iframe] 为实例 '${instanceId}' 调用 luckysheet.create 失败:`, e);
                                      container.innerHTML = `<div class="loader">渲染失败: ${e.message}</div>`;
                                 }
                             }, 100);
@@ -129,20 +148,12 @@
                         function(error) {
                             console.error(`[Iframe] LuckyExcel 解析Blob时失败:`, error);
                             container.innerHTML = `<div class="loader">文件解析失败，可能是文件格式损坏。</div>`;
-                            window.parent.postMessage({
-                                type: 'SHEET_DATA_ERROR',
-                                payload: { error: `文件 ${fileUrl} 解析失败` }
-                            }, window.location.origin);
                         }
                     );
                 })
                 .catch(error => {
                     console.error(`[Iframe] 使用 fetch 下载文件 ${fileUrl} 时失败:`, error);
                     container.innerHTML = `<div class="loader">文件下载失败: ${error.message}</div>`;
-                    window.parent.postMessage({
-                        type: 'SHEET_LOAD_ERROR',
-                        payload: { error: `文件 ${fileUrl} 下载失败` }
-                    }, window.location.origin);
                 });
         }
         
