@@ -67,9 +67,13 @@
                 if (instance) {
                     const allSheetData = instance.getAllSheets();
                     const luckysheetFile = instance.getLuckysheetfile();
-                    const allImages = (luckysheetFile && luckysheetFile[0] && luckysheetFile[0].images) ? luckysheetFile[0].images : {};
                     
-                    console.log(`[Iframe] 已从实例 '${instanceId}' 获取数据和图片，准备发回父窗口。`);
+                    // 【核心修正】: 合并两种来源的图片数据，确保捕获所有图片
+                    const imagesFromConfig = (luckysheetFile && luckysheetFile[0] && luckysheetFile[0].images) ? luckysheetFile[0].images : {};
+                    const imagesFromApi = instance.getImageOption ? instance.getImageOption() : {}; // 增加健壮性检查
+                    const allImages = Object.assign({}, imagesFromConfig, imagesFromApi);
+
+                    console.log(`[Iframe] 已从实例 '${instanceId}' 获取数据和所有图片 (${Object.keys(allImages).length} 张)，准备发回父窗口。`);
                     
                     window.parent.postMessage({ 
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE', 
@@ -133,7 +137,7 @@
                                 try {
                                     console.log(`[Iframe] 准备为实例 '${instanceId}' 调用 luckysheet.create, 配置:`, finalOptions);
                                     
-                                    // 【最终修正】: luckysheet.create 不返回实例，但它会更新全局的 window.luckysheet
+                                    // luckysheet.create 不返回实例，但它会更新全局的 window.luckysheet
                                     // 我们在创建后，立即捕获这个全局实例，并存入我们自己的管理对象中。
                                     luckysheet.create(finalOptions);
                                     sheetInstances[instanceId] = window.luckysheet; // 捕获并保存实例

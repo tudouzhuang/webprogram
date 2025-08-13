@@ -313,73 +313,127 @@ public class ProcessRecordServiceImpl implements ProcessRecordService {
         return latestReviewSheet;
     }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException {
-        
-        // --- 步骤 1: 验证过程记录是否存在 (不变) ---
-        ProcessRecord record = processRecordMapper.selectById(recordId);
-        if (record == null) {
-            throw new NoSuchElementException("找不到ID为 " + recordId + " 的过程记录，无法保存审核表。");
-        }
+// 在你的 ProcessRecordServiceImpl.java 文件中
 
-        // --- 步骤 2: 查找是否已存在同类型的审核表记录 ---
-        QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("record_id", recordId).eq("document_type", "REVIEW_SHEET");
-        // 【重要】改用selectList，避免因意外数据导致TooManyResultsException
-        List<ProjectFile> existingFiles = projectFileMapper.selectList(queryWrapper);
-        ProjectFile fileRecordToUpdate = existingFiles.isEmpty() ? null : existingFiles.get(0);
+@Override
+@Transactional(rollbackFor = Exception.class)
+public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException {
+    
+    // =======================================================
+    //  ↓↓↓ 阶段 1: 接收与验证 ↓↓↓
+    // =======================================================
+    log.info("==================== 开始执行 saveReviewSheet ====================");
+    log.info("【Debug 1.1】接收到请求 - recordId: {}", recordId);
 
-        // --- 步骤 3: 保存新的物理文件，并删除旧文件 ---
-        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        // 【优化】文件名不再需要时间戳，因为我们总是覆盖
-        String storedFileName = "REVIEW_" + originalFilename; 
-        Path filePath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
-        
-        // 【优化】如果存在旧文件记录，先从磁盘删除对应的物理文件
-        if (fileRecordToUpdate != null) {
-            Path oldFilePath = Paths.get(uploadDir, fileRecordToUpdate.getFilePath());
-            Files.deleteIfExists(oldFilePath);
-            log.info("【Service】已删除旧的审核物理文件: {}", oldFilePath);
-        }
-        
-        // 保存新文件
-        Files.createDirectories(filePath.getParent());
-        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【Service】已将新的审核表保存至物理路径: {}", filePath);
-        
-        String relativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
-
-        // --- 步骤 4: 更新或插入数据库记录 ---
-        if (fileRecordToUpdate == null) {
-            // 【Insert路径】: 如果记录不存在，则创建新记录
-            log.info("【Service】在数据库中为 recordId {} 创建新的审核表记录", recordId);
-            fileRecordToUpdate = new ProjectFile();
-            fileRecordToUpdate.setProjectId(record.getProjectId());
-            fileRecordToUpdate.setRecordId(recordId);
-            fileRecordToUpdate.setDocumentType("REVIEW_SHEET");
-        }
-
-        // 统一更新记录的属性
-        fileRecordToUpdate.setFileName(storedFileName);
-        fileRecordToUpdate.setFilePath(relativePath);
-        fileRecordToUpdate.setFileType(file.getContentType());
-        
-        if (fileRecordToUpdate.getId() == null) {
-            // 执行插入
-            projectFileMapper.insert(fileRecordToUpdate);
-            log.info("【Service】新的审核表文件信息已存入数据库, 文件ID: {}", fileRecordToUpdate.getId());
-        } else {
-            // 【Update路径】: 更新现有记录
-            log.info("【Service】更新数据库中已有的审核表记录 (ID: {})", fileRecordToUpdate.getId());
-            projectFileMapper.updateById(fileRecordToUpdate);
-        }
-        
-        // --- 步骤 5: 更新主记录状态 (保持不变) ---
-        record.setStatus("REVIEWED"); 
-        processRecordMapper.updateById(record);
-        log.info("【Service】过程记录 {} 的状态已更新为 'REVIEWED'。", recordId);
-
-        return fileRecordToUpdate;
+    if (file == null || file.isEmpty()) {
+        log.error("【Debug 1.2 - 失败】传入的 MultipartFile 为空！");
+        throw new IllegalArgumentException("上传的文件不能为空。");
     }
+    log.info("【Debug 1.2】接收到文件 - 原始文件名: '{}', 大小: {} bytes, ContentType: {}", 
+        file.getOriginalFilename(), file.getSize(), file.getContentType());
+
+
+    // --- 步骤 1: 验证过程记录是否存在 ---
+    ProcessRecord record = processRecordMapper.selectById(recordId);
+    if (record == null) {
+        log.error("【Debug 1.3 - 失败】在数据库中找不到ID为 {} 的过程记录。", recordId);
+        throw new NoSuchElementException("找不到ID为 " + recordId + " 的过程记录，无法保存审核表。");
+    }
+    log.info("【Debug 1.3】成功找到关联的过程记录: {}", record);
+
+    // =======================================================
+    //  ↓↓↓ 阶段 2: 旧文件处理 ↓↓↓
+    // =======================================================
+    log.info("--- 阶段 2: 开始处理旧文件 ---");
+
+    QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
+    queryWrapper.eq("record_id", recordId).eq("document_type", "REVIEW_SHEET");
+    List<ProjectFile> existingFiles = projectFileMapper.selectList(queryWrapper);
+    ProjectFile fileRecordToUpdate = existingFiles.isEmpty() ? null : existingFiles.get(0);
+
+    if (fileRecordToUpdate != null) {
+        log.info("【Debug 2.1】在数据库中找到已存在的审核表记录 (ID: {})。", fileRecordToUpdate.getId());
+        Path oldFilePath = Paths.get(uploadDir, fileRecordToUpdate.getFilePath());
+        log.info("【Debug 2.2】准备删除旧的物理文件，路径: {}", oldFilePath);
+        try {
+            boolean deleted = Files.deleteIfExists(oldFilePath);
+            if (deleted) {
+                log.info("【Debug 2.3】旧的物理文件已成功删除。");
+            } else {
+                log.warn("【Debug 2.3】旧的物理文件不存在于该路径，无需删除。");
+            }
+        } catch (IOException e) {
+            log.error("【Debug 2.3 - 失败】删除旧物理文件时发生IO异常！", e);
+            // 即使删除失败，我们也可以选择继续执行，用新文件覆盖
+        }
+    } else {
+        log.info("【Debug 2.1】在数据库中未找到已存在的审核表记录，将创建新记录。");
+    }
+
+    // =======================================================
+    //  ↓↓↓ 阶段 3: 新文件保存 ↓↓↓
+    // =======================================================
+    log.info("--- 阶段 3: 开始保存新文件 ---");
+    
+    String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+    String storedFileName = "REVIEW_" + originalFilename; 
+    
+    // 【重要】构建绝对物理路径
+    Path physicalFilePath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
+    log.info("【Debug 3.1】新文件的目标绝对物理路径为: {}", physicalFilePath);
+
+    try {
+        log.info("【Debug 3.2】准备创建父目录...");
+        Files.createDirectories(physicalFilePath.getParent());
+        log.info("【Debug 3.3】父目录已确保存在。准备执行文件复制操作...");
+        // 执行文件复制
+        Files.copy(file.getInputStream(), physicalFilePath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【Debug 3.4】新文件已成功保存至物理路径！");
+    } catch (IOException e) {
+        log.error("【Debug 3.4 - 失败】保存新物理文件时发生严重IO异常！", e);
+        throw e; // 抛出异常，触发事务回滚
+    }
+
+    // =======================================================
+    //  ↓↓↓ 阶段 4: 数据库记录更新/插入 ↓↓↓
+    // =======================================================
+    log.info("--- 阶段 4: 开始更新/插入数据库记录 ---");
+    
+    String relativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
+    
+    if (fileRecordToUpdate == null) {
+        log.info("【Debug 4.1】创建新的 ProjectFile 实体对象...");
+        fileRecordToUpdate = new ProjectFile();
+        fileRecordToUpdate.setProjectId(record.getProjectId());
+        fileRecordToUpdate.setRecordId(recordId);
+        fileRecordToUpdate.setDocumentType("REVIEW_SHEET");
+    }
+
+    // 统一更新属性
+    fileRecordToUpdate.setFileName(storedFileName);
+    fileRecordToUpdate.setFilePath(relativePath);
+    fileRecordToUpdate.setFileType(file.getContentType());
+    
+    if (fileRecordToUpdate.getId() == null) {
+        log.info("【Debug 4.2】准备执行 INSERT 操作，实体内容: {}", fileRecordToUpdate);
+        projectFileMapper.insert(fileRecordToUpdate);
+        log.info("【Debug 4.3】新的审核表文件信息已成功存入数据库, 新文件ID: {}", fileRecordToUpdate.getId());
+    } else {
+        log.info("【Debug 4.2】准备执行 UPDATE 操作，实体内容: {}", fileRecordToUpdate);
+        projectFileMapper.updateById(fileRecordToUpdate);
+        log.info("【Debug 4.3】已有的审核表文件信息已成功更新。");
+    }
+    
+    // =======================================================
+    //  ↓↓↓ 阶段 5: 更新主记录状态 ↓↓↓
+    // =======================================================
+    log.info("--- 阶段 5: 开始更新主记录状态 ---");
+    
+    record.setStatus("REVIEWED"); 
+    processRecordMapper.updateById(record);
+    log.info("【Debug 5.1】过程记录 {} 的状态已更新为 'REVIEWED'。", recordId);
+    
+    log.info("==================== 成功结束 saveReviewSheet ====================");
+    return fileRecordToUpdate;
+}
 }
