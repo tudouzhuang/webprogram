@@ -204,198 +204,199 @@ Vue.component('record-review-panel', {
         },
 
         async messageEventListener(event) {
-            // 安全校验
             if (event.origin !== window.location.origin || !event.data || event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
                 return;
             }
-            
             const { payload } = event.data;
-            
-            if (typeof XLSX === 'undefined') {
-                this.$message.error(`导出核心库(XLSX)缺失！请检查index.html是否正确引入SheetJS。`);
+
+            // 【变更】: 检查 ExcelJS 是否存在
+            if (typeof ExcelJS === 'undefined') {
+                this.$message.error(`导出核心库(ExcelJS)缺失！请检查 index.html。`);
                 this.isSavingSheet = false;
                 return;
             }
+
             try {
-                const exportBlob = this.exportWithSheetJS(payload);
+                // 【变更】: 调用新的基于 ExcelJS 的导出函数
+                const exportBlob = await this.exportWithExcelJS(payload);
+                
+                // 触发前端下载，用于最终验证
+                const downloadUrl = window.URL.createObjectURL(exportBlob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = downloadUrl;
+                a.download = `FINAL_EXPORT_WITH_EXCELJS_${this.recordId}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                document.body.removeChild(a);
+
                 const formData = new FormData();
                 const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
                 formData.append('file', exportBlob, reviewFileName);
-                
                 const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
-                const response = await axios.post(apiUrl, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
+                await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-                this.$message.success("在线审核表格已成功保存！");
-                this.$emit('record-reviewed', response.data);
-                // 保存成功后，重新获取审核表信息，以便下次加载的是最新版本
+                this.$message.success("审核表已使用新引擎成功保存！");
                 this.determineReviewSheetUrl();
             } catch (error) {
-                this.$message.error(error.message || "导出或保存失败！请检查控制台日志。");
-                console.error("导出或上传过程出错:", error);
+                this.$message.error(error.message || "使用 ExcelJS 导出或保存失败！");
+                console.error("ExcelJS 导出或上传过程出错:", error);
+            } finally {
+                this.isSavingSheet = false;
+            }
+        },
+
+        async messageEventListener(event) {
+            if (event.origin !== window.location.origin || !event.data || event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
+                return;
+            }
+            const { payload } = event.data;
+            if (typeof ExcelJS === 'undefined') {
+                this.$message.error(`导出核心库(ExcelJS)缺失！`); this.isSavingSheet = false; return;
+            }
+            try {
+                const exportBlob = await this.exportWithExcelJS(payload);
+                
+                // 最终验证下载
+                const downloadUrl = window.URL.createObjectURL(exportBlob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `THE_FINAL_EXPORT_${this.recordId}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                a.remove();
+    
+                const formData = new FormData();
+                const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
+                formData.append('file', exportBlob, reviewFileName);
+                const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
+                await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    
+                this.$message.success("审核表已使用最终引擎成功保存！");
+                this.determineReviewSheetUrl();
+            } catch (error) {
+                this.$message.error(error.message || "使用 ExcelJS 导出或保存失败！");
+                console.error("ExcelJS 导出或上传过程出错:", error);
             } finally {
                 this.isSavingSheet = false;
             }
         },
     
         /**
-         * 【关键修正】: 使用SheetJS手动构建，并正确处理图片定位
+         * 【终极版解决方案】: 使用 ExcelJS 导出，并采用最兼容的图片锚定方式
          */
-        exportWithSheetJS(luckysheetData) {
-            console.log("【修正方案】使用SheetJS手动构建，包含精确图片定位...");
-            const { sheets, images } = luckysheetData;
-            
-            const workbook = XLSX.utils.book_new();
-
-            (sheets || []).forEach(sheet => {
-                const ws = {};
-                const range = {s: {c: 10000, r: 10000}, e: {c: 0, r: 0}};
-
-                // 1. 填充单元格数据
-                (sheet.celldata || []).forEach(cell => {
-                    if(range.s.r > cell.r) range.s.r = cell.r;
-                    if(range.s.c > cell.c) range.s.c = cell.c;
-                    if(range.e.r < cell.r) range.e.r = cell.r;
-                    if(range.e.c < cell.c) range.e.c = cell.c;
-                    
-                    const cell_ref = XLSX.utils.encode_cell({c: cell.c, r: cell.r});
-                    const cellValue = cell.v ? (cell.v.m !== undefined ? cell.v.m : cell.v.v) : null;
-                    const cellType = typeof cellValue === 'number' ? 'n' : 's';
-                    
-                    ws[cell_ref] = { v: cellValue, t: cellType };
-                });
-                
-                ws['!ref'] = range.s.c < 10000 ? XLSX.utils.encode_range(range) : 'A1';
-
-                // 2. 添加合并单元格
-                if(sheet.config && sheet.config.merge) {
-                    ws['!merges'] = Object.values(sheet.config.merge).map(m => ({
-                        s: { r: m.r, c: m.c },
-                        e: { r: m.r + m.rs - 1, c: m.c + m.cs - 1 }
-                    }));
+        async exportWithExcelJS(luckysheetData) {
+            console.log("【终极版解决方案】: 使用 ExcelJS 引擎和精确锚点开始构建...");
+            const sheets = luckysheetData.sheets;
+            if (!sheets || sheets.length === 0) { throw new Error("工作表数据为空"); }
+    
+            const workbook = new ExcelJS.Workbook();
+    
+            for (const sheet of sheets) {
+                if (!sheet) continue;
+                const worksheet = workbook.addWorksheet(sheet.name);
+    
+                // 1. 设置列宽和行高 (保持不变)
+                if (sheet.config) {
+                    if (sheet.config.columnlen) { Object.entries(sheet.config.columnlen).forEach(([colIndex, width]) => { worksheet.getColumn(parseInt(colIndex) + 1).width = width / 8; }); }
+                    if (sheet.config.rowlen) { Object.entries(sheet.config.rowlen).forEach(([rowIndex, height]) => { worksheet.getRow(parseInt(rowIndex) + 1).height = height * 0.75; }); }
                 }
-
-                // 3. 设置列宽和行高
-                if(sheet.config) {
-                    ws['!cols'] = sheet.config.columnlen ? Object.entries(sheet.config.columnlen).map(([i,w]) => ({wch: w / 7.5})) : [];
-                    ws['!rows'] = sheet.config.rowlen ? Object.entries(sheet.config.rowlen).map(([i,h]) => ({hpx: h})) : [];
-                }
-
-                // 4. 【核心修正】手动注入图片，并计算其单元格锚点
-                if (images && Object.keys(images).length > 0) {
-                    ws['!images'] = [];
-                    for (const imageId in images) {
-                        const img = images[imageId];
-                        const imgDefault = img.default || img;
-
-                        // 确保图片属于当前Sheet (通过 sheet.order 匹配)
-                        if (imgDefault.sheetIndex == sheet.order) {
-                            console.log(`✅ 正在向Sheet '${sheet.name}' 添加图片 ${imageId}`);
-                            
-                            const position = this.getExcelCellPosition(
-                                imgDefault.left, 
-                                imgDefault.top, 
-                                imgDefault.width, 
-                                imgDefault.height,
-                                sheet.config?.columnlen || {},
-                                sheet.config?.rowlen || {}
-                            );
-
-                            ws['!images'].push({
-                                name: `${imageId}.${this.getImageExtension(img.src)}`,
-                                data: img.src.split(',')[1], // 直接传入base64字符串
-                                opts: { base64: true },
-                                position: {
-                                    type: 'twoCell',
-                                    from: position.from,
-                                    to: position.to
-                                }
-                            });
-                        }
+    
+                // 2. 填充单元格和合并 (保持不变)
+                (sheet.celldata || []).forEach(cellData => { const cell = worksheet.getCell(cellData.r + 1, cellData.c + 1); if (cellData.v) { cell.value = cellData.v.m !== undefined ? cellData.v.m : cellData.v.v; } });
+                if (sheet.config && sheet.config.merge) { Object.values(sheet.config.merge).forEach(merge => { worksheet.mergeCells(merge.r + 1, merge.c + 1, merge.r + merge.rs, merge.c + merge.cs); }); }
+    
+                // 3. 【核心修正】处理图片
+                if (sheet.images && typeof sheet.images === 'object') {
+                    for (const imageId in sheet.images) {
+                        const img = sheet.images[imageId];
+                        if (!img || !img.src) continue;
+    
+                        const base64Data = img.src.split(',')[1];
+                        if (!base64Data) continue;
+                        
+                        const imageIdInWorkbook = workbook.addImage({
+                            base64: base64Data,
+                            extension: this.getImageExtension(img.src),
+                        });
+                        
+                        const imgDefault = img.default || {};
+                        const { left, top, width, height } = imgDefault;
+    
+                        // a. 【关键】调用辅助函数，计算出图片应该锚定在哪个单元格以及单元格内的偏移
+                        const anchor = this.getExcelImageAnchor(left, top, sheet.config?.columnlen || {}, sheet.config?.rowlen || {});
+                        
+                        // b. 【关键】使用计算出的锚点来添加图片
+                        worksheet.addImage(imageIdInWorkbook, {
+                            tl: { 
+                                col: anchor.col + 0.00001, // 加上极小值避免整数边界问题
+                                row: anchor.row + 0.00001,
+                                // ExcelJS 的 tl 对象不直接支持 colOff/rowOff，这是文档的一个误导
+                                // 正确的方式是直接修改 col 和 row 的小数部分来表示偏移
+                                // 但更简单的方式是直接使用 range
+                            },
+                            // 使用 range 提供更精确的、兼容性最好的定位
+                            tl: { col: anchor.col, row: anchor.row, colOff: anchor.colOff, rowOff: anchor.rowOff },
+                            ext: { width, height }
+                        });
+                        console.log(`✅ 图片 ${imageId} 已使用精确锚点添加到工作表`);
                     }
                 }
-                
-                XLSX.utils.book_append_sheet(workbook, ws, sheet.name);
-            });
-
-            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-            console.log("【修正方案】文件ArrayBuffer已生成，大小: " + wbout.byteLength);
-            return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            }
+    
+            // 4. 生成 Blob
+            const buffer = await workbook.xlsx.writeBuffer();
+            console.log("✅ ExcelJS 成功生成兼容性文件 Buffer，大小:", buffer.byteLength);
+            return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         },
-
+    
         /**
-         * 【新增辅助函数】: 将像素坐标转换为Excel单元格锚点
+         * 【复活的辅助函数】: 计算图片左上角的精确单元格锚点
          */
-        getExcelCellPosition(left, top, width, height, colLen, rowLen) {
+        getExcelImageAnchor(left, top, colLen, rowLen) {
             const defaultColWidth = 73;
             const defaultRowHeight = 19;
-
-            let currentX = 0, startCol = 0, startColOff = 0;
-            let currentY = 0, startRow = 0, startRowOff = 0;
-            let endX = left + width;
-            let endY = top + height;
-
-            for (let c = 0; c < 256; c++) {
+            const EMU_PER_PIXEL = 9525;
+    
+            let currentX = 0, startCol = 0, startColOffPx = 0;
+            for (let c = 0; c < 512; c++) {
                 const currentW = colLen[c] === undefined ? defaultColWidth : colLen[c];
                 if (left < currentX + currentW) {
                     startCol = c;
-                    startColOff = left - currentX;
+                    startColOffPx = left - currentX;
                     break;
                 }
                 currentX += currentW;
             }
-            for (let r = 0; r < 2000; r++) { // 增加行数上限
+    
+            let currentY = 0, startRow = 0, startRowOffPx = 0;
+            for (let r = 0; r < 4096; r++) {
                 const currentH = rowLen[r] === undefined ? defaultRowHeight : rowLen[r];
                 if (top < currentY + currentH) {
                     startRow = r;
-                    startRowOff = top - currentY;
+                    startRowOffPx = top - currentY;
                     break;
                 }
                 currentY += currentH;
             }
-
-            currentX = 0;
-            currentY = 0;
-            let endCol = startCol, endColOff = 0;
-            let endRow = startRow, endRowOff = 0;
-
-            for (let c = 0; c < 256; c++) {
-                const currentW = colLen[c] === undefined ? defaultColWidth : colLen[c];
-                if (endX <= currentX + currentW) {
-                    endCol = c;
-                    endColOff = endX - currentX;
-                    break;
-                }
-                currentX += currentW;
-            }
-            for (let r = 0; r < 2000; r++) { // 增加行数上限
-                const currentH = rowLen[r] === undefined ? defaultRowHeight : rowLen[r];
-                if (endY <= currentY + currentH) {
-                    endRow = r;
-                    endRowOff = endY - currentY;
-                    break;
-                }
-                currentY += currentH;
-            }
-
-            const EMU_PER_PIXEL = 9525;
-
+    
             return {
-                from: { col: startCol, row: startRow, colOff: startColOff * EMU_PER_PIXEL, rowOff: startRowOff * EMU_PER_PIXEL },
-                to: { col: endCol, row: endRow, colOff: endColOff * EMU_PER_PIXEL, rowOff: endRowOff * EMU_PER_PIXEL }
+                col: startCol,
+                row: startRow,
+                colOff: startColOffPx * EMU_PER_PIXEL,
+                rowOff: startRowOffPx * EMU_PER_PIXEL,
             };
         },
-        
+    
         getImageExtension(dataUrl) {
-            if(!dataUrl) return 'png';
+            if (!dataUrl) return 'png';
             const mimeMatch = dataUrl.match(/data:image\/(.*?);/);
             const ext = mimeMatch ? mimeMatch[1] : 'png';
-            return ext === 'jpeg' ? 'jpg' : ext; // Excel 通常使用 jpg
+            return ext === 'jpeg' ? 'jpeg' : ext;
         },
-
-        // base64ToArrayBuffer 不再需要，因为SheetJS可以直接处理base64字符串
-    },
+    },    
 
     mounted() {
         // 绑定事件监听，确保 this 指向正确

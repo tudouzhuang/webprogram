@@ -33,13 +33,13 @@
 
     <script>
         const container = document.getElementById('luckysheet-container');
-
+    
         // --- 监听来自父窗口的消息 ---
         window.addEventListener('message', function(event) {
             if (event.origin !== window.location.origin) return;
             const { type, payload } = event.data;
-            console.log(`[Iframe] 收到消息: type=${type}`, payload);
-
+            // console.log(`[Iframe] 收到消息: type=${type}`, payload);
+    
             switch (type) {
                 case 'LOAD_SHEET':
                     loadSheet(payload);
@@ -51,32 +51,39 @@
                     console.warn(`[Iframe] 收到未知消息类型: ${type}`);
             }
         });
-
+    
         // --- 加载和渲染 Luckysheet 的核心函数 ---
         function loadSheet({ fileUrl, fileName, options }) {
-            // 【修正】: 直接从 payload 解构，不再需要 instanceId
             if (!fileUrl) {
                 container.innerHTML = `<div class="loader">错误：父窗口未提供文件URL。</div>`;
                 console.error("[Iframe-ERROR] loadSheet: fileUrl is missing.", { fileUrl, fileName, options });
                 return;
             }
-
+    
             container.innerHTML = `<div class="loader">正在下载文件...</div>`;
-
+    
             fetch(fileUrl)
                 .then(response => {
                     if (!response.ok) throw new Error(`网络错误: ${response.status} ${response.statusText}`);
                     return response.blob();
                 })
                 .then(fileBlob => {
-                    container.innerHTML = `<div class="loader">文件下载成功，正在解析...</div>`;
-                    LuckyExcel.transformExcelToLucky(fileBlob, 
+                    container.innerHTML = `<div class="loader">文件下载成功，正在解析(包含图片)...</div>`;
+    
+                    // 【核心修正】: 创建一个配置对象，强制 LuckyExcel 解析图片
+                    const luckyExcelOptions = {
+                        getPictures: true
+                    };
+    
+                    LuckyExcel.transformExcelToLucky(
+                        fileBlob, 
                         function(exportJson) {
-                            // 【核心简化】: 每次加载都销毁旧实例，创建新实例
+                            console.log("[Iframe] LuckyExcel解析成功，检查JSON中的图片:", exportJson.sheets.map(s => s.images));
+    
                             if (window.luckysheet) {
-                                luckysheet.destroy();
+                                try { luckysheet.destroy(); } catch (e) { console.warn("[Iframe] 销毁旧实例时出错: ", e); }
                             }
-
+    
                             if (!exportJson.sheets || exportJson.sheets.length === 0) {
                                 container.innerHTML = '<div class="loader">文件内容为空或格式无法解析。</div>';
                                 return;
@@ -105,7 +112,9 @@
                         function(error) {
                             console.error(`[Iframe] LuckyExcel 解析失败:`, error);
                             container.innerHTML = `<div class="loader">文件解析失败，请检查文件格式。</div>`;
-                        }
+                        },
+                        // 【核心修正】: 将配置对象作为最后一个参数传入
+                        luckyExcelOptions
                     );
                 })
                 .catch(error => {
@@ -114,24 +123,15 @@
                 });
         }
         
-        // --- 将数据发送回父窗口的函数 ---
+        // --- 将数据发送回父窗口的函数 (保持不变) ---
         function sendDataToParent() {
             if (window.luckysheet) {
-                const allSheets = luckysheet.getAllSheets();
-                let allImages = {};
-                allSheets.forEach(sheet => {
-                    if (sheet.images && typeof sheet.images === 'object') {
-                        allImages = { ...allImages, ...sheet.images };
-                    }
-                });
-
-                console.log(`[Iframe] 准备回发数据: ${allSheets.length}个工作表, ${Object.keys(allImages).length}张图片。`);
-                
+                const luckysheetFile = luckysheet.getLuckysheetfile();
+                console.log(`[Iframe] 准备回发最原始的 luckysheetFile 数据结构:`, luckysheetFile);
                 window.parent.postMessage({ 
                     type: 'SHEET_DATA_WITH_IMAGES_RESPONSE', 
-                    payload: { sheets: allSheets, images: allImages }
+                    payload: { sheets: luckysheetFile }
                 }, window.location.origin);
-
             } else {
                 console.error('[Iframe] 错误: 尝试获取数据时，Luckysheet实例不存在。');
             }
