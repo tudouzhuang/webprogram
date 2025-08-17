@@ -429,9 +429,9 @@ public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOE
     // =======================================================
     log.info("--- 阶段 5: 开始更新主记录状态 ---");
     
-    record.setStatus("REVIEWED"); 
+    record.setStatus("初步审核"); 
     processRecordMapper.updateById(record);
-    log.info("【Debug 5.1】过程记录 {} 的状态已更新为 'REVIEWED'。", recordId);
+    log.info("【Debug 5.1】过程记录 {} 的状态已更新为 '初步审核'。", recordId);
     
     log.info("==================== 成功结束 saveReviewSheet ====================");
     return fileRecordToUpdate;

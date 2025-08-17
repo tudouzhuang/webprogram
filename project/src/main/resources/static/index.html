@@ -848,22 +848,17 @@
                                         <a class="nav-link" href="javascript:void(0)"
                                             @click.prevent="toggleRecordPlanningProjectMenu">
                                             选择项目
-                                            <!-- 【核心修改 2】箭头旋转状态绑定到新的 data 属性 -->
                                             <i class="menu-arrow"
                                                 :class="{'mdi-rotate-180': showRecordPlanningProjectMenu}"></i>
                                         </a>
                                         <!-- 【核心修改 3】子菜单容器的显示/隐藏也绑定到新的 data 属性 -->
-                                        <ul class="nav flex-column sub-menu"
-                                            :class="{'show': showRecordPlanningProjectMenu}">
+                                        <ul class="nav flex-column sub-menu":class="{'show': showRecordPlanningProjectMenu}">
                                             <li v-for="project in projectList" :key="'record-plan-' + project.id"
                                                 class="nav-item">
                                                 <a class="nav-link" href="javascript:void(0)"
                                                     @click="viewProcessRecordsForProject(project)">
                                                     {{ project.projectName || project.projectNumber }}
                                                 </a>
-                                            </li>
-                                            <li v-if="isProjectListLoading" class="nav-item">
-                                                <span class="nav-link text-muted">加载中...</span>
                                             </li>
                                             <li class="nav-item"
                                                 v-if="!isProjectListLoading && projectList.length === 0">
