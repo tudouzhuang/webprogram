@@ -26,81 +26,286 @@
 
 
     <style>
-        /* 三级菜单样式 */
-        #project-submenu {
-            display: none;
-            padding-left: 0;
-            margin-left: 0;
+        .menu-arrow {
+            /* 优化：使用更平滑的 cubic-bezier 曲线，并与菜单展开动画同步 */
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        #project-submenu.show {
-            display: block;
-        }
-
-        #project-submenu .nav-link {
-            padding: 0.75rem 1.5rem 0.75rem 3rem;
-            font-size: 0.7rem;
-            color: #6c757d;
-            border-left: none;
-            position: relative;
-        }
-
-
-
-        #project-submenu .nav-link:hover {
-            color: #007bff;
-            background-color: transparent;
-        }
-
-        #project-submenu .nav-item {
-            border-left: none;
-        }
-
-        /* 其他三级菜单样式 */
-        #info-summary-submenu,
-        #drawing-check-submenu,
-        #design-info-submenu {
-            display: none;
-            padding-left: 0;
-            margin-left: 0;
-        }
-
-        #info-summary-submenu.show,
-        #drawing-check-submenu.show,
-        #design-info-submenu.show {
-            display: block;
-        }
-
-        #info-summary-submenu .nav-link,
-        #drawing-check-submenu .nav-link,
-        #design-info-submenu .nav-link {
-            padding: 0.75rem 1.5rem 0.75rem 3rem;
-            font-size: 0.7rem;
-            color: #6c757d;
-            border-left: none;
-        }
-
-        #info-summary-submenu .nav-link:hover,
-        #drawing-check-submenu .nav-link:hover,
-        #design-info-submenu .nav-link:hover {
-            color: #007bff;
-            background-color: transparent;
-        }
-
-        #info-summary-submenu .nav-item,
-        #drawing-check-submenu .nav-item,
-        #design-info-submenu .nav-item {
-            border-left: none;
-        }
-
-        /* 箭头旋转动画 */
         .mdi-rotate-180 {
             transform: rotate(180deg);
-            transition: transform 0.3s ease;
         }
 
-        .menu-arrow {
-            transition: transform 0.3s ease;
+        /* --- 原有布局样式 (保留不变) --- */
+        #process-record-menu .sub-menu .sub-menu {
+            overflow-y: auto;
+            list-style-type: none;
+            padding-left: 1.2rem;
+            margin-left: 0;
+        }
+
+        #process-record-menu .sub-menu .sub-menu .nav-link {
+            padding: 0.75rem 1.5rem;
+            font-size: 0.8rem;
+            color: #6c757d;
+            transition: color 0.2s ease;
+        }
+
+        #process-record-menu .sub-menu .sub-menu .nav-link:hover {
+            color: #0d6efd;
+        }
+
+        #process-record-menu .sub-menu .sub-menu .nav-item::before {
+            content: none !important;
+        }
+
+        #record-planning>.sub-menu,
+        #record-review>.sub-menu {
+            overflow-y: auto;
+            list-style-type: none;
+            padding-left: 2.7rem;
+            margin-left: 0;
+        }
+
+        #record-planning>.sub-menu .nav-link,
+        #record-review>.sub-menu .nav-link {
+            padding: 0.75rem 1.5rem;
+            font-size: 0.8rem;
+            color: #6c757d;
+            transition: color 0.2s ease;
+        }
+
+        #record-planning>.sub-menu .nav-link:hover,
+        #record-review>.sub-menu .nav-link:hover {
+            color: #0d6efd;
+        }
+
+        #record-planning>.sub-menu .nav-item::before,
+        #record-review>.sub-menu .nav-item::before {
+            content: none !important;
+        }
+
+        /* --- 滚动条样式 (保留不变) --- */
+        #process-record-menu .sub-menu .sub-menu::-webkit-scrollbar,
+        #record-planning>.sub-menu::-webkit-scrollbar,
+        #record-review>.sub-menu::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #process-record-menu .sub-menu .sub-menu::-webkit-scrollbar-track,
+        #record-planning>.sub-menu::-webkit-scrollbar-track,
+        #record-review>.sub-menu::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #process-record-menu .sub-menu .sub-menu::-webkit-scrollbar-thumb,
+        #record-planning>.sub-menu::-webkit-scrollbar-thumb,
+        #record-review>.sub-menu::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            border: 2px solid transparent;
+            background-clip: content-box;
+        }
+
+        /*
+         * =====【核心动画优化】=====
+         */
+
+        /* 1. 默认折叠状态：所有影响空间的属性都为0 */
+        #design-planning,
+        #process-record-menu,
+        #record-planning,
+        #record-review,
+        #charts,
+        #auth,
+        .sub-menu .sub-menu {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            /* 将所有需要动画的属性都包含进来 */
+            transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.25s ease-out,
+                padding 0.3s ease-out,
+                margin 0.3s ease-out;
+
+            /* 关键：折叠时，padding 和 margin 也必须为0 */
+            padding-top: 0;
+            padding-bottom: 0;
+            margin-top: 0;
+            margin-bottom: 0;
+
+            /* 确保伪元素也没有影响 */
+            border: none;
+            box-shadow: none;
+        }
+
+        /* 2. 展开状态 (.show)：恢复所有属性到目标值 */
+        #design-planning.show,
+        #process-record-menu.show,
+        #record-planning.show,
+        #record-review.show,
+        #charts.show,
+        #auth.show,
+        .sub-menu .sub-menu.show {
+            max-height: 25rem;
+            /* 动画目标高度 */
+            opacity: 1;
+        }
+
+        /* 3. 为不同菜单的 ul.sub-menu 恢复它们展开时的 padding */
+        #process-record-menu.show>.sub-menu,
+        #record-planning.show>.sub-menu,
+        #record-review.show>.sub-menu {
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+        }
+
+        /* 针对三级菜单恢复它展开时的 padding */
+        #process-record-menu .sub-menu .sub-menu.show {
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+        }
+
+        #design-planning.show,
+        #process-record-menu.show,
+        #record-planning.show,
+        #record-review.show {
+            /* 核心：只为左下角和右下角添加圆角 */
+            border-bottom-left-radius: 0.75rem;
+            border-bottom-right-radius: 0.75rem;
+
+            /* 增强：添加柔和的阴影 */
+            box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.1);
+
+            /* 确保背景色 */
+            background-color: #fff;
+
+            /* 优化过渡动画 */
+            transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.25s ease-out,
+                padding 0.3s ease-out,
+                margin 0.3s ease-out,
+                box-shadow 0.3s ease;
+        }
+
+        /* 2. 【兼容方案】干脆把所有一级菜单的下圆角都去掉 */
+        /* 因为它们要么是闭合的，要么下方会连接一个菜单，无论哪种情况，直角都更好看 */
+        .sidebar .nav .nav-item>.nav-link {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        /* 3. 只给最后一个菜单项保留下圆角，或者当它没展开时 */
+        .sidebar .nav .nav-item:last-child>.nav-link {
+            border-bottom-left-radius: 0.75rem;
+            border-bottom-right-radius: 0.75rem;
+        }
+
+        .nav .nav-item {
+            list-style: none;
+            list-style-type: none;
+        }
+
+
+        .nav .nav-item::before {
+            content: none !important;
+        }
+
+        .nav .sub-menu .sub-menu {
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar {
+            width: 6px;
+            /* 设置滚动条的宽度 */
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-track {
+            background: transparent;
+            /* 滚动条轨道的背景色（设置为透明） */
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            /* 滚动条滑块的颜色 */
+            border-radius: 10px;
+            /* 将滑块设置为圆角 */
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(0, 0, 0, 0.4);
+            /* 鼠标悬停在滑块上时的颜色 */
+        }
+
+        #record-review>.sub-menu {
+            /* 应用和三级菜单完全相同的最大高度和溢出规则 */
+            max-height: 20rem;
+            overflow-y: auto;
+
+            /* 同样增加右侧内边距，防止文字紧贴滚动条 */
+            padding-right: 5px;
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar,
+        #record-review>.sub-menu::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-track,
+        #record-review>.sub-menu::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-thumb,
+        #record-review>.sub-menu::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+
+        .nav .sub-menu .sub-menu::-webkit-scrollbar-thumb:hover,
+        #record-review>.sub-menu::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .nav>.nav-item>.nav-link {
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+
+        .nav>.nav-item>.nav-link:hover {
+            background-color: #f0f2f5;
+            /* 一个浅灰色背景 */
+            color: #0d6efd;
+            /* 主题色 */
+        }
+
+        /* 同时改变悬停时图标的颜色 */
+        .nav>.nav-item>.nav-link:hover .menu-icon {
+            color: #0d6efd;
+        }
+
+        .nav>.nav-item>.nav-link:hover,
+        .nav>.nav-item>.nav-link:has(+ div.show) {
+            background-color: #f0f2f5;
+            /* 确保与 hover 状态颜色一致 */
+            color: #0d6efd;
+            /* 确保与 hover 状态颜色一致 */
+            border-radius: 0.5rem;
+            /* 保持圆角 */
+        }
+
+        .nav>.nav-item>.nav-link:hover .menu-icon,
+        .nav>.nav-item>.nav-link:has(+ div.show) {
+            background-color: #f0f2f5;
+            /* 这是你指定的浅灰色背景 */
+            color: #0d6efd;
+            /* 推荐：同时保持文字高亮，与 hover 效果一致 */
+            border-radius: 0.5rem;
+            /* 推荐：保持圆角，视觉效果更统一 */
+        }
+        .nav>.nav-item>.nav-link:has(+ div.show) .menu-icon {
+            color: #0d6efd;
+            /* 确保图标颜色也与 hover 效果一致 */
         }
     </style>
 
@@ -119,7 +324,6 @@
                     </div>
                     <div>
                         <a class="navbar-brand brand-logo flex-grow-1" href="index.html" style="flex: 1;">
-                            <!-- 加一个flex=1 -->
                             <img src="main/images/logo.svg" alt="logo" />
                         </a>
                         <a class="navbar-brand brand-logo-mini" href="index.html">
@@ -471,8 +675,7 @@
                         </div>
                     </div>
                 </div>
-                <!-- partial -->
-                <!-- partial:partials/_sidebar.html -->
+
                 <nav class="sidebar sidebar-offcanvas" id="sidebar">
                     <ul class="nav">
                         <li class="nav-item">
@@ -544,72 +747,76 @@
                         </li>
 
                         <li class="nav-item nav-category">设计策划</li>
-
+                        <!-- ==================【设计策划】================== -->
                         <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#design-planning" aria-expanded="false"
-                                aria-controls="design-planning">
+                            <!-- (A) 触发器: 使用 toggleDesignInfoMenu 方法 -->
+                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleDesignInfoMenu">
                                 <i class="menu-icon mdi mdi-floor-plan"></i>
                                 <span class="menu-title">设计策划</span>
-                                <i class="menu-arrow"></i>
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showDesignInfoMenu}"></i>
                             </a>
-                            <div class="collapse" id="design-planning">
+                            <!-- (B) 容器: 由 showDesignInfoMenu 状态控制 -->
+                            <div id="design-planning" :class="{'show': showDesignInfoMenu}">
                                 <ul class="nav flex-column sub-menu">
                                     <li class="nav-item">
-                                        <a class="nav-link" href="javascript:void(0)" @click="toggleProjectMenu">
+                                        <!-- (C) 子菜单触发器: 使用 toggleProjectMenu 方法 -->
+                                        <a class="nav-link" href="javascript:void(0)"
+                                            @click.prevent="toggleProjectMenu">
                                             项目名称
                                             <i class="menu-arrow" :class="{'mdi-rotate-180': showProjectMenu}"></i>
                                         </a>
-
-                                        <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}"
-                                            id="project-submenu">
-
-                                            <!-- 动态生成的项目列表 -->
+                                        <!-- (D) 子菜单容器: 由 showProjectMenu 状态控制 -->
+                                        <ul class="nav flex-column sub-menu" id="project-submenu"
+                                            :class="{'show': showProjectMenu}">
                                             <li class="nav-item" v-for="project in projectList" :key="project.id">
-                                                <span class="nav-link" href="javascript:void(0)"
+                                                <span class="nav-link" style="cursor: pointer;"
                                                     @click="viewProjectPlanning(project)">
                                                     {{ project.projectNumber }}
                                                 </span>
                                             </li>
-                                            <!-- 加载完成且列表为空时显示 -->
                                             <li class="nav-item"
                                                 v-if="!isProjectListLoading && projectList.length === 0">
                                                 <a class="nav-link text-muted" href="#">暂无项目</a>
                                             </li>
                                         </ul>
-                                        <a class="nav-link" href="javascript:void(0)" @click="toggleProjectMenu">
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link" href="javascript:void(0)">
                                             膜具类别
-                                            <i class="menu-arrow" :class="{'mdi-rotate-180': showProjectMenu}"></i>
                                         </a>
                                     </li>
                                 </ul>
                             </div>
                         </li>
+
                         <li class="nav-item nav-category">设计记录表</li>
+
+                        <!-- ==================【设计过程记录】(保持原样) ================== -->
                         <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#process-record-menu"
-                                aria-expanded="false">
+                            <!-- 使用 toggleDrawingCheckMenu 方法 -->
+                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleDrawingCheckMenu">
                                 <i class="menu-icon mdi mdi-clipboard-text-outline"></i>
                                 <span class="menu-title">设计过程记录</span>
-                                <i class="menu-arrow"></i>
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showDrawingCheckMenu}"></i>
                             </a>
-                            <div class="collapse" id="process-record-menu">
+                            <!-- 由 showDrawingCheckMenu 状态控制 -->
+                            <div id="process-record-menu" :class="{'show': showDrawingCheckMenu}">
                                 <ul class="nav flex-column sub-menu">
                                     <li class="nav-item">
-                                        <!-- 【关键】调用新的 toggle 方法 -->
-                                        <a class="nav-link" href="javascript:void(0)" @click="toggleRecordProjectMenu">
+                                        <!-- 子菜单触发器: 使用 toggleRecordProjectMenu 方法 -->
+                                        <a class="nav-link" href="javascript:void(0)"
+                                            @click.prevent="toggleRecordProjectMenu">
                                             选择项目
-                                            <!-- 【关键】绑定到新的 data 属性 -->
                                             <i class="menu-arrow"
                                                 :class="{'mdi-rotate-180': showRecordProjectMenu}"></i>
                                         </a>
-                                        <!-- 【关键】绑定到新的 data 属性 -->
+                                        <!-- 子菜单容器: 由 showRecordProjectMenu 状态控制 -->
                                         <ul class="nav flex-column sub-menu" :class="{'show': showRecordProjectMenu}">
                                             <li class="nav-item" v-if="isProjectListLoading">
                                                 <a class="nav-link text-muted" href="#">加载中...</a>
                                             </li>
                                             <li class="nav-item" v-for="project in projectList"
                                                 :key="'record-' + project.id">
-                                                <!-- 【关键】调用新的导航方法 -->
                                                 <a class="nav-link" href="javascript:void(0)"
                                                     @click="viewProcessRecordForProject(project)">
                                                     {{ project.projectName || project.projectNumber }}
@@ -624,49 +831,65 @@
                                 </ul>
                             </div>
                         </li>
-                        <!-- ... 你已有的“设计策划”菜单 ... -->
 
-                        <!-- ======================================================= -->
-                        <!--   ↓↓↓ 【在这里新增】一个新的主菜单项 ↓↓↓   -->
-                        <!-- ======================================================= -->
                         <li class="nav-item nav-category">过程记录</li>
+
+                        <!-- ==================【过程记录表】(已优化) ================== -->
                         <li class="nav-item">
-                            <!-- 点击时调用 toggleRecordProjectMenu 方法 -->
-                            <a class="nav-link" data-bs-toggle="collapse" href="#record-planning" aria-expanded="false"
-                                @click.prevent="toggleRecordProjectMenu">
+                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleInfoSummaryMenu">
                                 <i class="menu-icon mdi mdi-file-document-box-multiple-outline"></i>
                                 <span class="menu-title">过程记录表</span>
-                                <i class="menu-arrow"></i>
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showInfoSummaryMenu}"></i>
                             </a>
-                            <!-- :class="{'show': showRecordProjectMenu}" 用于控制展开/折叠 -->
-                            <div class="collapse" id="record-planning" :class="{'show': showRecordProjectMenu}">
+                            <div id="record-planning" :class="{'show': showInfoSummaryMenu}">
                                 <ul class="nav flex-column sub-menu">
-                                    <!-- 
-                使用 v-for 循环 projectList 来动态生成项目子菜单
-                点击每个项目时，调用 viewProcessRecordsForProject 方法
-            -->
-                                    <li v-for="project in projectList" :key="'record-' + project.id" class="nav-item">
+                                    <li class="nav-item">
+                                        <!-- 【核心修改 1】子菜单触发器现在调用新的方法 -->
                                         <a class="nav-link" href="javascript:void(0)"
-                                            @click="viewProcessRecordsForProject(project)">
-                                            {{ project.projectName || project.projectNumber }}
+                                            @click.prevent="toggleRecordPlanningProjectMenu">
+                                            选择项目
+                                            <!-- 【核心修改 2】箭头旋转状态绑定到新的 data 属性 -->
+                                            <i class="menu-arrow"
+                                                :class="{'mdi-rotate-180': showRecordPlanningProjectMenu}"></i>
                                         </a>
-                                    </li>
-                                    <!-- 加载状态提示 -->
-                                    <li v-if="isProjectListLoading" class="nav-item">
-                                        <span class="nav-link text-muted">加载中...</span>
+                                        <!-- 【核心修改 3】子菜单容器的显示/隐藏也绑定到新的 data 属性 -->
+                                        <ul class="nav flex-column sub-menu"
+                                            :class="{'show': showRecordPlanningProjectMenu}">
+                                            <li v-for="project in projectList" :key="'record-plan-' + project.id"
+                                                class="nav-item">
+                                                <a class="nav-link" href="javascript:void(0)"
+                                                    @click="viewProcessRecordsForProject(project)">
+                                                    {{ project.projectName || project.projectNumber }}
+                                                </a>
+                                            </li>
+                                            <li v-if="isProjectListLoading" class="nav-item">
+                                                <span class="nav-link text-muted">加载中...</span>
+                                            </li>
+                                            <li class="nav-item"
+                                                v-if="!isProjectListLoading && projectList.length === 0">
+                                                <a class="nav-link text-muted" href="#">暂无项目</a>
+                                            </li>
+                                        </ul>
                                     </li>
                                 </ul>
                             </div>
                         </li>
+
                         <li class="nav-item nav-category">过程记录 (审查)</li>
+
+                        <!-- ==================【审查记录表】(修正版) ================== -->
                         <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#record-review" aria-expanded="false"
-                                @click.prevent="toggleRecordReviewMenu">
+                            <!-- (A) 触发器: 保持不变 -->
+                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleRecordReviewMenu">
                                 <i class="menu-icon mdi mdi-file-find-outline"></i>
                                 <span class="menu-title">审查记录表</span>
-                                <i class="menu-arrow"></i>
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordReviewMenu}"></i>
                             </a>
-                            <div class="collapse" id="record-review" :class="{'show': showRecordReviewMenu}">
+                            <!-- (B) 容器: 保持不变 -->
+                            <div id="record-review" :class="{'show': showRecordReviewMenu}">
+
+                                <!-- 【核心修正】: 移除了多余的 <li> 和 <ul> 嵌套 -->
+                                <!-- 现在项目列表是直接的二级菜单，不会被 .sub-menu .sub-menu 规则错误地隐藏 -->
                                 <ul class="nav flex-column sub-menu">
                                     <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
                                         <a class="nav-link" href="javascript:void(0)"
@@ -677,7 +900,11 @@
                                     <li v-if="isProjectListLoading" class="nav-item">
                                         <span class="nav-link text-muted">加载中...</span>
                                     </li>
+                                    <li v-if="!isProjectListLoading && projectList.length === 0" class="nav-item">
+                                        <a class="nav-link text-muted" href="#">暂无项目</a>
+                                    </li>
                                 </ul>
+
                             </div>
                         </li>
 
@@ -741,7 +968,7 @@
                     <component :is="activePanel" :project-id="currentProjectId" :record-id="currentRecordId"
                         @create-new-record="handleCreateNewRecord" @view-record-details="handleViewRecordDetails"
                         @project-created="onProjectCreated" @back-to-list="handleBackToList"
-                        @review-record="onReviewRecord" >
+                        @review-record="onReviewRecord">
                     </component>
                 </div>
             </div>
@@ -761,7 +988,7 @@
     <script src="/luckysheet/luckysheet.umd.js"></script>
     <script src="/luckysheet/luckyexcel.umd.js"></script>
 
-<!-- 在引入 luckysheet 和 luckyexcel 之后，引入 SheetJS -->
+    <!-- 在引入 luckysheet 和 luckyexcel 之后，引入 SheetJS -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
     <!-- 4. 自定义的Vue组件 -->
@@ -777,7 +1004,7 @@
     <script src="/js/components/record-review-panel.js"></script>
     <script src="/js/components/record-details-viewer.js"></script>
     <script src="/js/components/review-tasks-panel.js"></script>
-    
+
 
     <!-- 4.2 顶部导航栏动态组件 -->
     <script src="js/components/user-dropdown.js"></script>
@@ -796,19 +1023,9 @@
     <script src="main/js/dashboard.js"></script> <!-- 如果dashboard-panel.js已处理其逻辑，此文件可能不再需要 -->
     <script src="main/js/Chart.roundedBarCharts.js"></script>
 
-
-    <!-- ... 你页面中所有的HTML和CSS ... -->
-
-    <!-- ======================================================= -->
-    <!--   ↓↓↓ 将你页面底部的整个 <script> 块替换为以下内容 ↓↓↓   -->
-    <!-- ======================================================= -->
     <script>
         new Vue({
             el: '#app',
-
-            // ======================================================================
-            //  一、数据 (DATA) - 清晰、无重复
-            // ======================================================================
             data() {
                 return {
                     // --- 核心状态 ---
@@ -826,7 +1043,7 @@
                     showDesignInfoMenu: false,
                     showRecordProjectMenu: false, // 设计人员的“过程记录”菜单
                     showRecordReviewMenu: false,  // 审查人员的“审查记录”菜单
-
+                    showRecordPlanningProjectMenu: false,
                     // --- 数据 ---
                     projectList: []
                 }
@@ -854,9 +1071,6 @@
                 }
             },
 
-            // ======================================================================
-            //  三、方法 (METHODS) - 职责清晰、无重复
-            // ======================================================================
             methods: {
 
                 // --------------------------------------------------
@@ -873,11 +1087,6 @@
                     this.activePanel = panelName;
                 },
 
-                // --------------------------------------------------
-                // (B) 侧边栏点击 & UI事件处理器
-                // --------------------------------------------------
-
-                // --- 导航类 ---
                 goToDashboard() {
                     this.navigateTo('dashboard-panel');
                 },
@@ -904,7 +1113,7 @@
                 toggleDesignInfoMenu() { this.showDesignInfoMenu = !this.showDesignInfoMenu; },
                 toggleRecordProjectMenu() { this.showRecordProjectMenu = !this.showRecordProjectMenu; },
                 toggleRecordReviewMenu() { this.showRecordReviewMenu = !this.showRecordReviewMenu; },
-
+                toggleRecordPlanningProjectMenu() { this.showRecordPlanningProjectMenu = !this.showRecordPlanningProjectMenu; },
 
                 // --------------------------------------------------
                 // (C) 子组件事件处理器 - 监听子组件的 @event
@@ -926,7 +1135,7 @@
                 onReviewRecord(recordId) {
                     // 【日志1】: 确认事件被成功接收
                     console.log(`%c【父组件】接收到 'review-record' 事件, 准备处理。记录ID: ${recordId}`, 'color: green; font-weight: bold;');
-                    
+
                     // 调用统一的导航方法
                     this.navigateTo('record-review-panel', { recordId: recordId });
                 },
@@ -992,10 +1201,6 @@
                 handleViewRecordDetails(recordId) { this.onViewRecordDetails(recordId); },
                 handleBackToList() { this.onBackToList(); }
             },
-
-            // ======================================================================
-            //  四、生命周期钩子 (Lifecycle Hooks)
-            // ======================================================================
             mounted() {
                 console.log("【父组件】Vue 实例已挂载，开始获取初始数据...");
                 this.fetchProjectList();

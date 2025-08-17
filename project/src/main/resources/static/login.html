@@ -10,9 +10,31 @@
     <link rel="shortcut icon" href="favicon.ico" />
     <script defer src="assets/plugins/fontawesome/js/all.min.js"></script>
     <link id="theme-style" rel="stylesheet" href="assets/css/portal.css" />
+
+    <!-- 【新增】为 Bootstrap Toast 添加定位样式 -->
+    <style>
+      .toast-container {
+        z-index: 1090; /* 确保 Toast 在最顶层 */
+      }
+    </style>
   </head>
 
   <body class="app app-login p-0">
+    <!-- ========================================================== -->
+    <!--   ↓↓↓ 第一步：在页面中添加 Bootstrap Toast 的 HTML 结构 ↓↓↓   -->
+    <!-- ========================================================== -->
+    <div class="toast-container position-fixed top-0 end-0 p-3">
+      <div id="login-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+          <strong class="me-auto" id="toast-header-title">系统提示</strong>
+          <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toast-body-content">
+          <!-- 消息内容将由 JavaScript 动态填充 -->
+        </div>
+      </div>
+    </div>
+    
     <div class="row g-0 app-auth-wrapper">
       <div class="col-12 col-md-7 col-lg-6 auth-main-col text-center p-5">
         <div class="d-flex flex-column align-content-end">
@@ -24,31 +46,14 @@
             </div>
             <h2 class="auth-heading text-center mb-5">登录</h2>
             <div class="auth-form-container text-start">
-              <!-- 表单的 id 保持，以便JS能找到它 -->
               <form class="auth-form login-form" id="login-form">
                 <div class="email mb-3">
                   <label class="sr-only" for="username">用户名</label>
-                  <!-- id 和 name 保持为 "username" -->
-                  <input
-                    id="username"
-                    name="username"
-                    type="text"
-                    class="form-control signin-username"
-                    placeholder="请输入您的用户名"
-                    required="required"
-                  />
+                  <input id="username" name="username" type="text" class="form-control signin-username" placeholder="请输入您的用户名" required="required"/>
                 </div>
                 <div class="password mb-3">
                   <label class="sr-only" for="password">密码</label>
-                   <!-- id 和 name 保持为 "password" -->
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    class="form-control signin-password"
-                    placeholder="请输入密码"
-                    required="required"
-                  />
+                  <input id="password" name="password" type="password" class="form-control signin-password" placeholder="请输入密码" required="required"/>
                   <div class="extra mt-3 row justify-content-between">
                     <div class="col-6">
                       <div class="form-check">
@@ -87,68 +92,107 @@
       </div>
     </div>
 
-    <!-- ================================================================== -->
-    <!--   ↓↓↓ 最终版的 JavaScript 登录逻辑 ↓↓↓   -->
-    <!-- ================================================================== -->
-
-    <!-- 1. 引入 Axios 库 -->
+    <!-- 依赖库 -->
     <script src="/material/axios.min.js"></script>
+    <!-- 【重要】确保引入了 Bootstrap 的 JS 文件，你的模板应该有这个文件 -->
+    <!-- 请根据你项目的实际路径调整 src -->
+    <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 
-    <!-- 2. 登录逻辑脚本 -->
+    <!-- ========================================================== -->
+    <!--     ↓↓↓ 第二步：修改 JS 逻辑以控制 Bootstrap Toast ↓↓↓     -->
+    <!-- ========================================================== -->
     <script>
-        const loginForm = document.getElementById('login-form');
-        const usernameInput = document.getElementById('username');
-        const passwordInput = document.getElementById('password');
+      // 获取需要操作的 DOM 元素
+      const loginForm = document.getElementById('login-form');
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+      const submitButton = loginForm.querySelector('button[type="submit"]');
 
-        loginForm.addEventListener('submit', function(event) {
-            // 阻止表单默认的刷新行为
-            event.preventDefault();
+      // 初始化 Bootstrap Toast
+      const toastElement = document.getElementById('login-toast');
+      const toastHeaderTitle = document.getElementById('toast-header-title');
+      const toastBodyContent = document.getElementById('toast-body-content');
+      const bsToast = new bootstrap.Toast(toastElement, { delay: 2000 }); // 设置默认延迟2秒消失
 
-            // 从输入框获取值
-            const username = usernameInput.value;
-            const password = passwordInput.value;
+      loginForm.addEventListener('submit', function(event) {
+          event.preventDefault();
+          
+          submitButton.disabled = true;
+          submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 登录中...';
 
-            // 简单的前端非空验证
-            if (!username || !password) {
-                alert('用户名和密码不能为空！');
-                return;
-            }
+          const username = usernameInput.value;
+          const password = passwordInput.value;
+  
+          if (!username || !password) {
+              // 使用 Toast 显示错误
+              toastHeaderTitle.textContent = '输入错误';
+              toastBodyContent.textContent = '用户名和密码不能为空！';
+              toastElement.classList.remove('bg-success');
+              toastElement.classList.add('bg-danger', 'text-white');
+              bsToast.show();
 
-            // 【关键】使用 URLSearchParams 来构造 x-www-form-urlencoded 格式的数据
-            // Spring Security 默认需要这种格式
-            const params = new URLSearchParams();
-            params.append('username', username);
-            params.append('password', password);
+              submitButton.disabled = false;
+              submitButton.textContent = '登录';
+              return;
+          }
+  
+          const params = new URLSearchParams();
+          params.append('username', username);
+          params.append('password', password);
+  
+          axios.post('/api/users/login', params)
+              .then(function(response) {
+                  if (response.data && response.data.success) {
+                      const userRole = response.data.role;
+                      if (userRole) {
+                          sessionStorage.setItem('userRole', userRole);
+                      }
 
-            // 发送 POST 请求到 SecurityConfig 中配置的 loginProcessingUrl
-            axios.post('/api/users/login', params)
-                .then(function(response) {
-                    // --- 请求成功 (HTTP 状态码 200 OK) ---
-                    console.log('登录成功，后端返回:', response.data);
-                    
-                    // 【关键】检查后端返回的JSON数据
-                    if (response.data && response.data.success) {
-                        // 如果后端明确告知成功，则进行跳转
-                        // 跳转到后端指定的 redirectUrl
-                        window.location.href = response.data.redirectUrl || '/index';
-                    } else {
-                        // 如果后端返回了成功状态码但业务上失败，显示后端消息
-                        alert(response.data.message || '登录失败，未知错误。');
-                    }
-                })
-                .catch(function(error) {
-                    // --- 请求失败 (HTTP 状态码 401, 500 等) ---
-                    console.error('登录请求失败:', error);
-                    
-                    // 尝试从失败响应中获取后端返回的错误信息
-                    let errorMessage = '用户名或密码不正确，请重试。';
-                    if (error.response && error.response.data && error.response.data.message) {
-                        errorMessage = error.response.data.message;
-                    }
-                    
-                    alert(errorMessage);
-                });
-        });
-    </script>
+                      let roleText = '用户';
+                      switch(userRole) {
+                          case 'student': roleText = '学生'; break;
+                          case 'designer': roleText = '设计员'; break;
+                          case 'manager': roleText = '管理员'; break;
+                      }
+                      
+                      // 【核心】配置并显示成功的 Toast
+                      toastHeaderTitle.textContent = '登录成功';
+                      toastBodyContent.innerHTML = `欢迎您，<strong>${roleText}</strong>！即将进入系统...`;
+                      toastElement.classList.remove('bg-danger');
+                      toastElement.classList.add('bg-success', 'text-white');
+                      bsToast.show();
+
+                      // 延迟跳转，确保用户能看到提示
+                      setTimeout(() => {
+                          window.location.href = response.data.redirectUrl || '/index';
+                      }, 2000); // 延迟时间与 Toast 的 delay 保持一致
+  
+                  } else {
+                      // 业务失败
+                      toastHeaderTitle.textContent = '登录失败';
+                      toastBodyContent.textContent = response.data.message || '未知错误。';
+                      toastElement.classList.remove('bg-success');
+                      toastElement.classList.add('bg-danger', 'text-white');
+                      bsToast.show();
+                      submitButton.disabled = false;
+                      submitButton.textContent = '登录';
+                  }
+              })
+              .catch(function(error) {
+                  // 网络或认证失败
+                  let errorMessage = '用户名或密码不正确，请重试。';
+                  if (error.response && error.response.data && error.response.data.message) {
+                      errorMessage = error.response.data.message;
+                  }
+                  toastHeaderTitle.textContent = '认证失败';
+                  toastBodyContent.textContent = errorMessage;
+                  toastElement.classList.remove('bg-success');
+                  toastElement.classList.add('bg-danger', 'text-white');
+                  bsToast.show();
+                  submitButton.disabled = false;
+                  submitButton.textContent = '登录';
+              });
+      });
+  </script>
   </body>
 </html>
