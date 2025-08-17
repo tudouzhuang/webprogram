@@ -63,7 +63,7 @@ Vue.component('record-review-panel', {
 
             </div>
     `,
-    
+
     data() {
         return {
             isLoading: true,
@@ -103,7 +103,7 @@ Vue.component('record-review-panel', {
                         this.loadError = "未能获取到源文件路径。";
                         console.error("[DEBUG-ERROR] fetchRecordData: API返回的数据中缺少 sourceFilePath:", this.recordInfo);
                     }
-                    
+
                     this.loadPreviewSheet(); // 触发一次加载尝试
                     this.determineReviewSheetUrl(); // 链式调用
                 })
@@ -115,7 +115,7 @@ Vue.component('record-review-panel', {
                     this.isLoading = false;
                 });
         },
-        
+
         determineReviewSheetUrl() {
             console.log(`[DEBUG] determineReviewSheetUrl: 开始为 recordId=${this.recordId} 查询审核表...`);
             axios.get(`/api/process-records/${this.recordId}/review-sheet-info`)
@@ -138,7 +138,7 @@ Vue.component('record-review-panel', {
                     }
                 });
         },
-        
+
         // --- Iframe 加载事件处理器 ---
         onPreviewIframeLoad() {
             console.log("[DEBUG] onPreviewIframeLoad: ✅ 左侧预览Iframe已加载。");
@@ -180,70 +180,88 @@ Vue.component('record-review-panel', {
                 });
             }
         },
-        
+
         // --- 保存逻辑 ---
         saveReviewSheet() {
             if (this.isSavingSheet || !this.reviewIframeLoaded) return;
             this.isSavingSheet = true;
             this.$message.info("正在生成审核文件，请稍候...");
-            this.sendMessageToIframe(this.$refs.reviewIframe, { 
+            this.sendMessageToIframe(this.$refs.reviewIframe, {
                 type: 'GET_DATA_AND_IMAGES',
                 payload: {
                     // instanceId已在iframe侧移除，不再需要
                 }
             });
         },
+
+        getExcelImageTwoCellAnchor(left, top, width, height, colLen, rowLen) {
+            const defaultColWidth = 73;
+            const defaultRowHeight = 19;
+            const EMU_PER_PIXEL = 9525;
         
+            // --- 计算左上角 ('tl') 锚点 ---
+            let currentX = 0, startCol = 0, startColOffPx = 0;
+            for (let c = 0; c < 512; c++) {
+                const currentW = colLen[c] === undefined ? defaultColWidth : colLen[c];
+                if (left < currentX + currentW) {
+                    startCol = c;
+                    startColOffPx = left - currentX;
+                    break;
+                }
+                currentX += currentW;
+            }
+        
+            let currentY = 0, startRow = 0, startRowOffPx = 0;
+            for (let r = 0; r < 4096; r++) {
+                const currentH = rowLen[r] === undefined ? defaultRowHeight : rowLen[r];
+                if (top < currentY + currentH) {
+                    startRow = r;
+                    startRowOffPx = top - currentY;
+                    break;
+                }
+                currentY += currentH;
+            }
+            const tlAnchor = { col: startCol, row: startRow, colOff: startColOffPx * EMU_PER_PIXEL, rowOff: startRowOffPx * EMU_PER_PIXEL };
+        
+            // --- 计算右下角 ('br') 锚点 ---
+            const endX = left + width;
+            const endY = top + height;
+        
+            currentX = 0;
+            let endCol = 0, endColOffPx = 0;
+            for (let c = 0; c < 512; c++) {
+                const currentW = colLen[c] === undefined ? defaultColWidth : colLen[c];
+                if (endX <= currentX + currentW) {
+                    endCol = c;
+                    endColOffPx = endX - currentX;
+                    break;
+                }
+                currentX += currentW;
+            }
+        
+            currentY = 0;
+            let endRow = 0, endRowOffPx = 0;
+            for (let r = 0; r < 4096; r++) {
+                const currentH = rowLen[r] === undefined ? defaultRowHeight : rowLen[r];
+                if (endY <= currentY + currentH) {
+                    endRow = r;
+                    endRowOffPx = endY - currentY;
+                    break;
+                }
+                currentY += currentH;
+            }
+            const brAnchor = { col: endCol, row: endRow, colOff: endColOffPx * EMU_PER_PIXEL, rowOff: endRowOffPx * EMU_PER_PIXEL };
+        
+            // 【核心修正】: 返回 tl 和 br，而不是 from 和 to
+            return { tl: tlAnchor, br: brAnchor };
+        },
+
         // --- 消息处理与辅助方法 ---
         sendMessageToIframe(iframe, message) {
             if (iframe && iframe.contentWindow) {
-                 iframe.contentWindow.postMessage(message, window.location.origin);
+                iframe.contentWindow.postMessage(message, window.location.origin);
             } else {
                 console.error("尝试向iframe发送消息失败，iframe未准备好。");
-            }
-        },
-
-        async messageEventListener(event) {
-            if (event.origin !== window.location.origin || !event.data || event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
-                return;
-            }
-            const { payload } = event.data;
-
-            // 【变更】: 检查 ExcelJS 是否存在
-            if (typeof ExcelJS === 'undefined') {
-                this.$message.error(`导出核心库(ExcelJS)缺失！请检查 index.html。`);
-                this.isSavingSheet = false;
-                return;
-            }
-
-            try {
-                // 【变更】: 调用新的基于 ExcelJS 的导出函数
-                const exportBlob = await this.exportWithExcelJS(payload);
-                
-                // 触发前端下载，用于最终验证
-                const downloadUrl = window.URL.createObjectURL(exportBlob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = downloadUrl;
-                a.download = `FINAL_EXPORT_WITH_EXCELJS_${this.recordId}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(downloadUrl);
-                document.body.removeChild(a);
-
-                const formData = new FormData();
-                const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
-                formData.append('file', exportBlob, reviewFileName);
-                const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
-                await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-
-                this.$message.success("审核表已使用新引擎成功保存！");
-                this.determineReviewSheetUrl();
-            } catch (error) {
-                this.$message.error(error.message || "使用 ExcelJS 导出或保存失败！");
-                console.error("ExcelJS 导出或上传过程出错:", error);
-            } finally {
-                this.isSavingSheet = false;
             }
         },
 
@@ -257,7 +275,7 @@ Vue.component('record-review-panel', {
             }
             try {
                 const exportBlob = await this.exportWithExcelJS(payload);
-                
+
                 // 最终验证下载
                 const downloadUrl = window.URL.createObjectURL(exportBlob);
                 const a = document.createElement('a');
@@ -267,13 +285,13 @@ Vue.component('record-review-panel', {
                 a.click();
                 window.URL.revokeObjectURL(downloadUrl);
                 a.remove();
-    
+
                 const formData = new FormData();
                 const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
                 formData.append('file', exportBlob, reviewFileName);
                 const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
                 await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-    
+
                 this.$message.success("审核表已使用最终引擎成功保存！");
                 this.determineReviewSheetUrl();
             } catch (error) {
@@ -283,75 +301,72 @@ Vue.component('record-review-panel', {
                 this.isSavingSheet = false;
             }
         },
-    
+
         /**
-         * 【终极版解决方案】: 使用 ExcelJS 导出，并采用最兼容的图片锚定方式
+         * 【最终决定版 twoCell 解决方案】: 使用混合锚点，绕过 ExcelJS 内部 Bug
          */
         async exportWithExcelJS(luckysheetData) {
-            console.log("【终极版解决方案】: 使用 ExcelJS 引擎和精确锚点开始构建...");
+            console.log("【最终正确版 twoCell 解决方案】: 使用 tl/br/editAs 开始构建...");
             const sheets = luckysheetData.sheets;
             if (!sheets || sheets.length === 0) { throw new Error("工作表数据为空"); }
-    
+        
             const workbook = new ExcelJS.Workbook();
-    
+        
             for (const sheet of sheets) {
                 if (!sheet) continue;
                 const worksheet = workbook.addWorksheet(sheet.name);
-    
-                // 1. 设置列宽和行高 (保持不变)
+        
+                // ... (填充单元格、合并等代码保持不变)
                 if (sheet.config) {
                     if (sheet.config.columnlen) { Object.entries(sheet.config.columnlen).forEach(([colIndex, width]) => { worksheet.getColumn(parseInt(colIndex) + 1).width = width / 8; }); }
                     if (sheet.config.rowlen) { Object.entries(sheet.config.rowlen).forEach(([rowIndex, height]) => { worksheet.getRow(parseInt(rowIndex) + 1).height = height * 0.75; }); }
                 }
-    
-                // 2. 填充单元格和合并 (保持不变)
                 (sheet.celldata || []).forEach(cellData => { const cell = worksheet.getCell(cellData.r + 1, cellData.c + 1); if (cellData.v) { cell.value = cellData.v.m !== undefined ? cellData.v.m : cellData.v.v; } });
-                if (sheet.config && sheet.config.merge) { Object.values(sheet.config.merge).forEach(merge => { worksheet.mergeCells(merge.r + 1, merge.c + 1, merge.r + merge.rs, merge.c + merge.cs); }); }
-    
-                // 3. 【核心修正】处理图片
+                if (sheet.config && sheet.config.merge) { 
+                     Object.values(sheet.config.merge).forEach(merge => { 
+                        worksheet.mergeCells(merge.r + 1, merge.c + 1, merge.r + merge.rs, merge.c + merge.cs); 
+                    }); 
+                }
+        
+                // 处理图片
                 if (sheet.images && typeof sheet.images === 'object') {
                     for (const imageId in sheet.images) {
                         const img = sheet.images[imageId];
-                        if (!img || !img.src) continue;
-    
-                        const base64Data = img.src.split(',')[1];
-                        if (!base64Data) continue;
-                        
-                        const imageIdInWorkbook = workbook.addImage({
-                            base64: base64Data,
-                            extension: this.getImageExtension(img.src),
-                        });
-                        
-                        const imgDefault = img.default || {};
+                        const imgDefault = img ? img.default : null;
+        
+                        // --- 健壮性检查 (保持) ---
+                        if (!img || !img.src || !imgDefault) { continue; }
                         const { left, top, width, height } = imgDefault;
-    
-                        // a. 【关键】调用辅助函数，计算出图片应该锚定在哪个单元格以及单元格内的偏移
-                        const anchor = this.getExcelImageAnchor(left, top, sheet.config?.columnlen || {}, sheet.config?.rowlen || {});
+                        if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) { continue; }
+                        const base64Data = img.src.split(',')[1];
+                        if (!base64Data) { continue; }
                         
-                        // b. 【关键】使用计算出的锚点来添加图片
+                        const imageIdInWorkbook = workbook.addImage({ base64: base64Data, extension: this.getImageExtension(img.src) });
+                        
+                        // a. 调用【修正版】的 twoCell 辅助函数，获取 tl 和 br
+                        const anchor = this.getExcelImageTwoCellAnchor(
+                            left, top, width, height, 
+                            sheet.config?.columnlen || {}, 
+                            sheet.config?.rowlen || {}
+                        );
+        
+                        // b. 【核心修正】使用正确的 tl, br 和 editAs:'twoCell' 参数
                         worksheet.addImage(imageIdInWorkbook, {
-                            tl: { 
-                                col: anchor.col + 0.00001, // 加上极小值避免整数边界问题
-                                row: anchor.row + 0.00001,
-                                // ExcelJS 的 tl 对象不直接支持 colOff/rowOff，这是文档的一个误导
-                                // 正确的方式是直接修改 col 和 row 的小数部分来表示偏移
-                                // 但更简单的方式是直接使用 range
-                            },
-                            // 使用 range 提供更精确的、兼容性最好的定位
-                            tl: { col: anchor.col, row: anchor.row, colOff: anchor.colOff, rowOff: anchor.rowOff },
-                            ext: { width, height }
+                            tl: anchor.tl,
+                            br: anchor.br,
+                            editAs: 'twoCell' 
                         });
-                        console.log(`✅ 图片 ${imageId} 已使用精确锚点添加到工作表`);
+        
+                        console.log(`✅ 图片 ${imageId} 已使用【文档标准 twoCell】策略添加到工作表`);
                     }
                 }
             }
-    
-            // 4. 生成 Blob
+        
             const buffer = await workbook.xlsx.writeBuffer();
-            console.log("✅ ExcelJS 成功生成兼容性文件 Buffer，大小:", buffer.byteLength);
-            return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            console.log("✅ ExcelJS (文档标准 twoCell 模式) 成功生成文件 Buffer，大小:", buffer.byteLength);
+            return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheet.ml.sheet' });
         },
-    
+
         /**
          * 【复活的辅助函数】: 计算图片左上角的精确单元格锚点
          */
@@ -359,7 +374,7 @@ Vue.component('record-review-panel', {
             const defaultColWidth = 73;
             const defaultRowHeight = 19;
             const EMU_PER_PIXEL = 9525;
-    
+
             let currentX = 0, startCol = 0, startColOffPx = 0;
             for (let c = 0; c < 512; c++) {
                 const currentW = colLen[c] === undefined ? defaultColWidth : colLen[c];
@@ -370,7 +385,7 @@ Vue.component('record-review-panel', {
                 }
                 currentX += currentW;
             }
-    
+
             let currentY = 0, startRow = 0, startRowOffPx = 0;
             for (let r = 0; r < 4096; r++) {
                 const currentH = rowLen[r] === undefined ? defaultRowHeight : rowLen[r];
@@ -381,7 +396,7 @@ Vue.component('record-review-panel', {
                 }
                 currentY += currentH;
             }
-    
+
             return {
                 col: startCol,
                 row: startRow,
@@ -389,14 +404,14 @@ Vue.component('record-review-panel', {
                 rowOff: startRowOffPx * EMU_PER_PIXEL,
             };
         },
-    
+
         getImageExtension(dataUrl) {
             if (!dataUrl) return 'png';
             const mimeMatch = dataUrl.match(/data:image\/(.*?);/);
             const ext = mimeMatch ? mimeMatch[1] : 'png';
             return ext === 'jpeg' ? 'jpeg' : ext;
         },
-    },    
+    },
 
     mounted() {
         // 绑定事件监听，确保 this 指向正确
