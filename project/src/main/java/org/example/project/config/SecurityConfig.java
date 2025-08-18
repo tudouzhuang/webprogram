@@ -1,11 +1,13 @@
+// 文件路径: src/main/java/org/example/project/config/SecurityConfig.java
 package org.example.project.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod; // 【第一步】: 确保导入 HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.core.GrantedAuthority; // 【第一步】: 确保导入这个类
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -30,8 +32,9 @@ public class SecurityConfig {
             .headers(headers -> headers
                 .frameOptions(frameOptions -> frameOptions.sameOrigin()) // 允许同源iframe
             )
-            .authorizeHttpRequests(authorize -> authorize // 使用新版API
-                .antMatchers( // 使用新版API
+            .authorizeHttpRequests(authorize -> authorize // 开始配置授权规则
+                // 1. 公开访问路径 (无需认证)
+                .antMatchers(
                     "/login", "/signup", "/reset", "/404",
                     "/api/users/login", "/api/users/register",
                     "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**", 
@@ -40,6 +43,23 @@ public class SecurityConfig {
                     "/uploads/**", "/templates/**",
                     "/api/files/content/**", "/api/files/templates/**"
                 ).permitAll()
+
+                // =======================================================
+                //  ↓↓↓ 【核心修正】: 在这里添加对新API的授权规则 ↓↓↓
+                // =======================================================
+                
+                // 2. 需要认证，但所有角色都可以访问的路径
+                .antMatchers(HttpMethod.GET, "/api/users").authenticated() // 允许所有登录用户获取审核员列表
+
+                // 3. 需要特定角色才能访问的路径
+                .antMatchers(HttpMethod.POST, "/api/process-records/*/reassign", "/api/process-records/*/request-changes")
+                    .hasAnyRole("REVIEWER", "MANAGER", "ADMIN") // 允许审核员、经理、管理员执行打回和转交
+                
+                // =======================================================
+                //  ↑↑↑ 【核心修正结束】 ↑↑↑
+                // =======================================================
+
+                // 4. 其他所有请求都需要认证
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form
@@ -49,19 +69,18 @@ public class SecurityConfig {
                     response.setContentType("application/json;charset=UTF-8");
                     response.setStatus(HttpServletResponse.SC_OK);
 
-                    // 【第二步】: 将提取角色的逻辑填入
                     String userRole = authentication.getAuthorities().stream()
                             .findFirst()
                             .map(GrantedAuthority::getAuthority)
                             .map(role -> role.replace("ROLE_", ""))
                             .map(String::toLowerCase)
-                            .orElse("designer"); // 安全默认值
+                            .orElse("designer");
 
                     Map<String, Object> result = new HashMap<>();
                     result.put("success", true);
                     result.put("message", "登录成功");
                     result.put("redirectUrl", "/index");
-                    result.put("role", userRole); // <-- 将提取到的 userRole 变量作为值传入
+                    result.put("role", userRole);
 
                     response.getWriter().write(new ObjectMapper().writeValueAsString(result));
                 })

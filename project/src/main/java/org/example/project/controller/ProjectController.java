@@ -168,5 +168,35 @@ public class ProjectController {
         }
     }
     
+    @PostMapping(value = "/{projectId}/process-records", consumes = "multipart/form-data")
+    public ResponseEntity<String> createProcessRecord(
+            @PathVariable Long projectId,
+            @RequestPart("recordMeta") String recordMetaJson,
+            @RequestPart("file") MultipartFile file) {
+        
+        try {
+            processRecordService.createProcessRecord(projectId, recordMetaJson, file);
+            return ResponseEntity.ok("过程记录表提交成功！");
+        } catch (Exception e) {
+            log.error("创建过程记录表时失败, projectId: {}", projectId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("服务器内部错误: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 【移入】API: 根据项目ID，获取该项目下所有过程记录表的主信息列表
+     * 路径: GET /api/projects/{projectId}/process-records
+     */
+    @GetMapping("/{projectId}/process-records")
+    public ResponseEntity<List<ProcessRecord>> getProcessRecordsByProjectId(@PathVariable Long projectId) {
+        log.info("【Controller】获取项目 {} 的过程记录表列表...", projectId);
+        try {
+            List<ProcessRecord> records = processRecordService.getRecordsByProjectId(projectId);
+            return ResponseEntity.ok(records);
+        } catch (Exception e) {
+            log.error("获取项目 {} 的过程记录表列表失败", projectId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 
 }

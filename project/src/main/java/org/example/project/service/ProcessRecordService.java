@@ -24,4 +24,19 @@ public interface ProcessRecordService {
     ProcessRecord getRecordById(Long recordId);
     ProjectFile findReviewSheetByRecordId(Long recordId);
     ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException;
+        /**
+     * 转交任务给新的负责人
+     * @param recordId 记录ID
+     * @param newAssigneeId 新负责人的用户ID
+     */
+    void reassignTask(Long recordId, Long newAssigneeId);
+
+    /**
+     * 将任务打回给创建者以供修改
+     * @param recordId 记录ID
+     * @param comment 打回意见
+     */
+    void requestChanges(Long recordId, String comment);
+
+    void resubmit(Long recordId, MultipartFile file) throws IOException;
 }

@@ -3,9 +3,11 @@ package org.example.project.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+
 import lombok.Data;
 import java.time.LocalDateTime;
-
+import org.example.project.entity.ProcessRecordStatus;
 @Data // Lombok annotation to automatically generate getters, setters, toString, equals, and hashCode methods.
 @TableName("process_records") // MyBatis-Plus annotation to map the class to the "process_records" table in the database.
 public class ProcessRecord {
@@ -26,10 +28,11 @@ public class ProcessRecord {
     // This is used to store JSON data in the database, which will be handled by MyBatis-Plus's JsonTypeHandler.
     private String specificationsJson; 
     private String sourceFilePath; // 对应数据库的 source_file_path 列
-    private String status;  // The status of the process record (e.g., "Pending", "Completed").
+    private ProcessRecordStatus status;
 
     private Long assigneeId;  // ID of the user assigned to this process.
-    
+    @TableField("rejection_comment") // 确保与数据库列名匹配
+    private String rejectionComment;
 }
 
 

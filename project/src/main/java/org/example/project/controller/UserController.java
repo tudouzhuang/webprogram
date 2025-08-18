@@ -1,67 +1,77 @@
+// 文件路径: src/main/java/org/example/project/controller/UserController.java
 package org.example.project.controller;
 
 import org.example.project.dto.UserRegisterDTO;
+import org.example.project.dto.UserSummaryDto;
+import org.example.project.entity.User;
 import org.example.project.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import org.example.project.entity.User;
 import java.security.Principal;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
+/**
+ * 用户相关API的控制器
+ * 根路径: /api/users
+ */
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/users") // 所有用户相关API都从此路径开始
 public class UserController {
 
     @Autowired
     private UserService userService;
     
+    /**
+     * API: 用户注册
+     * POST /api/users/register
+     */
     @PostMapping("/register")
     public ResponseEntity<String> registerUser(@RequestBody UserRegisterDTO userData) {
         try {
             userService.register(userData);
-            return ResponseEntity.ok("注册成功！");
+            return ResponseEntity.status(HttpStatus.CREATED).body("注册成功！");
         } catch (RuntimeException e) {
-            // 将业务层抛出的异常信息返回给前端
-            return ResponseEntity.badRequest().body(e.getMessage());
+            // 对于已存在的用户名等业务异常，返回 409 Conflict 更合适
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
         }
     }
 
+    /**
+     * API: 获取当前登录用户信息
+     * GET /api/users/current
+     */
     @GetMapping("/current")
-    public ResponseEntity<Object> getCurrentUser(Principal principal) {
-        // 1. 检查用户是否真的登录了
-        if (principal == null) {
-            // 如果 principal 为 null，说明该请求没有有效的认证信息
-            return ResponseEntity.status(401).body("用户未认证，请先登录。");
-        }
-
-        // 2. 从凭证中获取用户名
-        // principal.getName() 方法默认返回的是登录时使用的用户名
-        String username = principal.getName();
-
-        // 3. 【关键】调用 Service 层，根据用户名从数据库中查询真实的用户信息
-        // 你需要确保你的 UserService 中有一个类似 findByUsername 的方法
-        System.out.println("【Controller】从 Principal 获取到的用户名是: [" + username + "]");
-        //test 看有没有成功获取Principal
-
-        User currentUser = userService.findByUsername(username);
-
-        System.out.println("【Controller】UserService 返回的用户是: " + currentUser);
-        // test
-        // 4. 对查询结果进行判断
-        if (currentUser == null) {
-            // 正常情况下不应发生，但作为健壮性检查
-            return ResponseEntity.status(404).body("未找到用户: " + username);
-        }
-
-        // 5. 返回真实的用户数据
-        // 注意：为了安全，通常会返回一个不包含密码等敏感信息的 DTO 对象，
-        // 但为了简单起见，这里直接返回 User 对象（请确保 User 类的 password 字段上没有暴露给JSON的注解）
-        return ResponseEntity.ok(currentUser);
+    public ResponseEntity<User> getCurrentUser(Principal principal) {
+        // 使用 Optional 包装，避免空指针，代码更优雅
+        return Optional.ofNullable(principal)
+                .map(p -> userService.findByUsername(p.getName()))
+                .map(ResponseEntity::ok) // 如果用户存在，返回 200 OK 和用户信息
+                .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()); // 如果 principal 为空或用户不存在，返回 401 Unauthorized
     }
 
+    /**
+     * API: 根据角色查询用户列表
+     * GET /api/users?role=REVIEWER
+     * @param role 角色名称 (例如 "REVIEWER")
+     * @return 用户简要信息列表 (只包含 id 和 username)
+     */
+    @GetMapping // 直接映射到 /api/users
+    public ResponseEntity<List<UserSummaryDto>> getUsersByRole(@RequestParam String role) {
+        // 1. 调用 Service 获取用户实体列表
+        List<User> users = userService.findUsersByRole(role.toUpperCase());
+
+        // 2. 将实体列表转换为安全的 DTO 列表
+        List<UserSummaryDto> userSummaries = users.stream()
+                .map(user -> new UserSummaryDto(user.getId(), user.getUsername()))
+                // 【核心修正】: 使用 Java 8 兼容的 .collect(Collectors.toList())
+                .collect(Collectors.toList());
+
+        // 3. 返回成功响应
+        return ResponseEntity.ok(userSummaries);
+    }
 }

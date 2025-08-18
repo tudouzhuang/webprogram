@@ -766,17 +766,15 @@
                                             <i class="menu-arrow" :class="{'mdi-rotate-180': showProjectMenu}"></i>
                                         </a>
                                         <!-- (D) 子菜单容器: 由 showProjectMenu 状态控制 -->
-                                        <ul class="nav flex-column sub-menu" id="project-submenu"
-                                            :class="{'show': showProjectMenu}">
+                                        <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}">
+                                            <li class="nav-item" v-if="!isProjectListLoading && projectList.length === 0">
+                                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                                            </li>
                                             <li class="nav-item" v-for="project in projectList" :key="project.id">
-                                                <span class="nav-link" style="cursor: pointer;"
+                                                <a class="nav-link" style="cursor: pointer;"
                                                     @click="viewProjectPlanning(project)">
                                                     {{ project.projectNumber }}
-                                                </span>
-                                            </li>
-                                            <li class="nav-item"
-                                                v-if="!isProjectListLoading && projectList.length === 0">
-                                                <a class="nav-link text-muted" href="#">暂无项目</a>
+                                            </a>
                                             </li>
                                         </ul>
                                     </li>
@@ -812,6 +810,10 @@
                                         </a>
                                         <!-- 子菜单容器: 由 showRecordProjectMenu 状态控制 -->
                                         <ul class="nav flex-column sub-menu" :class="{'show': showRecordProjectMenu}">
+                                            <li class="nav-item"
+                                                v-if="!isProjectListLoading && projectList.length === 0">
+                                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                                            </li>
                                             <li class="nav-item" v-if="isProjectListLoading">
                                                 <a class="nav-link text-muted" href="#">加载中...</a>
                                             </li>
@@ -822,11 +824,10 @@
                                                     {{ project.projectName || project.projectNumber }}
                                                 </a>
                                             </li>
-                                            <li class="nav-item"
-                                                v-if="!isProjectListLoading && projectList.length === 0">
-                                                <a class="nav-link text-muted" href="#">暂无项目</a>
-                                            </li>
                                         </ul>
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="javascript:void(0)">膜具类别</a>
+                                          </li>
                                     </li>
                                 </ul>
                             </div>
@@ -960,10 +961,15 @@
                     </ul>
                 </nav>
                 <div class="main-panel">
-                    <component :is="activePanel" :project-id="currentProjectId" :record-id="currentRecordId"
-                        @create-new-record="handleCreateNewRecord" @view-record-details="handleViewRecordDetails"
-                        @project-created="onProjectCreated" @back-to-list="handleBackToList"
-                        @review-record="onReviewRecord">
+                    <component :is="activePanel" 
+                        :project-id="currentProjectId" 
+                        :record-id="currentRecordId"
+                        @create-new-record="handleCreateNewRecord" 
+                        @view-record-details="handleViewRecordDetails"
+                        @project-created="onProjectCreated" 
+                        @back-to-list="handleBackToList"
+                        @review-record="onReviewRecord"
+                        @edit-record="handleEditRecord">
                     </component>
                 </div>
             </div>
@@ -997,7 +1003,7 @@
     <script src="/js/components/process-record-panel.js"></script>
     <script src="/js/components/process-record-list-panel.js"></script>
     <script src="/js/components/record-review-panel.js"></script>
-    <script src="/js/components/record-details-viewer.js"></script>
+    <script src="/js/components/record-workspace-panel.js"></script>
     <script src="/js/components/review-tasks-panel.js"></script>
 
 
@@ -1056,7 +1062,7 @@
                         case 'process-record-panel':
                             return { projectId: this.currentProjectId };
 
-                        case 'record-details-viewer':
+                        case 'record-workspace-panel':
                         case 'record-review-panel': // 审查面板需要recordId
                             return { recordId: this.currentRecordId };
 
@@ -1125,7 +1131,7 @@
                 },
                 onViewRecordDetails(recordId) {
                     console.log("【父组件】收到 view-record-details 事件, 记录ID:", recordId);
-                    this.navigateTo('record-details-viewer', { recordId: recordId });
+                    this.navigateTo('record-workspace-panel', { recordId: recordId });
                 },
                 onReviewRecord(recordId) {
                     // 【日志1】: 确认事件被成功接收
@@ -1140,6 +1146,17 @@
                     this.navigateTo('process-record-list-panel', { projectId: this.currentProjectId });
                 },
 
+                handleEditRecord(recordId) {
+                    console.log("【主应用】接收到 edit-record 事件，准备切换到编辑面板。Record ID:", recordId);
+
+                    // 1. 将接收到的 recordId 保存到 data 中，
+                    //    这样它会被作为 prop 传递给即将加载的 process-record-panel 组件。
+                    this.currentRecordId = recordId;
+
+                    // 2. 切换当前面板为 process-record-panel。
+                    //    这个组件会根据传入的 currentRecordId (非null) 来加载已有数据，进入编辑模式。
+                    this.activePanel = 'record-workspace-panel';
+                },
                 // --------------------------------------------------
                 // (D) 数据获取方法 - 负责与后端API通信
                 // --------------------------------------------------
