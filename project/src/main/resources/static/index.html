@@ -1033,7 +1033,7 @@
                     activePanel: 'dashboard-panel',
                     currentProjectId: null,
                     currentRecordId: null,
-
+                    currentUser: null,
                     // --- UI控制 ---
                     isProjectListLoading: false,
 
@@ -1073,6 +1073,16 @@
             },
 
             methods: {
+                setCurrentUser(userRole) {
+                if (userRole) {
+                    this.currentUser = {
+                        identity: String(userRole).toUpperCase()
+                    };
+                    console.log("【主应用】用户状态已设置:", this.currentUser);
+                } else {
+                    this.currentUser = null;
+                }
+            },
 
                 // --------------------------------------------------
                 // (A) 核心导航方法 - 所有面板切换的唯一入口
@@ -1213,6 +1223,21 @@
                 handleViewRecordDetails(recordId) { this.onViewRecordDetails(recordId); },
                 handleBackToList() { this.onBackToList(); }
             },
+            created() {
+            console.log("【主应用】Vue 实例已创建 (created hook)。");
+            console.log("  - 正在尝试从 sessionStorage 恢复登录状态...");
+
+            // 从 sessionStorage 中读取之前存储的角色
+            const userRole = sessionStorage.getItem('userRole');
+
+            if (userRole) {
+                console.log(`  - 在 sessionStorage 中找到角色: '${userRole}'`);
+                // 调用方法来更新 currentUser
+                this.setCurrentUser(userRole);
+            } else {
+                console.log("  - sessionStorage 中未找到用户角色，用户状态为未登录。");
+            }
+        },
             mounted() {
                 console.log("【父组件】Vue 实例已挂载，开始获取初始数据...");
                 this.fetchProjectList();

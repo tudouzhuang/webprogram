@@ -57,6 +57,21 @@ public class ProcessRecordController {
         }
     }
 
+    @DeleteMapping("/{recordId}")
+    public ResponseEntity<String> deleteProcessRecord(@PathVariable Long recordId) {
+        try {
+            processRecordService.deleteRecordById(recordId); // 调用 Service 层方法
+            return ResponseEntity.ok("记录及关联文件已成功删除。");
+        } catch (AccessDeniedException e) {
+            // 捕获权限异常
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (Exception e) {
+            // 捕获其他所有异常
+            log.error("删除记录 {} 时发生错误", recordId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除失败: " + e.getMessage());
+        }
+    }
+
     /**
      * API: 根据过程记录表ID，获取其关联的所有文件列表
      * 路径: GET /api/process-records/{recordId}/files

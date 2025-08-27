@@ -17,6 +17,7 @@ import org.example.project.mapper.ProjectMapper;
 import org.example.project.mapper.UserMapper;
 import org.example.project.service.ExcelSplitterService;
 import org.example.project.service.ProcessRecordService;
+import org.example.project.service.ProjectService;
 import org.example.project.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,7 @@ import org.springframework.security.access.AccessDeniedException;
 public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, ProcessRecord> implements ProcessRecordService {
 
     @Autowired
+    private ProjectService projectService;
     private UserService userService;
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
@@ -88,66 +90,75 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     }
 
     @Override
-    @Transactional
-    public void resubmit(Long recordId, MultipartFile file) throws IOException {
-        Long currentUserId = getCurrentUserId();
-        log.info("【SERVICE-RESUBMIT】开始处理重提请求, Record ID: {}, 操作用户 ID: {}", recordId, currentUserId);
-    
-        // 1. --- 验证记录、权限与状态 (逻辑保持不变) ---
-        ProcessRecord record = this.getById(recordId);
-        if (record == null) {
-            throw new RuntimeException("操作失败：找不到ID为 " + recordId + " 的记录。");
+    @Transactional(rollbackFor = Exception.class)
+    public void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException {
+
+        log.info("【SERVICE-CREATE】开始创建过程记录表, 项目ID: {}", projectId);
+
+        // 1. 验证输入
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("必须上传设计过程记录表的Excel文件。");
         }
-        if (record.getAssigneeId() == null) {
-            throw new AccessDeniedException("权限不足：该任务当前没有指定的负责人。");
-        }
-        if (!record.getAssigneeId().equals(currentUserId)) {
-            throw new AccessDeniedException("权限不足：您不是当前任务的负责人。");
-        }
-        if (record.getStatus() != ProcessRecordStatus.CHANGES_REQUESTED) {
-            throw new IllegalStateException("操作失败：记录当前状态不是“待修改”，无法重新提交。");
-        }
-        log.info("【SERVICE-RESUBMIT】权限与状态校验通过。");
-    
-        // =======================================================
-        //  ↓↓↓ 【核心修正】: 文件处理逻辑完全基于 process_records 表 ↓↓↓
-        // =======================================================
-    
-        // 2. --- 处理文件替换 ---
-        // 2.1 从主记录中获取旧文件的相对路径
-        String oldRelativePath = record.getSourceFilePath();
-        
-        // 2.2 删除旧的物理文件
-        if (oldRelativePath != null && !oldRelativePath.isEmpty()) {
-            Path oldPhysicalPath = Paths.get(uploadDir, oldRelativePath);
-            log.info("【SERVICE-RESUBMIT】准备删除旧文件: {}", oldPhysicalPath);
-            Files.deleteIfExists(oldPhysicalPath);
-        } else {
-            log.warn("【SERVICE-RESUBMIT】警告: 记录中没有旧文件路径，无法执行删除。");
-        }
-    
-        // 2.3 保存新的物理文件
+
+        // 2. 解析前端传来的元数据JSON
+        ProcessRecordCreateDTO createDTO = objectMapper.readValue(recordMetaJson, ProcessRecordCreateDTO.class);
+
+        // 3. 智能分配审核员
+        Long smartAssigneeId = findLeastBusyReviewerId();
+        log.info("【SERVICE-CREATE】智能分配 - 负责人ID: {}", smartAssigneeId);
+
+        // 4. 创建并保存 ProcessRecord 任务记录
+        ProcessRecord record = new ProcessRecord();
+        record.setProjectId(projectId);
+        record.setPartName(createDTO.getPartName());
+        record.setProcessName(createDTO.getProcessName());
+        record.setCreatedByUserId(getCurrentUserId()); // 假设你有这个方法
+
+        // 将接收到的、结构化的DTO对象，再次序列化为JSON字符串存入数据库
+        // 这样可以完整地保留所有前端表单信息
+        record.setSpecificationsJson(objectMapper.writeValueAsString(createDTO));
+
+        record.setStatus(ProcessRecordStatus.PENDING_REVIEW); // 初始状态为待审核
+        record.setAssigneeId(smartAssigneeId); // 指派负责人
+
+        // 先插入主记录，以获取自增的ID
+        processRecordMapper.insert(record);
+        Long newRecordId = record.getId(); // MyBatis-Plus 会自动回填ID
+        log.info("【SERVICE-CREATE】任务记录 (ProcessRecord) 已保存, 新 Record ID: {}", newRecordId);
+
+        // 5. 保存上传的物理文件
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+        // 使用时间戳确保文件名唯一，防止覆盖
         String storedFileName = "source_" + System.currentTimeMillis() + "_" + originalFilename;
-        Path newPhysicalPath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
-    
-        Files.createDirectories(newPhysicalPath.getParent());
-        Files.copy(file.getInputStream(), newPhysicalPath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【SERVICE-RESUBMIT】新文件已保存至: {}", newPhysicalPath);
-    
-        String newRelativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
-        
-        // 3. --- 更新主记录的状态、负责人、以及新的文件路径 ---
-        record.setStatus(ProcessRecordStatus.PENDING_REVIEW);
-        
-        Long reviewerId = findLeastBusyReviewerId();
-        record.setAssigneeId(reviewerId);
-        
-        // 【核心】将新文件的路径直接回填到 process_records 表的 source_file_path 字段
-        record.setSourceFilePath(newRelativePath);
-    
-        this.updateById(record);
-        log.info("【SERVICE-RESUBMIT】ProcessRecord {} 已被重提，文件路径、状态和负责人均已更新。", recordId);
+        // 构建存储路径: uploadDir/projectId/recordId/fileName
+        Path physicalPath = Paths.get(uploadDir, String.valueOf(projectId), String.valueOf(newRecordId), storedFileName);
+
+        // 确保父目录存在
+        Files.createDirectories(physicalPath.getParent());
+        // 将上传的文件内容复制到目标路径
+        Files.copy(file.getInputStream(), physicalPath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【SERVICE-CREATE】物理文件已保存至: {}", physicalPath);
+
+        // 6. 创建文件的相对路径，用于存入数据库
+        String relativePath = Paths.get(String.valueOf(projectId), String.valueOf(newRecordId), storedFileName).toString().replace("\\", "/");
+
+        // 7. 回填文件路径到刚刚创建的 process_records 记录中
+        record.setSourceFilePath(relativePath);
+        processRecordMapper.updateById(record);
+        log.info("【SERVICE-CREATE】已回填文件路径到任务记录。");
+
+        // 8. 【关键】创建并保存 ProjectFile 文件关联记录
+        ProjectFile projectFile = new ProjectFile();
+        projectFile.setProjectId(projectId);
+        projectFile.setRecordId(newRecordId); // 关联任务ID
+        projectFile.setDocumentType("SOURCE_RECORD"); // 设置文件类型为“源文件”
+        projectFile.setFileName(storedFileName);
+        projectFile.setFilePath(relativePath);
+        projectFile.setFileType(file.getContentType());
+
+        projectFileMapper.insert(projectFile);
+        log.info("【SERVICE-CREATE】文件关联记录 (ProjectFile) 已成功插入数据库, 新 File ID: {}", projectFile.getId());
+
     }
 
     /**
@@ -490,31 +501,49 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     }
 
     @Override
-    @Transactional
+    @Transactional // 确保操作的原子性
     public void reassignTask(Long recordId, Long newAssigneeId) {
         Long currentUserId = getCurrentUserId();
+        log.info("【SERVICE-REASSIGN】开始处理转交请求, Record ID: {}, 操作用户 ID: {}, 目标用户 ID: {}", recordId, currentUserId, newAssigneeId);
 
+        // 1. --- 验证记录 ---
         ProcessRecord record = this.getById(recordId);
         if (record == null) {
-            throw new RuntimeException("记录不存在，ID: " + recordId); // 建议使用自定义的业务异常
+            throw new RuntimeException("操作失败：找不到ID为 " + recordId + " 的记录。");
         }
 
+        // 2. --- 权限与状态校验 ---
+        if (record.getAssigneeId() == null) {
+            throw new AccessDeniedException("权限不足：该任务当前没有指定的负责人。");
+        }
         if (!record.getAssigneeId().equals(currentUserId)) {
             throw new AccessDeniedException("权限不足：您不是当前任务的负责人。");
         }
-
         if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
-            throw new IllegalStateException("操作失败：任务当前状态为 " + record.getStatus() + "，无法转交。");
+            throw new IllegalStateException("操作失败：任务当前状态为 [" + record.getStatus() + "]，而不是[待审核]，无法转交。");
         }
+        log.info("【SERVICE-REASSIGN】权限与状态校验通过。");
 
+        // 3. --- 【核心修正】校验目标用户是否为有效审核员 (包括 manager) ---
         User newAssignee = userMapper.selectById(newAssigneeId);
-        // 假设你的 User 实体有 getIdentity() 或 getRole() 方法返回角色字符串
-        if (newAssignee == null || !"REVIEWER".equals(newAssignee.getIdentity())) {
-            throw new IllegalArgumentException("操作失败：目标用户不是一个有效的审核员。");
+
+        if (newAssignee == null) {
+            throw new IllegalArgumentException("操作失败：找不到ID为 " + newAssigneeId + " 的目标用户。");
         }
 
+        String newAssigneeRole = newAssignee.getIdentity(); // 获取目标用户的角色
+        log.info("【SERVICE-REASSIGN】目标负责人 {} 的角色为: {}", newAssignee.getUsername(), newAssigneeRole);
+
+        // 允许 'REVIEWER' 和 'MANAGER' 作为有效的审核员
+        if (!"REVIEWER".equalsIgnoreCase(newAssigneeRole) && !"MANAGER".equalsIgnoreCase(newAssigneeRole)) {
+            throw new IllegalArgumentException("操作失败：目标用户 " + newAssignee.getUsername() + " (" + newAssigneeRole + ") 不是一个有效的审核员。");
+        }
+        log.info("【SERVICE-REASSIGN】目标负责人角色校验通过。");
+
+        // 4. --- 执行更新 ---
         record.setAssigneeId(newAssigneeId);
         this.updateById(record);
+        log.info("【SERVICE-REASSIGN】任务已成功转交给用户: {} (ID: {})", newAssignee.getUsername(), newAssigneeId);
     }
 
 // 在 ProcessRecordServiceImpl.java 中
@@ -630,5 +659,66 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.updateById(record);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteRecordById(Long recordId) throws IOException {
+        // 1. 获取当前登录用户及其角色
+        Long currentUserId = getCurrentUserId();
+        User currentUser = userMapper.selectById(currentUserId);
+        if (currentUser == null) {
+            throw new AccessDeniedException("无法验证当前用户信息。");
+        }
+
+        // 2. 查找要删除的记录
+        ProcessRecord record = this.getById(recordId);
+        if (record == null) {
+            log.warn("用户 {} 尝试删除一个不存在的记录 #{}", currentUser.getUsername(), recordId);
+            return; // 记录不存在，直接返回成功，幂等操作
+        }
+
+        // 3. 【核心权限校验】
+        String userRole = currentUser.getIdentity();
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(userRole) || "MANAGER".equalsIgnoreCase(userRole);
+
+        // 只有管理员才能执行删除
+        if (!isAdmin) {
+            throw new AccessDeniedException("权限不足：只有管理员才能删除已提交的记录。");
+        }
+
+        // 4. 执行删除操作
+        log.info("管理员 {} 正在删除记录 #{}...", currentUser.getUsername(), recordId);
+
+        // 4.1 删除所有关联的物理文件
+        List<ProjectFile> associatedFiles = projectService.getFilesByRecordId(recordId);
+        for (ProjectFile file : associatedFiles) {
+            Path filePath = Paths.get(uploadDir, file.getFilePath());
+            try {
+                Files.deleteIfExists(filePath);
+                log.info("已删除关联文件: {}", filePath);
+            } catch (IOException e) {
+                log.error("删除物理文件 {} 失败，但将继续执行数据库删除。", file.getFilePath(), e);
+            }
+        }
+
+        // 4.2 (如果适用) 删除 process_records 表中的 source_file_path 指向的文件
+        if (record.getSourceFilePath() != null && !record.getSourceFilePath().isEmpty()) {
+            Path sourcePath = Paths.get(uploadDir, record.getSourceFilePath());
+            try {
+                Files.deleteIfExists(sourcePath);
+                log.info("已删除主记录关联文件: {}", sourcePath);
+            } catch (IOException e) {
+                log.error("删除主记录文件 {} 失败。", sourcePath, e);
+            }
+        }
+
+        // 4.3 删除 project_files 表中的所有关联记录
+        QueryWrapper<ProjectFile> fileQuery = new QueryWrapper<>();
+        fileQuery.eq("record_id", recordId);
+        projectFileMapper.delete(fileQuery);
+
+        // 4.4 删除 process_records 表中的主记录
+        this.removeById(recordId);
+
+        log.info("管理员 {} 成功删除了记录 #{}", currentUser.getUsername(), recordId);
+    }
 
 }

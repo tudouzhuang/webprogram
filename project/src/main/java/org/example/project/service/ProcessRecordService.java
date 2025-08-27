@@ -39,4 +39,6 @@ public interface ProcessRecordService {
     void requestChanges(Long recordId, String comment);
 
     void resubmit(Long recordId, MultipartFile file) throws IOException;
+
+    void deleteRecordById(Long recordId) throws IOException;
 }

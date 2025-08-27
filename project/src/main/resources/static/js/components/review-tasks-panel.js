@@ -60,35 +60,40 @@ Vue.component('review-tasks-panel', {
                                 </template>
                             </el-table-column>
 
-                            <!-- 核心改造: 操作列 -->
-                            <el-table-column label="操作" width="250" fixed="right">
+                            <el-table-column label="操作" width="280" fixed="right">
                                 <template slot-scope="scope">
-                                    <!-- 1. 状态: 待审核 (PENDING_REVIEW) -->
-                                    <div v-if="scope.row.status === 'PENDING_REVIEW'">
-                                        <el-button @click="reviewRecord(scope.row)" type="primary" size="small">开始审核</el-button>
-                                        <el-button @click="openReassignDialog(scope.row)" type="warning" size="small" plain>转交</el-button>
-                                    </div>
+                                    <!-- 使用一个容器来保持按钮对齐 -->
+                                    <div class="d-flex align-items-center">
+                                        <!-- 主要操作按钮 -->
+                                        <div v-if="scope.row.status === 'PENDING_REVIEW'">
+                                            <el-button @click="reviewRecord(scope.row)" type="primary" size="small">开始审核</el-button>
+                                            <el-button @click="openReassignDialog(scope.row)" type="warning" size="small" plain>转交</el-button>
+                                        </div>
+                                        <div v-else-if="scope.row.status === 'APPROVED'">
+                                            <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
+                                            <el-button @click="openRequestChangesDialog(scope.row)" type="danger" size="small" plain>打回修改</el-button>
+                                        </div>
+                                        <div v-else-if="scope.row.status === 'REJECTED'">
+                                            <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
+                                        </div>
+                                        <div v-else-if="scope.row.status === 'CHANGES_REQUESTED'">
+                                            <el-tag type="info" size="small">等待 {{ scope.row.assignee ? scope.row.assignee.username : '设计员' }} 修改</el-tag>
+                                            <el-button @click="viewRecord(scope.row)" type="text" size="small" style="margin-left: 10px;">查看进度</el-button>
+                                        </div>
+                                        <div v-else-if="scope.row.status === 'DRAFT'">
+                                            <el-tag type="info" size="small">设计员草稿</el-tag>
+                                        </div>
 
-                                    <!-- 2. 状态: 已批准 (APPROVED) -->
-                                    <div v-else-if="scope.row.status === 'APPROVED'">
-                                        <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
-                                        <el-button @click="openRequestChangesDialog(scope.row)" type="danger" size="small" plain>打回修改</el-button>
-                                    </div>
-
-                                    <!-- 3. 状态: 已驳回 (REJECTED) -->
-                                    <div v-else-if="scope.row.status === 'REJECTED'">
-                                        <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
-                                    </div>
-
-                                    <!-- 4. 状态: 要求修改 (CHANGES_REQUESTED) -->
-                                    <div v-else-if="scope.row.status === 'CHANGES_REQUESTED'">
-                                        <el-tag type="info" size="small">等待 {{ scope.row.assignee ? scope.row.assignee.username : '设计员' }} 修改</el-tag>
-                                        <el-button @click="viewRecord(scope.row)" type="text" size="small" style="margin-left: 10px;">查看进度</el-button>
-                                    </div>
-                                    
-                                    <!-- 5. 状态: 草稿 (DRAFT) - 通常在审核列表不可见，但以防万一 -->
-                                     <div v-else-if="scope.row.status === 'DRAFT'">
-                                        <el-tag type="info" size="small">设计员草稿</el-tag>
+                                        <!-- 【新增】: 管理员专用的删除按钮 -->
+                                        <el-button 
+                                            v-if="isAdmin"
+                                            @click="deleteRecord(scope.row)"
+                                            type="text"
+                                            size="small"
+                                            style="color: #F56C6C; margin-left: 10px;"
+                                            title="管理员权限删除">
+                                            删除
+                                        </el-button>
                                     </div>
                                 </template>
                             </el-table-column>
@@ -148,6 +153,46 @@ Vue.component('review-tasks-panel', {
     computed: {
         totalTasks() {
             return this.reviewList.length;
+        },
+        isAdmin() {
+            // =======================================================
+            //  ↓↓↓ 【核心调试代码】 ↓↓↓
+            // =======================================================
+            
+            console.log("--- [isAdmin Computed Property] 正在检查用户权限 ---");
+            
+            // 检查 this.$root 是否存在
+            if (!this.$root) {
+                console.error("【权限检查失败】: 无法访问 this.$root。");
+                return false;
+            }
+            
+            // 检查 currentUser 对象是否存在
+            const currentUser = this.$root.currentUser;
+            if (!currentUser) {
+                console.warn("【权限检查警告】: this.$root.currentUser 对象不存在或为 null。当前用户可能未登录。");
+                return false;
+            }
+    
+            // 打印 currentUser 的完整信息，以便查看其结构
+            console.log("  - 当前用户信息 (this.$root.currentUser):", JSON.parse(JSON.stringify(currentUser)));
+            
+            // 检查 identity 字段是否存在
+            const identity = currentUser.identity;
+            if (!identity) {
+                console.warn("【权限检查警告】: currentUser 对象中没有找到 'identity' 字段。");
+                return false;
+            }
+            
+            // 执行最终的权限判断
+            const isAdminUser = (identity === 'ADMIN' || identity === 'MANAGER');
+            
+            console.log(`  - 用户身份 (identity): '${identity}'`);
+            console.log(`  - 是否为管理员 (isAdminUser): ${isAdminUser}`);
+            console.log("-------------------------------------------------");
+            
+            return isAdminUser;
+            // =======================================================
         }
     },
 
@@ -272,6 +317,34 @@ Vue.component('review-tasks-panel', {
                 const specData = JSON.parse(jsonString);
                 return specData.designerName || '未知';
             } catch(e) { return '解析错误'; }
+        },
+        deleteRecord(record) {
+            this.$confirm(`【管理员操作】确定要永久删除记录 #${record.id} (${record.partName}) 吗? 这将一并删除所有关联文件，且操作不可恢复。`, '高危操作警告', {
+                confirmButtonText: '我确认，执行删除',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+                console.log(`【ReviewPanel】管理员准备删除记录, ID: ${record.id}`);
+                // 调用后端的删除API
+                axios.delete(`/api/process-records/${record.id}`).then(() => {
+                    this.$message.success('删除成功！');
+                    this.fetchReviewList(); // 成功后刷新列表
+                }).catch(error => {
+                    let errorMessage = '删除失败！';
+                    // 尝试从后端响应中提取更具体的错误信息
+                    if (error.response && error.response.data) {
+                        if (typeof error.response.data === 'string') {
+                            errorMessage += ` 原因: ${error.response.data}`;
+                        } else if (error.response.data.message) {
+                            errorMessage += ` 原因: ${error.response.data.message}`;
+                        }
+                    }
+                    this.$message.error(errorMessage);
+                    console.error(`【ReviewPanel】删除记录 ${record.id} 失败:`, error);
+                });
+            }).catch(() => {
+                this.$message.info('已取消删除操作');
+            });
         }
     },
 
