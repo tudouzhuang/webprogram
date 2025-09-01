@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <title>Luckysheet Iframe Loader</title>
@@ -9,16 +10,30 @@
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
     <link rel='stylesheet' href='/luckysheet/assets/iconfont/iconfont.css' />
     <style>
-        html, body, #luckysheet-container { 
-            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; 
+        html,
+        body,
+        #luckysheet-container {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
         }
+
         .loader {
-            display: flex; justify-content: center; align-items: center; height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            font-size: 1.1em; color: #888; text-align: center; padding: 10px;
+            font-size: 1.1em;
+            color: #888;
+            text-align: center;
+            padding: 10px;
         }
     </style>
 </head>
+
 <body>
     <div id="luckysheet-container">
         <div class="loader">等待父窗口指令...</div>
@@ -36,7 +51,7 @@
     <script>
         const container = document.getElementById('luckysheet-container');
 
-        window.addEventListener('message', function(event) {
+        window.addEventListener('message', function (event) {
             if (event.origin !== window.location.origin) return;
 
             const { type, payload } = event.data;
@@ -50,12 +65,13 @@
                 } else {
                     loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
                 }
-            } 
+            }
             else if (type === 'GET_DATA_AND_IMAGES') {
-                 if (window.luckysheet) {
+                if (window.luckysheet) {
                     const liveSheets = luckysheet.getAllSheets();
                     const structuralData = luckysheet.getLuckysheetfile();
                     const validationMap = new Map();
+
                     if (Array.isArray(structuralData)) {
                         structuralData.forEach(sheet => {
                             if (sheet && sheet.order != null && sheet.dataVerification) {
@@ -63,19 +79,25 @@
                             }
                         });
                     }
+
                     const mergedSheets = liveSheets.map(liveSheet => {
                         if (liveSheet && liveSheet.order != null && validationMap.has(liveSheet.order)) {
                             liveSheet.dataVerification = validationMap.get(liveSheet.order);
                         }
                         return liveSheet;
                     });
-                    
+
                     console.log(`[Iframe] ✅ 成功融合实时数据与数据验证规则。准备回发...`);
-                    
-                    window.parent.postMessage({ 
-                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE', 
+
+                    // 【核心修正】
+                    // 从接收到的消息 event.data (在外面应该已经被赋值给一个变量，比如 messageData) 中
+                    // 取出 payload.purpose，然后把它放回到要发送的 payload 中。
+                    window.parent.postMessage({
+                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
                         payload: {
-                            sheets: mergedSheets
+                            sheets: mergedSheets,
+                            // 这一行是必须添加的！
+                            purpose: event.data.payload.purpose
                         }
                     }, window.location.origin);
 
@@ -119,11 +141,11 @@
                 .then(response => response.blob())
                 .then(fileBlob => {
                     container.innerHTML = `<div class="loader">文件下载成功，正在解析...</div>`;
-                    LuckyExcel.transformExcelToLucky(fileBlob, 
-                        function(exportJson) {
+                    LuckyExcel.transformExcelToLucky(fileBlob,
+                        function (exportJson) {
                             renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
                         },
-                        function(error) {
+                        function (error) {
                             container.innerHTML = `<div class="loader">文件解析失败。</div>`;
                         }
                     );
@@ -132,8 +154,9 @@
                     container.innerHTML = `<div class="loader">文件加载失败。</div>`;
                 });
         }
-        
+
         console.log('[Iframe] 加载器已就绪，等待消息...');
     </script>
 </body>
+
 </html>

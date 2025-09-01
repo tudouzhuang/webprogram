@@ -53,6 +53,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
     @Autowired
     private ProjectService projectService;
+    @Autowired
     private UserService userService;
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
@@ -721,4 +722,86 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("管理员 {} 成功删除了记录 #{}", currentUser.getUsername(), recordId);
     }
 
+
+        /**
+     * 【新增实现 1】: 保存草稿文件
+     */
+    @Override
+    @Transactional // 保证数据库和文件操作的原子性
+    public void saveDraftFile(Long recordId, MultipartFile file) throws IOException {
+        // 1. 验证记录是否存在
+        ProcessRecord record = processRecordMapper.selectById(recordId);
+        if (record == null) {
+            throw new IllegalArgumentException("ID为 " + recordId + " 的过程记录不存在。");
+        }
+
+        // 2. 检查文件是否为空
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("上传的文件不能为空。");
+        }
+
+        // 3. (可选但推荐) 删除旧文件
+        String oldFilePath = record.getSourceFilePath();
+        if (oldFilePath != null && !oldFilePath.isEmpty()) {
+            Path oldPath = Paths.get(uploadDir).resolve(oldFilePath);
+            Files.deleteIfExists(oldPath);
+        }
+
+        // 4. 保存新文件
+        String originalFilename = file.getOriginalFilename();
+        // 为了避免文件名冲突，可以加上时间戳或UUID
+        String newFileName = System.currentTimeMillis() + "_" + originalFilename;
+        Path destinationPath = Paths.get(uploadDir).resolve(newFileName).normalize();
+
+        // 确保目标目录存在
+        Files.createDirectories(destinationPath.getParent());
+
+        // 将文件保存到服务器
+        Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
+
+        // 5. 更新数据库中的文件路径
+        record.setSourceFilePath(newFileName); // 只更新文件路径
+        // record.setUpdatedAt(LocalDateTime.now()); // 可选：更新修改时间
+        processRecordMapper.updateById(record);
+        
+        System.out.println("成功为 recordId=" + recordId + " 保存了新的草稿文件: " + newFileName);
+    }
+
+
+    /**
+     * 【新增实现 2】: 启动审核流程
+     */
+    @Override
+    @Transactional
+    public void startReviewProcess(Long recordId) {
+        // 1. 验证记录是否存在
+        ProcessRecord record = processRecordMapper.selectById(recordId);
+        if (record == null) {
+            throw new IllegalArgumentException("ID为 " + recordId + " 的过程记录不存在。");
+        }
+
+        // 2. 状态检查：必须是 DRAFT 或 CHANGES_REQUESTED 状态才能提交
+        ProcessRecordStatus currentStatus = record.getStatus();
+        if (currentStatus != ProcessRecordStatus.DRAFT && currentStatus != ProcessRecordStatus.CHANGES_REQUESTED) {
+            throw new IllegalStateException("当前记录状态为 " + currentStatus + "，无法提交审核。");
+        }
+
+        // 3. 智能分配审核员 (这里的逻辑可以根据你的需求调整)
+        // 简单策略：找到第一个角色为 'MANAGER' 的用户
+        // 复杂策略：可以查询每个审核员的待办任务数，分配给最少的那个
+        List<User> reviewers = userMapper.findByRole("MANAGER"); // 假设审核员角色是 MANAGER
+        if (reviewers.isEmpty()) {
+            throw new IllegalStateException("系统中没有可用的审核员！");
+        }
+        User assignee = reviewers.get(0); // 简单地分配给第一个找到的审核员
+
+        // 4. 更新记录状态和负责人
+        record.setStatus(ProcessRecordStatus.PENDING_REVIEW);
+        record.setAssigneeId(assignee.getId());
+        // record.setUpdatedAt(LocalDateTime.now()); // 可选：更新修改时间
+
+        processRecordMapper.updateById(record);
+
+        System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
+    }
 }

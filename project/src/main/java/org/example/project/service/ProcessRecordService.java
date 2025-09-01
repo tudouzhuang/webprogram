@@ -41,4 +41,23 @@ public interface ProcessRecordService {
     void resubmit(Long recordId, MultipartFile file) throws IOException;
 
     void deleteRecordById(Long recordId) throws IOException;
+
+        /**
+     * 【新增方法声明 1】
+     * 保存草稿文件。
+     * @param recordId 记录ID
+     * @param file     新文件
+     * @throws IOException 文件IO异常
+     * @throws IllegalArgumentException 如果记录不存在
+     */
+    void saveDraftFile(Long recordId, MultipartFile file) throws IOException;
+
+    /**
+     * 【新增方法声明 2】
+     * 启动审核流程。
+     * @param recordId 记录ID
+     * @throws IllegalStateException 如果当前状态不符合提交条件
+     * @throws IllegalArgumentException 如果记录不存在
+     */
+    void startReviewProcess(Long recordId);
 }
