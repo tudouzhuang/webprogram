@@ -1,5 +1,6 @@
 package org.example.project.service;
 
+import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.Project;
@@ -8,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.example.project.dto.ProjectFullCreateDTO; 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目相关的核心业务逻辑接口
@@ -55,4 +57,6 @@ public interface ProjectService {
    void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException;
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     List<ProjectFile> getFilesByRecordId(Long recordId);
+
+    ProcessRecord createRecordWithMultipleFiles(Long projectId, ProcessRecordCreateDTO recordMeta, Map<String, MultipartFile> files) throws IOException;
 }

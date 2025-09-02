@@ -130,54 +130,94 @@ Vue.component('process-record-panel', {
                                     <el-input v-model="recordForm.actualWeight" placeholder="重量"><template slot="append">T</template></el-input>
                                 </el-form-item>
                                 
-                                <el-divider>检查项选择与文件上传</el-divider>
+                                <el-divider>检查项文件上传</el-divider>
 
-                                <el-form-item label="添加检查项" prop="selectedSheets">
+                                <!-- 【已修复】: 将所有相关UI都包裹在同一个 el-form-item 中 -->
+                                <el-form-item label="检查项文件" prop="sheetFiles">
                                     <div class="p-3 border rounded">
-                                        <p class="text-muted small mb-3">点击下方的按钮来添加或移除过程记录表：</p>
-                                        <div>
-                                            <el-button 
-                                                v-for="sheet in availableSheetTemplates" 
-                                                :key="sheet.key"
-                                                :type="isSheetSelected(sheet.key) ? 'success' : 'info'"
-                                                @click="toggleSheetSelection(sheet.key)"
-                                                size="small" class="m-1">
-                                                {{ sheet.name }} <i v-if="isSheetSelected(sheet.key)" class="el-icon-check"></i>
-                                            </el-button>
+                                        <!-- 【已添加】: 恢复了动态添加的交互区域 -->
+                                        <div class="mb-3 d-flex align-items-center">
+                                            <el-select v-model="selectedTemplateKey" placeholder="请选择要添加的检查项" size="small" style="width: 250px; margin-right: 10px;">
+                                                <el-option
+                                                    v-for="item in availableSheetTemplates"
+                                                    :key="item.key"
+                                                    :label="item.name"
+                                                    :value="item.key"
+                                                    :disabled="isTemplateAlreadyAdded(item.key)">
+                                                </el-option>
+                                            </el-select>
+                                            <el-button @click="addSheetFileItem" type="success" size="small" icon="el-icon-plus" plain>添加检查项</el-button>
+                                        </div>
+                                
+                                        <!-- 【已修复】: 只有在有数据时才显示表格 -->
+                                        <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
+                                            <!-- 列1: 检查项名称 -->
+                                            <el-table-column prop="name" label="检查项名称" min-width="180">
+                                                <template slot-scope="scope">
+                                                    <span style="color: #F56C6C;">* </span>
+                                                    <span>{{ scope.row.name }}</span>
+                                                </template>
+                                            </el-table-column>
+                                            
+                                            <!-- 列2: 上传状态 (强化版) -->
+                                            <el-table-column label="上传状态" min-width="250">
+                                                <template slot-scope="scope">
+                                                    <div v-if="scope.row.file">
+                                                        <div class="d-flex align-items-center">
+                                                            <i class="el-icon-success" style="color: #67C23A; font-size: 18px; margin-right: 8px;"></i>
+                                                            <div>
+                                                                <div style="font-weight: 500; line-height: 1.2;">{{ scope.row.file.name }}</div>
+                                                                <div style="font-size: 12px; color: #909399; line-height: 1.2;">
+                                                                    大小: {{ (scope.row.file.size / 1024).toFixed(2) }} KB
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else class="d-flex align-items-center text-muted">
+                                                        <i class="el-icon-warning-outline" style="font-size: 16px; margin-right: 8px;"></i>
+                                                        <span>等待上传文件...</span>
+                                                    </div>
+                                                </template>
+                                            </el-table-column>
+                                            
+                                            <!-- 列3: 上传操作 -->
+                                            <el-table-column label="上传操作" width="150" align="center">
+                                                <template slot-scope="scope">
+                                                    <el-upload
+                                                        action="#"
+                                                        :http-request="() => {}"
+                                                        :auto-upload="false"
+                                                        :show-file-list="false"
+                                                        :limit="1" 
+                                                        :on-change="(file) => handleFileChange(file, scope.row.key)"
+                                                        :on-exceed="() => handleFileExceed(scope.row.key)">
+                                                        <el-button v-if="!scope.row.file" slot="trigger" size="mini" type="primary" icon="el-icon-upload2">选择文件</el-button>
+                                                        <el-button v-else slot="trigger" size="mini" type="warning" icon="el-icon-refresh" plain>重新选择</el-button>
+                                                    </el-upload>
+                                                </template>
+                                            </el-table-column>
+                                
+                                            <!-- 列4: 删除操作 -->
+                                            <el-table-column label="删除" width="100" align="center">
+                                                <template slot-scope="scope">
+                                                    <el-button @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
+                                                </template>
+                                            </el-table-column>
+                                        </el-table>
+                                        
+                                        <!-- 【已修复】: 当表格为空时显示提示 -->
+                                        <div v-else class="text-center text-muted p-4">
+                                            <p>暂未添加任何检查项，请从上方选择并添加。</p>
                                         </div>
                                     </div>
                                 </el-form-item>
-
-                                <el-form-item label="已选检查项">
-                                    <div v-if="recordForm.selectedSheets.length > 0">
-                                        <el-tag v-for="tag in recordForm.selectedSheets" :key="tag" closable @close="handleTagClose(tag)" class="m-1">
-                                            {{ getSheetNameByKey(tag) }}
-                                        </el-tag>
-                                    </div>
-                                    <p v-else class="text-muted">请从上方按钮列表中至少选择一个检查项。</p>
-                                </el-form-item>
-
-                                <!-- ======================================================= -->
-                                <!--   ↓↓↓ 【核心修正 B】: 移除了上传文件 el-form-item 的 prop ↓↓↓   -->
-                                <!-- ======================================================= -->
-                                <el-form-item label="上传文件">
-                                     <el-upload
-                                        ref="recordUploader"
-                                        action="#" 
-                                        :http-request="() => {}"
-                                        :auto-upload="false"
-                                        :limit="1"
-                                        :on-change="handleFileChange">
-                                        <el-button slot="trigger" size="small" type="primary">
-                                            选取包含 <strong class="text-danger">{{ recordForm.selectedSheets.length }}</strong> 个已选Sheet的Excel文件
-                                        </el-button>
-                                     </el-upload>
-                                </el-form-item>
-
+                                
                                 <el-divider>信息提交</el-divider>
-
+            
                                 <el-form-item>
-                                    <el-button type="primary" @click="submitRecord" :loading="isSubmitting">提交记录表</el-button>
+                                    <el-button type="primary" @click="submitRecord" :loading="isSubmitting" :disabled="!isReadyToSubmit">
+                                        提交记录表
+                                    </el-button>
                                     <el-button @click="resetForm">重置表单</el-button>
                                 </el-form-item>
                             </el-form>
@@ -186,8 +226,20 @@ Vue.component('process-record-panel', {
                 </div>
             </div>
     `,
-    
+
     data() {
+        const validateSheetFiles = (rule, value, callback) => {
+            if (!value || value.length === 0) {
+                callback(new Error('请至少添加一个检查项并上传文件'));
+            } else {
+                const allFilesUploaded = value.every(item => item.file !== null);
+                if (!allFilesUploaded) {
+                    callback(new Error('所有已添加的检查项都必须上传文件'));
+                } else {
+                    callback();
+                }
+            }
+        };
         const validateNumber = (rule, value, callback) => {
             if (value && !/^[0-9]+(\.[0-9]{1,3})?$/.test(value)) {
                 callback(new Error('请输入有效的数字, 最多三位小数'));
@@ -198,6 +250,7 @@ Vue.component('process-record-panel', {
 
         return {
             isSubmitting: false,
+            selectedTemplateKey: '',
             recordForm: {
                 partName: '',
                 processName: '',
@@ -217,8 +270,7 @@ Vue.component('process-record-panel', {
                 checkerDate: null,
                 auditorName: null,
                 auditorDate: null,
-                selectedSheets: [],
-                file: null
+                sheetFiles: [] // 初始为空
             },
             availableSheetTemplates: [
                 { key: '2-清单', name: '2-清单' },
@@ -248,97 +300,146 @@ Vue.component('process-record-panel', {
                 'actualSize.width': [{ required: true, message: '宽度不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
                 'actualSize.height': [{ required: true, message: '高度不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
                 actualWeight: [{ required: true, message: '实际重量不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
-                selectedSheets: [{ type: 'array', required: true, message: '请至少选择一个检查项', trigger: 'change' }]
+                sheetFiles: [
+                    { type: 'array', required: true },
+                    { validator: validateSheetFiles, trigger: 'change' } // 使用自定义验证器
+                ]
             }
         }
     },
+    computed: {
+        isReadyToSubmit() {
+            // 只有在至少有一个检查项，并且所有检查项都上传了文件时才可提交
+            if (this.recordForm.sheetFiles.length === 0) {
+                return false;
+            }
+            return this.recordForm.sheetFiles.every(item => item.file !== null);
+        }
+    },
     methods: {
-        toggleSheetSelection(sheetKey) {
-            const index = this.recordForm.selectedSheets.indexOf(sheetKey);
-            if (index > -1) {
-                this.recordForm.selectedSheets.splice(index, 1);
-            } else {
-                this.recordForm.selectedSheets.push(sheetKey);
+            // 【新增方法1】: 判断模板是否已经被添加到列表中（用于禁用下拉选项）
+    isTemplateAlreadyAdded(templateKey) {
+        return this.recordForm.sheetFiles.some(item => item.key === templateKey);
+    },
+    
+    // 【新增方法2】: 添加一个新的检查项到表格中
+    addSheetFileItem() {
+        if (!this.selectedTemplateKey) {
+            this.$message.warning('请先从下拉列表中选择一个要添加的检查项。');
+            return;
+        }
+        
+        // 查找选中的模板详情
+        const templateToAdd = this.availableSheetTemplates.find(t => t.key === this.selectedTemplateKey);
+        
+        if (templateToAdd && !this.isTemplateAlreadyAdded(templateToAdd.key)) {
+            this.recordForm.sheetFiles.push({
+                key: templateToAdd.key,
+                name: templateToAdd.name,
+                file: null
+            });
+            // 清空选择器，方便下次选择
+            this.selectedTemplateKey = '';
+            // 手动触发验证
+            this.$refs.recordForm.validateField('sheetFiles');
+        } else {
+            this.$message.error('该检查项已被添加或不存在。');
+        }
+    },
+    
+    // 【新增方法3】: 从表格中移除一个检查项
+    removeSheetFileItem(sheetKeyToRemove) {
+        this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+        }).then(() => {
+            const index = this.recordForm.sheetFiles.findIndex(item => item.key === sheetKeyToRemove);
+            if (index !== -1) {
+                this.recordForm.sheetFiles.splice(index, 1);
+                this.$message.success('检查项已移除。');
+                // 手动触发验证
+                this.$refs.recordForm.validateField('sheetFiles');
+            }
+        }).catch(() => {});
+    },
+        initializeSheetFiles() {
+            this.recordForm.sheetFiles = this.availableSheetTemplates.map(template => ({
+                key: template.key,
+                name: template.name,
+                file: null // 关键：初始时 file 为 null
+            }));
+        },
+        handleFileChange(file, sheetKey) {
+            const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
+            if (index !== -1) {
+                const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw };
+                this.$set(this.recordForm.sheetFiles, index, updatedSheet);
+                this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
+                this.$refs.recordForm.validateField('sheetFiles');
             }
         },
-        isSheetSelected(sheetKey) {
-            return this.recordForm.selectedSheets.includes(sheetKey);
-        },
-        handleTagClose(tag) {
-            this.toggleSheetSelection(tag);
+        handleFileExceed(sheetKey) {
+            const sheet = this.getSheetNameByKey(sheetKey);
+            this.$message.warning(`"${sheet}" 只能选择一个文件，新的文件已覆盖旧的。`);
         },
         getSheetNameByKey(key) {
             const sheet = this.availableSheetTemplates.find(s => s.key === key);
             return sheet ? sheet.name : key;
         },
-        handleFileChange(file) {
-            this.recordForm.file = file.raw;
-        },
         submitRecord() {
-            console.log('%c--- 开始执行 submitRecord 方法 ---', 'color: blue; font-weight: bold;');
-            if (!this.$refs.recordForm) {
-                console.error('【严重错误】: this.$refs.recordForm 未定义！');
-                this.$message.error('表单引用丢失，无法提交。');
-                return;
-            }
-            this.$refs.recordForm.validate((valid, invalidFields) => {
+            this.$refs.recordForm.validate((valid) => {
                 if (valid) {
-                    console.log('%c【验证通过】', 'color: green; font-weight: bold;', '表单所有字段均符合规则。');
-                    if (!this.recordForm.file) {
-                        this.$message.error('请选择要上传的Excel文件！');
-                        return;
-                    }
                     this.isSubmitting = true;
                     const formData = new FormData();
-                    const dataToSend = { ...this.recordForm };
-                    delete dataToSend.file; 
-                    formData.append('recordMeta', JSON.stringify(dataToSend));
-                    formData.append('file', this.recordForm.file);
-
+                    
+                    // 步骤1: 将除文件外的所有元数据打包成一个 JSON 对象
+                    const metaData = { ...this.recordForm };
+                    delete metaData.sheetFiles; // 从要发送的元数据中删除包含文件对象的数组
+                    
+                    // 将 JSON 对象转换为 Blob 并附加到 FormData
+                    formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
+    
+                    // 步骤2: 遍历 sheetFiles 数组，将每个文件附加到 FormData
+                    this.recordForm.sheetFiles.forEach(sheetFile => {
+                        if (sheetFile.file) {
+                            // 使用检查项的 key 作为文件的字段名 (name)，后端可以据此识别
+                            formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
+                        }
+                    });
+    
                     console.log('【准备发送】FormData 已创建，即将发送到后端...');
-                    console.log('  - Project ID:', this.projectId);
-                    console.log('  - Record Meta (JSON):', JSON.stringify(dataToSend));
-                    console.log('  - File Name:', this.recordForm.file.name);
-
-                    axios.post(`/api/projects/${this.projectId}/process-records`, formData)
-                        .then(() => {
-                            this.$message.success('过程记录表提交成功！');
-                            this.resetForm();
-                            this.$emit('record-created');
-                        }).catch(error => {
-                            const errorMessage = (error.response && error.response.data) ? error.response.data : '提交失败';
-                            this.$message.error(errorMessage);
-                            console.error('【请求失败】Axios 请求出错:', error);
-                        }).finally(() => {
-                            this.isSubmitting = false;
-                        });
+                    // 你可以展开 formData 查看内容，但在控制台直接打印 formData 是看不到内容的
+                    // for (let [key, value] of formData.entries()) { 
+                    //     console.log(key, value);
+                    // }
+    
+                    // 【注意】: 后端API的URL需要相应地修改或新建，这里假设为 '...-multi-file'
+                    axios.post(`/api/projects/${this.projectId}/process-records-multi-file`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' } // axios 会自动设置
+                    })
+                    .then(() => {
+                        this.$message.success('过程记录表及所有文件提交成功！');
+                        this.$emit('record-created');
+                        this.resetForm();
+                    }).catch(error => {
+                        this.$message.error(error.response?.data?.message || '提交失败，请联系管理员');
+                    }).finally(() => {
+                        this.isSubmitting = false;
+                    });
                 } else {
-                    console.error('%c【验证失败】', 'color: red; font-weight: bold;', '表单验证未通过！');
-                    console.error('  - 未通过验证的字段详情:', invalidFields);
-                    try {
-                        const firstErrorField = Object.keys(invalidFields)[0];
-                        const errorMessage = invalidFields[firstErrorField][0].message;
-                        this.$message({
-                            type: 'error',
-                            message: `提交失败，请检查字段 [${firstErrorField}]: ${errorMessage}`,
-                            duration: 5000
-                        });
-                    } catch (e) {
-                         this.$message.error('表单中有多个字段未通过验证，请检查所有红色提示项。');
-                    }
+                    this.$message.error('表单验证失败，请检查所有必填项，特别是确保所有检查项都已上传文件！');
                     return false;
                 }
             });
         },
+    
+        // 【修改6】: 更新 resetForm 方法
         resetForm() {
             this.$refs.recordForm.resetFields();
-            this.$refs.recordUploader.clearFiles();
-            this.recordForm.file = null;
+            this.recordForm.sheetFiles = [];
+            this.selectedTemplateKey = '';
             this.recordForm.designerDate = new Date();
-            this.recordForm.checkerName = null;
-            this.recordForm.checkerDate = null;
-            this.recordForm.auditorName = null;
-            this.recordForm.auditorDate = null;
-        }
+        },
     }
 });

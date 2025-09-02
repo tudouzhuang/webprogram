@@ -1,5 +1,6 @@
 package org.example.project.controller;
 
+import org.example.project.dto.ProcessRecordCreateDTO;
 // --- 基础 Spring 和 Java 依赖 ---
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.entity.ProcessRecord;
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
@@ -199,4 +201,26 @@ public class ProjectController {
         }
     }
 
+        /**
+     * 【新增API】: 创建一个过程记录，同时关联多个独立的检查项文件
+     * @param projectId 项目ID
+     * @param recordMetaJson 包含过程记录元数据的JSON字符串
+     * @param files 包含所有上传文件的Map，key是检查项的key (e.g., "2-清单"), value是文件本身
+     * @return 成功响应
+     */
+    @PostMapping("/{projectId}/process-records-multi-file")
+    public ResponseEntity<?> createProcessRecordWithMultipleFiles(
+            @PathVariable Long projectId,
+            @RequestPart("recordMeta") ProcessRecordCreateDTO recordMeta,
+            @RequestParam Map<String, MultipartFile> files) {
+        
+        try {
+            // 注意：Service层需要一个新的方法来处理这个逻辑
+            ProcessRecord newRecord = projectService.createRecordWithMultipleFiles(projectId, recordMeta, files);
+            return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
+        } catch (Exception e) {
+            e.printStackTrace(); // 生产环境应使用日志框架
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "创建失败: " + e.getMessage()));
+        }
+    }
 }

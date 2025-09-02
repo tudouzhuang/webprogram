@@ -2,13 +2,14 @@ package org.example.project.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
+// import java.util.List; // List 不再需要，可以移除
 
 import lombok.Data;
 
 /**
- * 【最终版】: 用于接收前端“新建过程记录表”的完整表单数据。
- * 它的字段结构与前端Vue组件中的 recordForm 对象精确匹配。
+ * 【多文件上传版】: 用于接收前端“新建过程记录表”的元数据部分。
+ * 它的字段结构与前端Vue组件中的 recordForm 对象（排除文件部分）精确匹配。
+ * 不再包含文件或检查项列表信息，这些信息由 Multipart 请求的其他部分承载。
  */
 @Data
 public class ProcessRecordCreateDTO {
@@ -39,10 +40,10 @@ public class ProcessRecordCreateDTO {
     private SizeDTO actualSize;
     private BigDecimal actualWeight;
 
-    // 检查项
-    private List<String> selectedSheets;
+    // 【核心修改】: 移除了 selectedSheets 字段
+    // private List<String> selectedSheets; // <-- 移除此行
 
-    // 内部类，用于匹配嵌套的尺寸对象
+    // 内部类 SizeDTO 保持不变，因为它也是元数据的一部分
     @Data
     public static class SizeDTO {
         private BigDecimal length;

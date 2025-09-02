@@ -2,9 +2,12 @@ package org.example.project.service.impl;
 
 // --- 基础依赖 ---
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+
+import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.dto.ProjectFullCreateDTO;
 import org.example.project.entity.ProcessRecord;
+import org.example.project.entity.ProcessRecordStatus;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
 import org.example.project.mapper.ProjectFileMapper;
@@ -27,7 +30,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
@@ -62,13 +67,12 @@ public class ProjectServiceImpl implements ProjectService {
         //  ↓↓↓ 【核心修正】在这里修改查询的列名 ↓↓↓
         // =======================================================
         QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
-        
+
         // 【修正前，错误的】:
         // queryWrapper.eq("project_name", createDTO.getProjectName());
-        
         // 【修正后，正确的】: 
         // 使用数据库中真实存在的列 `project_number` 来进行唯一性检查。
-        queryWrapper.eq("project_number", createDTO.getProjectNumber()); 
+        queryWrapper.eq("project_number", createDTO.getProjectNumber());
 
         if (projectMapper.selectCount(queryWrapper) > 0) {
             // 提示信息也应该更准确
@@ -77,16 +81,16 @@ public class ProjectServiceImpl implements ProjectService {
 
         // 创建实体对象
         Project projectEntity = new Project();
-        
+
         // 【关键】确保为数据库中所有 NOT NULL 的列都提供了值
         // 根据你的表结构，project_number 和 product_name 很可能都是 NOT NULL
         projectEntity.setProjectNumber(createDTO.getProjectNumber()); // 用 projectName 填充 project_number
         projectEntity.setProductName(createDTO.getProjectNumber()); // 同时也填充 product_name
-        
+
         // 插入数据库
         projectMapper.insert(projectEntity);
         log.info("【Service】极简项目创建成功，新项目ID: {}", projectEntity.getId());
-        
+
         return projectEntity;
     }
 
@@ -98,7 +102,7 @@ public class ProjectServiceImpl implements ProjectService {
     // 【核心修正】: 将方法参数的类型从 ProjectCreateDTO 改为 ProjectFullCreateDTO
     public void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException {
         log.info("【Service】开始执行“完整创建项目（带文件）”流程...");
-        
+
         // 1. 检查项目号唯一性
         QueryWrapper<Project> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("project_number", createDTO.getProjectNumber());
@@ -109,7 +113,7 @@ public class ProjectServiceImpl implements ProjectService {
         // 2. 保存项目基础信息
         Project projectEntity = new Project();
         BeanUtils.copyProperties(createDTO, projectEntity);
-        
+
         // 【现在不再报错】: 因为 createDTO (ProjectFullCreateDTO类型) 中确实有 getQuoteSize() 方法
         if (createDTO.getQuoteSize() != null) {
             projectEntity.setQuoteLength(createDTO.getQuoteSize().getLength());
@@ -121,7 +125,7 @@ public class ProjectServiceImpl implements ProjectService {
             projectEntity.setActualWidth(createDTO.getActualSize().getWidth());
             projectEntity.setActualHeight(createDTO.getActualSize().getHeight());
         }
-        
+
         projectMapper.insert(projectEntity);
         Long newProjectId = projectEntity.getId();
         log.info("【Service】完整项目信息已保存，ID: {}", newProjectId);
@@ -129,7 +133,7 @@ public class ProjectServiceImpl implements ProjectService {
         // 3. 处理文件（如果存在）
         if (file != null && !file.isEmpty()) {
             Path sourceFilePath = saveOriginalFile(file, newProjectId);
-            saveProjectFileInfo(file.getOriginalFilename(), sourceFilePath, newProjectId, "INITIAL_DOCUMENT"); 
+            saveProjectFileInfo(file.getOriginalFilename(), sourceFilePath, newProjectId, "INITIAL_DOCUMENT");
         }
     }
 
@@ -225,7 +229,7 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("【Service】原始Excel文件已保存至: {}", sourceFilePath);
         return sourceFilePath;
     }
-    
+
     private void saveProjectFileInfo(String originalFilename, Path sourceFilePath, Long projectId, String documentType) {
         ProjectFile projectFile = new ProjectFile();
         projectFile.setProjectId(projectId);
@@ -233,12 +237,14 @@ public class ProjectServiceImpl implements ProjectService {
         String relativePath = Paths.get(String.valueOf(projectId), "source_" + originalFilename).toString().replace("\\", "/");
         projectFile.setFilePath(relativePath);
         projectFile.setDocumentType(documentType);
-        
+
         String fileExtension = "";
         int i = originalFilename.lastIndexOf('.');
-        if (i > 0) fileExtension = originalFilename.substring(i);
+        if (i > 0) {
+            fileExtension = originalFilename.substring(i);
+        }
         projectFile.setFileType(fileExtension);
-        
+
         projectFileMapper.insert(projectFile);
         log.info("【Service】文件信息 (类型: {}) 已存入数据库。", documentType);
     }
@@ -258,9 +264,55 @@ public class ProjectServiceImpl implements ProjectService {
         return projectFileMapper.selectList(queryWrapper);
     }
 
-        @Override
-        public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'getRecordsByProjectId'");
+    @Override
+    public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getRecordsByProjectId'");
+    }
+
+    @Override
+    @Transactional
+    public ProcessRecord createRecordWithMultipleFiles(Long projectId, ProcessRecordCreateDTO recordMeta, Map<String, MultipartFile> files) throws IOException {
+        // 1. 创建并保存 ProcessRecord 主记录
+        ProcessRecord record = new ProcessRecord();
+        BeanUtils.copyProperties(recordMeta, record); // 复制元数据
+        record.setProjectId(projectId);
+        record.setStatus(ProcessRecordStatus.DRAFT);
+        // 假设创建者ID从SecurityContext获取
+        // record.setCreatedByUserId(currentUserId); 
+        // record.setAssigneeId(currentUserId);
+        processRecordMapper.insert(record);
+
+        // 2. 遍历上传的文件Map，为每个文件创建一条 project_files 记录
+        for (Map.Entry<String, MultipartFile> entry : files.entrySet()) {
+            String sheetKey = entry.getKey();
+            MultipartFile file = entry.getValue();
+
+            if (file.isEmpty()) {
+                continue;
+            }
+
+            // 2.1 保存文件到服务器
+            String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+            String newFileName = System.currentTimeMillis() + "_" + originalFilename;
+            Path destinationPath = Paths.get(this.uploadDir, String.valueOf(projectId), String.valueOf(record.getId()), newFileName).normalize();
+            Files.createDirectories(destinationPath.getParent());
+            Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
+
+            // 2.2 创建 ProjectFile 实体并保存
+            ProjectFile projectFile = new ProjectFile();
+            projectFile.setProjectId(projectId);
+            projectFile.setRecordId(record.getId());
+            projectFile.setFileName(originalFilename);
+            // 使用文件的相对路径进行存储
+            projectFile.setFilePath(Paths.get(String.valueOf(projectId), String.valueOf(record.getId()), newFileName).toString());
+            projectFile.setDocumentType(sheetKey); // 【关键】用检查项的key作为文档类型
+            projectFile.setFileType(file.getContentType());
+            projectFile.setCreatedAt(LocalDateTime.now());
+
+            projectFileMapper.insert(projectFile);
         }
+
+        return record;
+    }
 }
