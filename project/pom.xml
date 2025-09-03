@@ -73,35 +73,29 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- 编译器插件，配置Lombok -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
-                <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <encoding>${project.build.sourceEncoding}</encoding>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-
             <!-- Spring Boot打包插件 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${project.parent.version}</version> <!-- 推荐加上版本号 -->
                 <configuration>
                     <mainClass>org.example.project.ProjectApplication</mainClass>
+                    <!-- 确保Lombok不会被错误地打包 -->
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
                 </configuration>
                 <executions>
                     <execution>
@@ -111,6 +105,35 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+    
+            <!-- 【唯一且已修正】的编译器插件配置 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <!-- 使用一个对 Java 8 兼容性好的较新版本 -->
+                <version>3.8.1</version> 
+                <configuration>
+                    <!-- 确保这里的 Java 版本与您项目配置的 java.version 属性一致 -->
+                    <source>${java.version}</source> <!-- 使用属性，即 1.8 -->
+                    <target>${java.version}</target> <!-- 使用属性，即 1.8 -->
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    
+                    <annotationProcessorPaths>
+                        <!-- 关键：在这里显式声明 Lombok -->
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <!-- 关键：解决 MyBatis-Plus 和 Lombok 在一起时的编译问题 -->
+                        <path>
+                             <groupId>org.projectlombok</groupId>
+                             <artifactId>lombok-mapstruct-binding</artifactId>
+                             <version>0.2.0</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
         </plugins>
     </build>
