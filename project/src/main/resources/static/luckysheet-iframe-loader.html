@@ -43,22 +43,21 @@
     <script src="/luckysheet/plugins/js/plugin.js"></script>
     <script src="/luckysheet/luckysheet.umd.js"></script>
     <script src="/luckysheet/luckyexcel.umd.js"></script>
-    <!-- SheetJS 在 iframe 中不再需要，导出由父组件完成 -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script> -->
-
-    <!-- 省略了 HTML head 和 body 标签 -->
 
     <script>
         const container = document.getElementById('luckysheet-container');
+        let originalDataValidation = {}; // 用于存储初始加载时的数据验证规则
 
+        // 【核心修正】: 回调函数的参数是 event，我们在整个函数体内都应该使用 event
         window.addEventListener('message', function (event) {
+            // 安全检查: 确保消息来自同源
             if (event.origin !== window.location.origin) return;
 
+            // 从 event.data 中解构出 type 和 payload
             const { type, payload } = event.data;
             console.log(`[Iframe] 收到消息: type=${type}`, payload);
 
             if (type === 'LOAD_SHEET') {
-                // 【新增逻辑】: 检查 payload 中是否直接包含了 Luckysheet 数据
                 if (payload.luckysheetData) {
                     console.log("[Iframe] 检测到直接传入的 Luckysheet 数据，将使用它进行渲染。");
                     renderSheet(payload.luckysheetData, payload.fileName, payload.options);
@@ -69,35 +68,23 @@
             else if (type === 'GET_DATA_AND_IMAGES') {
                 if (window.luckysheet) {
                     const liveSheets = luckysheet.getAllSheets();
-                    const structuralData = luckysheet.getLuckysheetfile();
-                    const validationMap = new Map();
-
-                    if (Array.isArray(structuralData)) {
-                        structuralData.forEach(sheet => {
-                            if (sheet && sheet.order != null && sheet.dataVerification) {
-                                validationMap.set(sheet.order, sheet.dataVerification);
-                            }
-                        });
-                    }
-
-                    const mergedSheets = liveSheets.map(liveSheet => {
-                        if (liveSheet && liveSheet.order != null && validationMap.has(liveSheet.order)) {
-                            liveSheet.dataVerification = validationMap.get(liveSheet.order);
-                        }
-                        return liveSheet;
-                    });
-
+                    
+                    // 为了保证数据验证规则不丢失，我们需要将其与实时数据合并
+                    // originalDataValidation 在 renderSheet 时被填充
+                    const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
+                    
                     console.log(`[Iframe] ✅ 成功融合实时数据与数据验证规则。准备回发...`);
 
-                    // 【核心修正】
-                    // 从接收到的消息 event.data (在外面应该已经被赋值给一个变量，比如 messageData) 中
-                    // 取出 payload.purpose，然后把它放回到要发送的 payload 中。
+                    // 【【【 关键修正点 】】】
+                    // 使用 event.data 来访问父组件传来的完整数据
+                    // 将需要透传的所有字段都包含在回传的 payload 中
                     window.parent.postMessage({
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
                         payload: {
                             sheets: mergedSheets,
-                            // 这一行是必须添加的！
-                            purpose: event.data.payload.purpose
+                            purpose: event.data.payload.purpose,
+                            fileId: event.data.payload.fileId,
+                            documentType: event.data.payload.documentType
                         }
                     }, window.location.origin);
 
@@ -107,20 +94,30 @@
             }
         });
 
-        /**
-         * 新增：直接使用 Luckysheet JSON 数据进行渲染
-         */
         function renderSheet(luckysheetData, fileName, options) {
             if (window.luckysheet) {
                 luckysheet.destroy();
             }
             container.innerHTML = '';
+            
+            // 【重要】: 暂存原始的数据验证规则
+            originalDataValidation = {};
+            if (Array.isArray(luckysheetData)) {
+                 luckysheetData.forEach(sheet => {
+                    if (sheet && sheet.order != null && sheet.dataVerification) {
+                        originalDataValidation[sheet.order] = sheet.dataVerification;
+                    }
+                });
+            }
+
             const finalOptions = {
                 container: 'luckysheet-container',
-                data: luckysheetData, // 直接使用传入的数据
+                data: luckysheetData,
                 title: fileName,
                 ...options
             };
+            
+            // 使用 setTimeout 确保 DOM 渲染完成
             setTimeout(() => {
                 try {
                     console.log(`[Iframe] 准备使用传入的JSON创建实例...`, finalOptions);
@@ -132,13 +129,15 @@
             }, 50);
         }
 
-        /**
-         * 原有的：从文件URL加载
-         */
         function loadSheetFromFile(fileUrl, fileName, options) {
             container.innerHTML = `<div class="loader">正在下载文件...</div>`;
             fetch(fileUrl)
-                .then(response => response.blob())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`网络错误: ${response.statusText}`);
+                    }
+                    return response.blob();
+                })
                 .then(fileBlob => {
                     container.innerHTML = `<div class="loader">文件下载成功，正在解析...</div>`;
                     LuckyExcel.transformExcelToLucky(fileBlob,
@@ -146,13 +145,28 @@
                             renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
                         },
                         function (error) {
-                            container.innerHTML = `<div class="loader">文件解析失败。</div>`;
+                            console.error("LuckyExcel 解析失败:", error);
+                            container.innerHTML = `<div class="loader">文件解析失败。请确认文件是有效的.xlsx格式。</div>`;
                         }
                     );
                 })
                 .catch(error => {
+                    console.error("加载文件失败:", error);
                     container.innerHTML = `<div class="loader">文件加载失败。</div>`;
                 });
+        }
+        
+        // 新增辅助函数，用于合并实时数据和原始的数据验证规则
+        function mergeDataWithValidation(liveSheets, validationRules) {
+            return liveSheets.map(liveSheet => {
+                if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
+                    // 如果实时数据中没有 dataVerification，或者为空对象，就用原始的覆盖
+                    if (!liveSheet.dataVerification || Object.keys(liveSheet.dataVerification).length === 0) {
+                        liveSheet.dataVerification = validationRules[liveSheet.order];
+                    }
+                }
+                return liveSheet;
+            });
         }
 
         console.log('[Iframe] 加载器已就绪，等待消息...');

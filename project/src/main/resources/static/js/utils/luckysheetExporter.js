@@ -28,9 +28,13 @@ export async function exportWithExcelJS(luckysheetData) {
             const cell = worksheet.getCell(cellData.r + 1, cellData.c + 1);
             const luckysheetCell = cellData.v;
             if (luckysheetCell) {
-                if (luckysheetCell.f) {
-                    cell.formula = luckysheetCell.f.substring(1);
+                if (luckysheetCell.f) { // 公式
+                    cell.formula = luckysheetCell.f.startsWith('=') ? luckysheetCell.f.substring(1) : luckysheetCell.f;
+                } else if (luckysheetCell.ct && luckysheetCell.ct.v !== undefined && luckysheetCell.ct.v !== null) {
+                    // 优先使用预处理好的 ct.v
+                    cell.value = luckysheetCell.ct.v;
                 } else {
+                    // 回退到旧逻辑
                     cell.value = luckysheetCell.m !== undefined ? luckysheetCell.m : luckysheetCell.v;
                 }
                 // 【注意】这里调用的是下面的辅助函数，不再需要`this.`

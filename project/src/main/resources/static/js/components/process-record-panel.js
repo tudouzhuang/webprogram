@@ -136,18 +136,37 @@ Vue.component('process-record-panel', {
                                 <el-form-item label="检查项文件" prop="sheetFiles">
                                     <div class="p-3 border rounded">
                                         <!-- 【已添加】: 恢复了动态添加的交互区域 -->
-                                        <div class="mb-3 d-flex align-items-center">
-                                            <el-select v-model="selectedTemplateKey" placeholder="请选择要添加的检查项" size="small" style="width: 250px; margin-right: 10px;">
-                                                <el-option
-                                                    v-for="item in availableSheetTemplates"
-                                                    :key="item.key"
-                                                    :label="item.name"
-                                                    :value="item.key"
-                                                    :disabled="isTemplateAlreadyAdded(item.key)">
-                                                </el-option>
-                                            </el-select>
-                                            <el-button @click="addSheetFileItem" type="success" size="small" icon="el-icon-plus" plain>添加检查项</el-button>
-                                        </div>
+                                            <el-row :gutter="10" class="mb-3">
+                                                <!-- 默认项选择区域 -->
+                                                <el-col :span="12">
+                                                    <div class="d-flex align-items-center">
+                                                        <el-select v-model="selectedTemplateKey" placeholder="从常用模板中选择" size="small" style="flex-grow: 1; margin-right: 10px;">
+                                                            <el-option
+                                                                v-for="item in availableSheetTemplates"
+                                                                :key="item.key"
+                                                                :label="item.name"
+                                                                :value="item.key"
+                                                                :disabled="isItemAlreadyAdded(item.key)">
+                                                            </el-option>
+                                                        </el-select>
+                                                        <el-button @click="addDefaultSheetItem" type="primary" size="small" icon="el-icon-plus">添加模板项</el-button>
+                                                    </div>
+                                                </el-col>
+                                    
+                                                <!-- 自定义项输入区域 -->
+                                                <el-col :span="12">
+                                                    <div class="d-flex align-items-center">
+                                                        <el-input 
+                                                            v-model="customSheetName" 
+                                                            placeholder="或输入自定义检查项名称" 
+                                                            size="small" 
+                                                            style="flex-grow: 1; margin-right: 10px;"
+                                                            @keyup.enter.native="addCustomSheetItem">
+                                                        </el-input>
+                                                        <el-button @click="addCustomSheetItem" type="success" size="small" icon="el-icon-plus" plain>添加自定义项</el-button>
+                                                    </div>
+                                                </el-col>
+                                            </el-row>
                                 
                                         <!-- 【已修复】: 只有在有数据时才显示表格 -->
                                         <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
@@ -251,6 +270,7 @@ Vue.component('process-record-panel', {
         return {
             isSubmitting: false,
             selectedTemplateKey: '',
+            customSheetName: '', 
             recordForm: {
                 partName: '',
                 processName: '',
@@ -270,7 +290,7 @@ Vue.component('process-record-panel', {
                 checkerDate: null,
                 auditorName: null,
                 auditorDate: null,
-                sheetFiles: [] // 初始为空
+                sheetFiles: []
             },
             availableSheetTemplates: [
                 { key: '2-清单', name: '2-清单' },
@@ -317,37 +337,50 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
-            // 【新增方法1】: 判断模板是否已经被添加到列表中（用于禁用下拉选项）
-    isTemplateAlreadyAdded(templateKey) {
-        return this.recordForm.sheetFiles.some(item => item.key === templateKey);
+    // 【已修复】: 只保留一个通用检查方法
+    isItemAlreadyAdded(keyOrName) {
+        const trimmedValue = keyOrName.trim();
+        return this.recordForm.sheetFiles.some(item => item.key.trim() === trimmedValue);
     },
     
-    // 【新增方法2】: 添加一个新的检查项到表格中
-    addSheetFileItem() {
+    // 【已修复】: 只保留一个从预设模板添加的方法，并重命名为 addDefaultSheetItem
+    addDefaultSheetItem() {
         if (!this.selectedTemplateKey) {
-            this.$message.warning('请先从下拉列表中选择一个要添加的检查项。');
+            this.$message.warning('请先从下拉列表中选择一个模板。');
             return;
         }
-        
-        // 查找选中的模板详情
         const templateToAdd = this.availableSheetTemplates.find(t => t.key === this.selectedTemplateKey);
         
-        if (templateToAdd && !this.isTemplateAlreadyAdded(templateToAdd.key)) {
+        if (templateToAdd && !this.isItemAlreadyAdded(templateToAdd.key)) {
             this.recordForm.sheetFiles.push({
                 key: templateToAdd.key,
                 name: templateToAdd.name,
                 file: null
             });
-            // 清空选择器，方便下次选择
             this.selectedTemplateKey = '';
-            // 手动触发验证
             this.$refs.recordForm.validateField('sheetFiles');
         } else {
-            this.$message.error('该检查项已被添加或不存在。');
+             this.$message.error('该模板项已被添加或不存在。');
         }
     },
     
-    // 【新增方法3】: 从表格中移除一个检查项
+    // 【已修复】: 添加自定义项的方法
+    addCustomSheetItem() {
+        const name = this.customSheetName.trim();
+        if (!name) {
+            this.$message.warning('请输入有效的自定义检查项名称。');
+            return;
+        }
+        if (this.isItemAlreadyAdded(name)) {
+            this.$message.error(`检查项 "${name}" 已存在，请勿重复添加。`);
+            return;
+        }
+        this.recordForm.sheetFiles.push({ key: name, name: name, file: null });
+        this.customSheetName = '';
+        this.$refs.recordForm.validateField('sheetFiles');
+    },
+
+    // 移除检查项
     removeSheetFileItem(sheetKeyToRemove) {
         this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
             confirmButtonText: '确定',
@@ -358,87 +391,63 @@ Vue.component('process-record-panel', {
             if (index !== -1) {
                 this.recordForm.sheetFiles.splice(index, 1);
                 this.$message.success('检查项已移除。');
-                // 手动触发验证
                 this.$refs.recordForm.validateField('sheetFiles');
             }
         }).catch(() => {});
     },
-        initializeSheetFiles() {
-            this.recordForm.sheetFiles = this.availableSheetTemplates.map(template => ({
-                key: template.key,
-                name: template.name,
-                file: null // 关键：初始时 file 为 null
-            }));
-        },
-        handleFileChange(file, sheetKey) {
-            const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
-            if (index !== -1) {
-                const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw };
-                this.$set(this.recordForm.sheetFiles, index, updatedSheet);
-                this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
-                this.$refs.recordForm.validateField('sheetFiles');
+        
+    // 文件选择
+    handleFileChange(file, sheetKey) {
+        const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
+        if (index !== -1) {
+            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw };
+            this.$set(this.recordForm.sheetFiles, index, updatedSheet);
+            this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
+            this.$refs.recordForm.validateField('sheetFiles');
+        }
+    },
+
+    // 文件超出限制
+    handleFileExceed(sheetKey) {
+        this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
+    },
+
+    // 提交记录
+    submitRecord() {
+        this.$refs.recordForm.validate((valid) => {
+            if (valid) {
+                this.isSubmitting = true;
+                const formData = new FormData();
+                const metaData = { ...this.recordForm };
+                delete metaData.sheetFiles;
+                formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
+                this.recordForm.sheetFiles.forEach(sheetFile => {
+                    if (sheetFile.file) {
+                        formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
+                    }
+                });
+                axios.post(`/api/projects/${this.projectId}/process-records-multi-file`, formData)
+                .then(() => {
+                    this.$message.success('提交成功！');
+                    this.$emit('record-created');
+                    this.resetForm();
+                }).catch(error => {
+                    this.$message.error(error.response?.data?.message || '提交失败');
+                }).finally(() => {
+                    this.isSubmitting = false;
+                });
+            } else {
+                this.$message.error('表单验证失败，请检查必填项！');
             }
-        },
-        handleFileExceed(sheetKey) {
-            const sheet = this.getSheetNameByKey(sheetKey);
-            this.$message.warning(`"${sheet}" 只能选择一个文件，新的文件已覆盖旧的。`);
-        },
-        getSheetNameByKey(key) {
-            const sheet = this.availableSheetTemplates.find(s => s.key === key);
-            return sheet ? sheet.name : key;
-        },
-        submitRecord() {
-            this.$refs.recordForm.validate((valid) => {
-                if (valid) {
-                    this.isSubmitting = true;
-                    const formData = new FormData();
-                    
-                    // 步骤1: 将除文件外的所有元数据打包成一个 JSON 对象
-                    const metaData = { ...this.recordForm };
-                    delete metaData.sheetFiles; // 从要发送的元数据中删除包含文件对象的数组
-                    
-                    // 将 JSON 对象转换为 Blob 并附加到 FormData
-                    formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
-    
-                    // 步骤2: 遍历 sheetFiles 数组，将每个文件附加到 FormData
-                    this.recordForm.sheetFiles.forEach(sheetFile => {
-                        if (sheetFile.file) {
-                            // 使用检查项的 key 作为文件的字段名 (name)，后端可以据此识别
-                            formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
-                        }
-                    });
-    
-                    console.log('【准备发送】FormData 已创建，即将发送到后端...');
-                    // 你可以展开 formData 查看内容，但在控制台直接打印 formData 是看不到内容的
-                    // for (let [key, value] of formData.entries()) { 
-                    //     console.log(key, value);
-                    // }
-    
-                    // 【注意】: 后端API的URL需要相应地修改或新建，这里假设为 '...-multi-file'
-                    axios.post(`/api/projects/${this.projectId}/process-records-multi-file`, formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' } // axios 会自动设置
-                    })
-                    .then(() => {
-                        this.$message.success('过程记录表及所有文件提交成功！');
-                        this.$emit('record-created');
-                        this.resetForm();
-                    }).catch(error => {
-                        this.$message.error(error.response?.data?.message || '提交失败，请联系管理员');
-                    }).finally(() => {
-                        this.isSubmitting = false;
-                    });
-                } else {
-                    this.$message.error('表单验证失败，请检查所有必填项，特别是确保所有检查项都已上传文件！');
-                    return false;
-                }
-            });
-        },
-    
+        });
+    },
+
         // 【修改6】: 更新 resetForm 方法
         resetForm() {
             this.$refs.recordForm.resetFields();
             this.recordForm.sheetFiles = [];
             this.selectedTemplateKey = '';
+            this.customSheetName = ''; // 确保自定义输入框也被清空
             this.recordForm.designerDate = new Date();
         },
     }

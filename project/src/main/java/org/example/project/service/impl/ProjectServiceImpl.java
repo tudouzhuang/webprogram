@@ -2,7 +2,7 @@ package org.example.project.service.impl;
 
 // --- 基础依赖 ---
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-
+import org.example.project.mapper.ProcessRecordMapper;
 import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.dto.ProjectCreateDTO;
 import org.example.project.dto.ProjectFullCreateDTO;
@@ -46,9 +46,13 @@ public class ProjectServiceImpl implements ProjectService {
     @Autowired
     private ProjectFileMapper projectFileMapper;
 
+    @Autowired
+    private ProcessRecordMapper processRecordMapper; 
+
     @Autowired(required = false) // 设置为非必须，如果暂时没有这个Bean也不会报错
     private ExcelSplitterService excelSplitterService;
 
+    
     @Value("${file.upload-dir}")
     private String uploadDir;
 

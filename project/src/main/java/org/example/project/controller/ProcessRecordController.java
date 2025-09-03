@@ -177,21 +177,40 @@ public class ProcessRecordController {
         private String comment;
     }
 
+    /**
+     * 【【已改造】】 保存在线编辑后的单个关联文件（例如某个检查项）。
+     *
+     * @param recordId 过程记录的ID
+     * @param fileId 要更新的具体文件记录的ID (来自 project_files 表)
+     * @param file 新的文件内容
+     * @return 操作成功的响应
+     */
     @PostMapping("/{recordId}/save-draft")
     public ResponseEntity<?> saveDraft(
             @PathVariable Long recordId,
+            @RequestParam("fileId") Long fileId, //  <-- 【核心修改1】: 新增 fileId 参数
             @RequestParam("file") MultipartFile file) {
 
         try {
-            processRecordService.saveDraftFile(recordId, file);
+            // 【核心修改2】: 调用一个新的 Service 方法
+            processRecordService.updateAssociatedFile(recordId, fileId, file);
+
             Map<String, String> responseBody = new HashMap<>();
-            responseBody.put("message", "草稿文件保存成功");
+            responseBody.put("message", "文件更新成功");
             return ResponseEntity.ok().body(responseBody);
+
         } catch (IOException e) {
-            // 记录日志 e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "文件保存失败"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+            e.printStackTrace();
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", "文件保存时发生IO错误");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+
+        } catch (IllegalArgumentException | NoSuchElementException e) {
+            // IllegalArgumentException: 文件为空
+            // NoSuchElementException: 找不到记录
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
     }
 
@@ -205,9 +224,18 @@ public class ProcessRecordController {
     public ResponseEntity<?> triggerReview(@PathVariable Long recordId) {
         try {
             processRecordService.startReviewProcess(recordId);
-            return ResponseEntity.ok().body(Map.of("message", "已成功提交审核"));
+
+            // --- 【核心修正 3】 ---
+            Map<String, String> responseBody = new HashMap<>();
+            responseBody.put("message", "已成功提交审核");
+            return ResponseEntity.ok().body(responseBody);
+
         } catch (IllegalStateException | IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", e.getMessage()));
+
+            // --- 【核心修正 4】 ---
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
     }
 }

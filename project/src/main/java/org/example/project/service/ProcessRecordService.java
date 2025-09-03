@@ -19,7 +19,6 @@ public interface ProcessRecordService {
      * @param file           用户上传的、包含待检查Sheet的完整Excel文件。
      * @throws IOException 如果在文件处理过程中发生IO错误。
      */
-    void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException;
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     ProcessRecord getRecordById(Long recordId);
     ProjectFile findReviewSheetByRecordId(Long recordId);
@@ -50,7 +49,7 @@ public interface ProcessRecordService {
      * @throws IOException 文件IO异常
      * @throws IllegalArgumentException 如果记录不存在
      */
-    void saveDraftFile(Long recordId, MultipartFile file) throws IOException;
+    void updateAssociatedFile(Long recordId, Long fileId, MultipartFile file) throws IOException;
 
     /**
      * 【新增方法声明 2】

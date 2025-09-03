@@ -3,7 +3,6 @@ package org.example.project.service.impl;
 // --- 基础 Spring 和 DTO/Entity/Mapper 依赖 ---
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.example.project.dto.ProcessRecordCreateDTO;
@@ -32,7 +31,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Comparator;
 // --- Java IO, NIO, 和 Stream 依赖 ---
-import java.io.File;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,6 +63,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     private static final String SOURCE_FILE_PREFIX = "source_";
 
     // --- 依赖注入 ---
+    @Autowired
     private final ProcessRecordMapper processRecordMapper;
     private final ProjectFileMapper projectFileMapper;
     private final ExcelSplitterService excelSplitterService;
@@ -90,137 +90,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void createProcessRecord(Long projectId, String recordMetaJson, MultipartFile file) throws IOException {
-
-        log.info("【SERVICE-CREATE】开始创建过程记录表, 项目ID: {}", projectId);
-
-        // 1. 验证输入
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("必须上传设计过程记录表的Excel文件。");
-        }
-
-        // 2. 解析前端传来的元数据JSON
-        ProcessRecordCreateDTO createDTO = objectMapper.readValue(recordMetaJson, ProcessRecordCreateDTO.class);
-
-        // 3. 智能分配审核员
-        Long smartAssigneeId = findLeastBusyReviewerId();
-        log.info("【SERVICE-CREATE】智能分配 - 负责人ID: {}", smartAssigneeId);
-
-        // 4. 创建并保存 ProcessRecord 任务记录
-        ProcessRecord record = new ProcessRecord();
-        record.setProjectId(projectId);
-        record.setPartName(createDTO.getPartName());
-        record.setProcessName(createDTO.getProcessName());
-        record.setCreatedByUserId(getCurrentUserId()); // 假设你有这个方法
-
-        // 将接收到的、结构化的DTO对象，再次序列化为JSON字符串存入数据库
-        // 这样可以完整地保留所有前端表单信息
-        record.setSpecificationsJson(objectMapper.writeValueAsString(createDTO));
-
-        record.setStatus(ProcessRecordStatus.PENDING_REVIEW); // 初始状态为待审核
-        record.setAssigneeId(smartAssigneeId); // 指派负责人
-
-        // 先插入主记录，以获取自增的ID
-        processRecordMapper.insert(record);
-        Long newRecordId = record.getId(); // MyBatis-Plus 会自动回填ID
-        log.info("【SERVICE-CREATE】任务记录 (ProcessRecord) 已保存, 新 Record ID: {}", newRecordId);
-
-        // 5. 保存上传的物理文件
-        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        // 使用时间戳确保文件名唯一，防止覆盖
-        String storedFileName = "source_" + System.currentTimeMillis() + "_" + originalFilename;
-        // 构建存储路径: uploadDir/projectId/recordId/fileName
-        Path physicalPath = Paths.get(uploadDir, String.valueOf(projectId), String.valueOf(newRecordId), storedFileName);
-
-        // 确保父目录存在
-        Files.createDirectories(physicalPath.getParent());
-        // 将上传的文件内容复制到目标路径
-        Files.copy(file.getInputStream(), physicalPath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【SERVICE-CREATE】物理文件已保存至: {}", physicalPath);
-
-        // 6. 创建文件的相对路径，用于存入数据库
-        String relativePath = Paths.get(String.valueOf(projectId), String.valueOf(newRecordId), storedFileName).toString().replace("\\", "/");
-
-        // 7. 回填文件路径到刚刚创建的 process_records 记录中
-        record.setSourceFilePath(relativePath);
-        processRecordMapper.updateById(record);
-        log.info("【SERVICE-CREATE】已回填文件路径到任务记录。");
-
-        // 8. 【关键】创建并保存 ProjectFile 文件关联记录
-        ProjectFile projectFile = new ProjectFile();
-        projectFile.setProjectId(projectId);
-        projectFile.setRecordId(newRecordId); // 关联任务ID
-        projectFile.setDocumentType("SOURCE_RECORD"); // 设置文件类型为“源文件”
-        projectFile.setFileName(storedFileName);
-        projectFile.setFilePath(relativePath);
-        projectFile.setFileType(file.getContentType());
-
-        projectFileMapper.insert(projectFile);
-        log.info("【SERVICE-CREATE】文件关联记录 (ProjectFile) 已成功插入数据库, 新 File ID: {}", projectFile.getId());
-
-    }
-
-    /**
-     * 辅助方法：处理文件的拆分和数据库记录
-     */
-    private void handleFileSplittingAndDBLogging(Long projectId, Long newRecordId, File sourceFile, Long currentUserId, ProcessRecordCreateDTO createDTO) throws IOException {
-        String splitOutputDirPath = sourceFile.getParent() + File.separator + SPLIT_OUTPUT_DIR_NAME;
-        List<File> splitFiles = excelSplitterService.splitExcel(sourceFile, splitOutputDirPath);
-
-        // 清理前端传来的Sheet名，使其与文件名清理规则一致
-        List<String> cleanedSelectedSheets = createDTO.getSelectedSheets().stream()
-                .map(s -> s.replaceAll("[\\\\/:*?\"<>|\\s]", "_"))
-                .collect(Collectors.toList());
-
-        for (File splitFile : splitFiles) {
-            String cleanedSheetNameFromFile = splitFile.getName().replaceAll("\\.xlsx$", "");
-
-            if (cleanedSelectedSheets.contains(cleanedSheetNameFromFile)) {
-                String finalFileName = renameSplitFile(splitFile, currentUserId);
-                saveSplitFileInfo(finalFileName, projectId, newRecordId);
-            } else {
-                if (!splitFile.delete()) {
-                    log.warn("【SERVICE】删除未选中的拆分文件失败: {}", splitFile.getAbsolutePath());
-                }
-            }
-        }
-    }
-
-    /**
-     * 辅助方法：保存拆分文件的数据库记录
-     */
-    private void saveSplitFileInfo(String fileName, Long projectId, Long recordId) {
-        ProjectFile projectFile = new ProjectFile();
-        projectFile.setProjectId(projectId);
-        projectFile.setRecordId(recordId);
-        projectFile.setFileName(fileName);
-
-        String relativePath = Paths.get(String.valueOf(projectId), String.valueOf(recordId), SPLIT_OUTPUT_DIR_NAME, fileName).toString().replace("\\", "/");
-        projectFile.setFilePath(relativePath);
-
-        projectFile.setFileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        projectFile.setDocumentType(DOC_TYPE_PROCESS_RECORD_SHEET);
-
-        projectFileMapper.insert(projectFile);
-        log.info("【SERVICE】已将拆分文件 '{}' 信息存入数据库。", fileName);
-    }
-
-    /**
-     * 辅助方法：将上传的原始文件保存到服务器磁盘。
-     */
-    private Path saveOriginalFile(MultipartFile file, Long projectId, Long recordId) throws IOException {
-        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        Path recordUploadPath = Paths.get(uploadDir, String.valueOf(projectId), String.valueOf(recordId));
-        if (!Files.exists(recordUploadPath)) {
-            Files.createDirectories(recordUploadPath);
-        }
-        Path sourceFilePath = recordUploadPath.resolve(SOURCE_FILE_PREFIX + originalFilename);
-        Files.copy(file.getInputStream(), sourceFilePath, StandardCopyOption.REPLACE_EXISTING);
-        log.info("【SERVICE】原始Excel文件已保存至: {}", sourceFilePath);
-        return sourceFilePath;
-    }
 
     /**
      * 新增的辅助方法：根据绝对路径计算相对于uploadDir的相对路径
@@ -256,24 +125,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
         projectMapper.updateById(projectToUpdate);
         log.info("【SERVICE】项目 {} 的详细数据已更新。", projectId);
-    }
-
-    /**
-     * 辅助方法：重命名文件，添加用户ID前缀。
-     */
-    private String renameSplitFile(File splitFile, Long userId) {
-        String userIdPrefix = (userId != null) ? userId.toString() : "user_unknown";
-        String finalFileName = userIdPrefix + "_" + splitFile.getName();
-        Path finalFilePath = Paths.get(splitFile.getParent(), finalFileName);
-
-        try {
-            Files.move(splitFile.toPath(), finalFilePath, StandardCopyOption.REPLACE_EXISTING);
-            log.info("【SERVICE】文件已重命名为: {}", finalFileName);
-            return finalFileName;
-        } catch (IOException e) {
-            log.error("【SERVICE】重命名文件失败: {} -> {}", splitFile.getName(), finalFileName, e);
-            return splitFile.getName(); // 如果重命名失败，返回原文件名
-        }
     }
 
     /**
@@ -723,48 +574,58 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     }
 
 
-        /**
-     * 【新增实现 1】: 保存草稿文件
-     */
     @Override
-    @Transactional // 保证数据库和文件操作的原子性
-    public void saveDraftFile(Long recordId, MultipartFile file) throws IOException {
-        // 1. 验证记录是否存在
-        ProcessRecord record = processRecordMapper.selectById(recordId);
-        if (record == null) {
-            throw new IllegalArgumentException("ID为 " + recordId + " 的过程记录不存在。");
-        }
-
-        // 2. 检查文件是否为空
+    @Transactional
+    public void updateAssociatedFile(Long recordId, Long fileId, MultipartFile file) throws IOException {
+        log.info("【SERVICE-UPDATE_FILE】开始更新文件, recordId: {}, fileId: {}", recordId, fileId);
+    
+        // 1. 验证文件是否为空
         if (file.isEmpty()) {
             throw new IllegalArgumentException("上传的文件不能为空。");
         }
-
-        // 3. (可选但推荐) 删除旧文件
-        String oldFilePath = record.getSourceFilePath();
-        if (oldFilePath != null && !oldFilePath.isEmpty()) {
-            Path oldPath = Paths.get(uploadDir).resolve(oldFilePath);
-            Files.deleteIfExists(oldPath);
+    
+        // 2. 查找并验证文件记录 (ProjectFile)
+        //    确保它存在，并且确实属于传入的 recordId
+        ProjectFile fileRecord = projectFileMapper.selectById(fileId);
+        if (fileRecord == null) {
+            throw new NoSuchElementException("找不到ID为 " + fileId + " 的文件记录。");
         }
-
-        // 4. 保存新文件
-        String originalFilename = file.getOriginalFilename();
-        // 为了避免文件名冲突，可以加上时间戳或UUID
-        String newFileName = System.currentTimeMillis() + "_" + originalFilename;
-        Path destinationPath = Paths.get(uploadDir).resolve(newFileName).normalize();
-
-        // 确保目标目录存在
-        Files.createDirectories(destinationPath.getParent());
-
-        // 将文件保存到服务器
-        Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
-
-        // 5. 更新数据库中的文件路径
-        record.setSourceFilePath(newFileName); // 只更新文件路径
-        // record.setUpdatedAt(LocalDateTime.now()); // 可选：更新修改时间
-        processRecordMapper.updateById(record);
+        if (!fileRecord.getRecordId().equals(recordId)) {
+            // 安全性检查，防止恶意用户尝试更新不属于自己的文件
+            throw new AccessDeniedException("权限错误：文件 " + fileId + " 不属于过程记录 " + recordId);
+        }
+        log.info("【SERVICE-UPDATE_FILE】文件记录校验通过。");
+    
+        // 3. 删除旧的物理文件
+        //    fileRecord.getFilePath() 中存储的是相对路径，如 "70/19/xxx.xlsx"
+        Path oldPath = Paths.get(uploadDir, fileRecord.getFilePath());
+        try {
+            Files.deleteIfExists(oldPath);
+            log.info("【SERVICE-UPDATE_FILE】旧物理文件已删除: {}", oldPath);
+        } catch (IOException e) {
+            log.error("【SERVICE-UPDATE_FILE】删除旧物理文件失败，但将继续执行覆盖操作。", e);
+        }
+    
+        // 4. 保存新的物理文件 (保持原有的目录结构)
+        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
+        // 为了避免重名，仍然建议使用时间戳或UUID
+        String newStoredFileName = System.currentTimeMillis() + "_" + originalFilename;
         
-        System.out.println("成功为 recordId=" + recordId + " 保存了新的草稿文件: " + newFileName);
+        // 构建新的相对路径和绝对路径
+        Path newRelativePath = Paths.get(String.valueOf(fileRecord.getProjectId()), String.valueOf(recordId), newStoredFileName);
+        Path newAbsolutePath = Paths.get(uploadDir).resolve(newRelativePath);
+    
+        Files.createDirectories(newAbsolutePath.getParent());
+        Files.copy(file.getInputStream(), newAbsolutePath, StandardCopyOption.REPLACE_EXISTING);
+        log.info("【SERVICE-UPDATE_FILE】新物理文件已保存: {}", newAbsolutePath);
+        
+        // 5. 更新数据库中的文件记录 (ProjectFile)
+        fileRecord.setFileName(originalFilename); // 存储原始文件名
+        fileRecord.setFilePath(newRelativePath.toString().replace("\\", "/")); // 更新为新的相对路径
+        // fileRecord.setFileType(file.getContentType()); // 可选：更新文件类型
+        // fileRecord.setUpdatedAt(LocalDateTime.now()); // 可选：更新时间戳
+        projectFileMapper.updateById(fileRecord);
+        log.info("【SERVICE-UPDATE_FILE】数据库中的文件记录 (ID: {}) 已成功更新。", fileId);
     }
 
 

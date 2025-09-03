@@ -1,5 +1,7 @@
 package org.example.project.controller;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.example.project.dto.ProcessRecordCreateDTO;
 // --- 基础 Spring 和 Java 依赖 ---
 import org.example.project.dto.ProjectCreateDTO;
@@ -21,12 +23,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * 项目相关的API控制器
- * 负责处理所有与项目创建、查询、更新以及关联文件管理的Web请求。
+ * 项目相关的API控制器 负责处理所有与项目创建、查询、更新以及关联文件管理的Web请求。
  */
 @RestController
 @RequestMapping("/api/projects")
@@ -36,18 +36,15 @@ public class ProjectController {
 
     @Autowired
     private ProjectService projectService;
-    
+
     @Autowired
     private ProcessRecordService processRecordService;
-
 
     // =======================================================
     //  一、项目主体信息管理 (Project CRUD)
     // =======================================================
-
     /**
-     * 【API 1 - 创建项目】
-     * HTTP 方法: POST /api/projects
+     * 【API 1 - 创建项目】 HTTP 方法: POST /api/projects
      */
     @PostMapping
     public ResponseEntity<?> createProject(@RequestBody ProjectCreateDTO createDTO) {
@@ -65,14 +62,13 @@ public class ProjectController {
     }
 
     /**
-     * 【API 2 - 完整创建项目，带文件】
-     * HTTP 方法: POST /api/projects/create-with-file
+     * 【API 2 - 完整创建项目，带文件】 HTTP 方法: POST /api/projects/create-with-file
      */
     @PostMapping(value = "/create-with-file", consumes = "multipart/form-data")
     public ResponseEntity<String> createFullProjectWithFile(
             @RequestPart("projectData") String projectDataJson,
             @RequestPart("file") MultipartFile file) {
-        
+
         log.info("【Controller】接收到完整创建项目（带文件）的请求");
         try {
             ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -127,7 +123,6 @@ public class ProjectController {
     // =======================================================
     //  二、项目关联文件管理
     // =======================================================
-
     /**
      * 【上传/更新特定类型文件的接口】
      */
@@ -136,13 +131,13 @@ public class ProjectController {
             @PathVariable Long projectId,
             @PathVariable String documentType,
             @RequestParam("file") MultipartFile file) {
-        
+
         log.info("【Controller】接收到为项目ID {} 上传'{}'的请求", projectId, documentType);
 
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body("上传的文件不能为空！");
         }
-        
+
         try {
             projectService.uploadOrUpdateProjectFile(projectId, file, documentType.toUpperCase());
             return ResponseEntity.ok("文档 '" + documentType + "' 上传/更新成功！");
@@ -169,25 +164,11 @@ public class ProjectController {
             return ResponseEntity.internalServerError().build();
         }
     }
-    
-    @PostMapping(value = "/{projectId}/process-records", consumes = "multipart/form-data")
-    public ResponseEntity<String> createProcessRecord(
-            @PathVariable Long projectId,
-            @RequestPart("recordMeta") String recordMetaJson,
-            @RequestPart("file") MultipartFile file) {
-        
-        try {
-            processRecordService.createProcessRecord(projectId, recordMetaJson, file);
-            return ResponseEntity.ok("过程记录表提交成功！");
-        } catch (Exception e) {
-            log.error("创建过程记录表时失败, projectId: {}", projectId, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("服务器内部错误: " + e.getMessage());
-        }
-    }
+
 
     /**
-     * 【移入】API: 根据项目ID，获取该项目下所有过程记录表的主信息列表
-     * 路径: GET /api/projects/{projectId}/process-records
+     * 【移入】API: 根据项目ID，获取该项目下所有过程记录表的主信息列表 路径: GET
+     * /api/projects/{projectId}/process-records
      */
     @GetMapping("/{projectId}/process-records")
     public ResponseEntity<List<ProcessRecord>> getProcessRecordsByProjectId(@PathVariable Long projectId) {
@@ -201,26 +182,24 @@ public class ProjectController {
         }
     }
 
-        /**
-     * 【新增API】: 创建一个过程记录，同时关联多个独立的检查项文件
-     * @param projectId 项目ID
-     * @param recordMetaJson 包含过程记录元数据的JSON字符串
-     * @param files 包含所有上传文件的Map，key是检查项的key (e.g., "2-清单"), value是文件本身
-     * @return 成功响应
-     */
+// 在 ProjectController.java 中
     @PostMapping("/{projectId}/process-records-multi-file")
     public ResponseEntity<?> createProcessRecordWithMultipleFiles(
             @PathVariable Long projectId,
             @RequestPart("recordMeta") ProcessRecordCreateDTO recordMeta,
             @RequestParam Map<String, MultipartFile> files) {
-        
+
         try {
-            // 注意：Service层需要一个新的方法来处理这个逻辑
             ProcessRecord newRecord = projectService.createRecordWithMultipleFiles(projectId, recordMeta, files);
             return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
         } catch (Exception e) {
             e.printStackTrace(); // 生产环境应使用日志框架
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "创建失败: " + e.getMessage()));
+
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", "创建失败: " + e.getMessage());
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(errorResponse);
         }
     }
 }

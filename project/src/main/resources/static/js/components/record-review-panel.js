@@ -34,12 +34,41 @@ Vue.component('record-review-panel', {
                 <!-- 2. 左右分栏布局 -->
                 <el-row :gutter="20">
                     <!-- 2a. 左侧：只读预览 Iframe -->
-                    <el-col :span="16">
+                        <el-col :span="16">
                         <div class="card">
-                             <div class="card-body">
+                            <div class="card-body">
                                 <h4 class="card-title mb-0">文件预览 (只读)</h4>
-                                <hr>
-                                <iframe ref="previewIframe" src="/luckysheet-iframe-loader.html" @load="onPreviewIframeLoad" style="width: 100%; height: 80vh; border: none;"></iframe>
+                                <p class="card-description">点击下方标签页，切换查看不同的检查项文件。</p>
+                                <el-tabs v-model="activePreviewTab" type="border-card">
+                                    
+                                    <!-- 为 recordMeta 文件创建一个专门的、静态的Tab页 -->
+                                    <el-tab-pane v-if="metaFile" label="表单元数据" name="recordMeta" lazy>
+                                        <!-- ... (这里可以复用 workspace-panel 中展示元数据的 el-form 结构) ... -->
+                                        <div class="p-3">只读的表单元数据将在这里展示...</div>
+                                    </el-tab-pane>
+            
+                                    <!-- 使用 v-for 动态生成所有检查项文件的 Tab 页 -->
+                                    <el-tab-pane
+                                        v-for="file in excelFilesToPreview"
+                                        :key="file.id"
+                                        :label="file.documentType"
+                                        :name="file.documentType"
+                                        lazy>
+                                        
+                                        <!-- 每个Tab页内都有自己的只读 iframe -->
+                                        <iframe v-if="activePreviewTab === file.documentType"
+                                            :ref="'iframe-' + file.id"
+                                            src="/luckysheet-iframe-loader.html" 
+                                            @load="() => loadSheetInPreviewIframe(file)"
+                                            style="width: 100%; height: 70vh; border: none;">
+                                        </iframe>
+            
+                                    </el-tab-pane>
+            
+                                    <div v-if="!metaFile && excelFilesToPreview.length === 0" class="text-center text-muted p-5">
+                                        <h4>未找到任何可供预览的文件。</h4>
+                                    </div>
+                                </el-tabs>
                             </div>
                         </div>
                     </el-col>
@@ -68,54 +97,113 @@ Vue.component('record-review-panel', {
 
     data() {
         return {
+            // --- 核心状态 ---
             isLoading: true,
             recordInfo: null,
             loadError: null,
+            
+            // --- 左侧预览区数据 ---
+            filesToPreview: [],
+            activePreviewTab: '',
+            metaDataContent: null,
+            isMetaDataLoading: false,
+    
+            // --- 右侧审核区数据 ---
             isSavingSheet: false,
-            reviewTemplateUrl: '/api/files/templates/review-sheet',
-            previewIframeLoaded: false,
-            reviewIframeLoaded: false,
-            reviewSheetUrl: '',
-            previewFileName: '',
-            reviewSheetFileName: ''
+            reviewTemplateUrl: '/api/files/templates/review-sheet.xlsx',
+            reviewIframeLoaded: false
+            // 【已清理】: 不再需要 reviewSheet 对象在 data 中，改为局部变量
+        }
+    },
+    computed: {
+        excelFilesToPreview() {
+            return this.filesToPreview.filter(file => 
+                file.fileType && (file.fileType.includes('spreadsheetml') || file.fileType.includes('excel'))
+            );
+        },
+        metaFile() {
+            return this.filesToPreview.find(file => file.documentType === 'recordMeta');
+        }
+    },
+    methods: {
+    // 【【【 核心修正：添加超详细日志 】】】
+    // 【统一的数据加载入口】
+    async fetchAllData() {
+        if (!this.recordId) return;
+        this.isLoading = true;
+        this.loadError = null;
+
+        try {
+            // 1. 并行获取主记录和文件列表
+            const [recordResponse, filesResponse] = await Promise.all([
+                axios.get(`/api/process-records/${this.recordId}`),
+                axios.get(`/api/process-records/${this.recordId}/files`)
+            ]);
+            
+            this.recordInfo = recordResponse.data;
+            this.filesToPreview = (filesResponse.data || []).sort((a, b) => a.documentType.localeCompare(b.documentType));
+            
+            // 2. 设定默认预览Tab并安排加载
+            let defaultFileToLoad = null;
+            if (this.excelFilesToPreview.length > 0) {
+                this.activePreviewTab = this.excelFilesToPreview[0].documentType;
+                defaultFileToLoad = this.excelFilesToPreview[0];
+            } else if (this.metaFile) {
+                this.activePreviewTab = 'recordMeta';
+            }
+            
+            this.$nextTick(() => {
+                if (this.activePreviewTab === 'recordMeta') {
+                    this.fetchAndDisplayMetaData();
+                } else if (defaultFileToLoad) {
+                    this.loadSheetInPreviewIframe(defaultFileToLoad);
+                }
+            });
+
+            // 3. 获取审核表信息并直接调用加载函数
+            let reviewUrl, reviewFileName;
+            try {
+                const reviewSheetResponse = await axios.get(`/api/process-records/${this.recordId}/review-sheet-info`);
+                const savedReviewSheet = reviewSheetResponse.data;
+                reviewUrl = `/api/files/content/${savedReviewSheet.id}?t=${new Date().getTime()}`;
+                reviewFileName = savedReviewSheet.fileName || savedReviewSheet.file_name;
+            } catch (error) {
+                console.warn("[ReviewPanel] 获取历史审核表失败，将使用默认模板:", error.message);
+                reviewUrl = this.reviewTemplateUrl;
+                reviewFileName = '审核模板.xlsx';
+            }
+            
+            this.loadReviewSheet(reviewUrl, reviewFileName);
+
+        } catch (error) {
+            this.loadError = "加载核心数据失败：" + error.message;
+        } finally {
+            this.isLoading = false;
         }
     },
 
-    methods: {
-        // --- 核心数据获取方法 ---
-        fetchRecordData() {
-            if (!this.recordId) {
-                console.warn("[DEBUG] fetchRecordData: recordId 为空，已跳过。");
+        loadSheetInPreviewIframe(fileInfo) {
+            if (!fileInfo) {
+                console.warn("[ReviewPanel] loadSheetInPreviewIframe 调用时 fileInfo 为空。");
                 return;
             }
-            console.log(`[DEBUG] fetchRecordData: 开始为 recordId=${this.recordId} 获取数据...`);
-            this.isLoading = true;
-            this.loadError = null;
-
-            axios.get(`/api/process-records/${this.recordId}`)
-                .then(response => {
-                    this.recordInfo = response.data;
-                    console.log("[DEBUG] fetchRecordData: 成功获取到 recordInfo:", this.recordInfo);
-
-                    if (this.recordInfo && this.recordInfo.sourceFilePath) {
-                        this.previewFileUrl = '/uploads/' + this.recordInfo.sourceFilePath;
-                        this.previewFileName = this.recordInfo.sourceFileName || '未知预览文件';
-                        console.log(`[DEBUG] fetchRecordData: 已设置 previewFileUrl 为: ${this.previewFileUrl}`);
-                    } else {
-                        this.loadError = "未能获取到源文件路径。";
-                        console.error("[DEBUG-ERROR] fetchRecordData: API返回的数据中缺少 sourceFilePath:", this.recordInfo);
-                    }
-
-                    this.loadPreviewSheet(); // 触发一次加载尝试
-                    this.determineReviewSheetUrl(); // 链式调用
-                })
-                .catch(error => {
-                    this.loadError = "加载过程记录表信息失败。";
-                    console.error("[DEBUG-ERROR] fetchRecordData: 请求主数据失败:", error);
-                })
-                .finally(() => {
-                    this.isLoading = false;
-                });
+            
+            const iframeRef = this.$refs['iframe-' + fileInfo.id];
+            const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+            
+            // 增加更详细的日志
+            if (targetIframe && targetIframe.contentWindow) {
+                console.log(`[ReviewPanel] 成功找到 ref='iframe-${fileInfo.id}' 的 iframe，准备发送 LOAD_SHEET 消息。`);
+                const options = { allowUpdate: false, showtoolbar: false, showinfobar: false };
+                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+                const message = {
+                    type: 'LOAD_SHEET',
+                    payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
+                };
+                targetIframe.contentWindow.postMessage(message, window.location.origin);
+            } else {
+                 console.error(`[ReviewPanel] 致命错误：未能找到 ref='iframe-${fileInfo.id}' 的 iframe 实例！`);
+            }
         },
 
         determineReviewSheetUrl() {
@@ -151,36 +239,6 @@ Vue.component('record-review-panel', {
             console.log("[DEBUG] onReviewIframeLoad: ✅ 右侧审核Iframe已加载。");
             this.reviewIframeLoaded = true;
             this.loadReviewSheet(); // 触发一次加载尝试
-        },
-
-        // --- 向 Iframe 发送指令的核心方法 (包含防御性检查) ---
-        loadPreviewSheet() {
-            console.log(`[DEBUG] loadPreviewSheet: 尝试加载... iframeLoaded=${this.previewIframeLoaded}, url=${this.previewFileUrl}`);
-            if (this.previewIframeLoaded && this.previewFileUrl) {
-                console.log(`[DEBUG] loadPreviewSheet: 🚀 条件满足！向预览iframe发送 LOAD_SHEET 指令。`);
-                this.sendMessageToIframe(this.$refs.previewIframe, {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: this.previewFileUrl,
-                        fileName: this.previewFileName,
-                        options: { lang: 'zh', showtoolbar: false, showinfobar: false, allowUpdate: false, showsheetbar: true }
-                    }
-                });
-            }
-        },
-        loadReviewSheet() {
-            console.log(`[DEBUG] loadReviewSheet: 尝试加载... iframeLoaded=${this.reviewIframeLoaded}, url=${this.reviewSheetUrl}`);
-            if (this.reviewIframeLoaded && this.reviewSheetUrl) {
-                console.log(`[DEBUG] loadReviewSheet: 🚀 条件满足！向审核iframe发送 LOAD_SHEET 指令。`);
-                this.sendMessageToIframe(this.$refs.reviewIframe, {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: this.reviewSheetUrl,
-                        fileName: this.reviewSheetFileName,
-                        options: { lang: 'zh', allowUpdate: true, showtoolbar: true, showsheetbar: true }
-                    }
-                });
-            }
         },
 
         // --- 保存逻辑 ---
@@ -285,8 +343,8 @@ Vue.component('record-review-panel', {
             // 2. 【调用外部模块】导出为 .xlsx 文件
             try {
                 // 这里是关键变化！调用导入的函数
-                const exportBlob = await exportWithExcelJS(payload); 
-                
+                const exportBlob = await exportWithExcelJS(payload);
+
                 // 后续上传逻辑不变
                 const formData = new FormData();
                 const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
@@ -307,37 +365,16 @@ Vue.component('record-review-panel', {
             }
         },
 
-        loadReviewSheet() {
-            console.log(`[Parent] loadReviewSheet: 尝试加载... iframeLoaded=${this.reviewIframeLoaded}, url=${this.reviewSheetUrl}`);
-            if (this.reviewIframeLoaded && this.reviewSheetUrl) {
-                
-                // 【核心策略】
-                // 1. 优先尝试从 sessionStorage 读取缓存
-                const cacheKey = `luckysheet_cache_${this.recordId}`;
-                const cachedData = sessionStorage.getItem(cacheKey);
-
-                if (cachedData) {
-                    console.log(`[Parent] 🚀 发现缓存！将直接使用 sessionStorage 中的JSON数据加载审核表。`);
-                    try {
-                        const luckysheetData = JSON.parse(cachedData);
-                        this.sendMessageToIframe(this.$refs.reviewIframe, {
-                            type: 'LOAD_SHEET',
-                            payload: {
-                                luckysheetData: luckysheetData, // 直接传递数据
-                                fileName: this.reviewSheetFileName,
-                                options: { lang: 'zh', allowUpdate: true, showtoolbar: true, showsheetbar: true }
-                            }
-                        });
-                        // 使用后立即清除，确保下次刷新页面时加载的是服务器最新版本
-                        sessionStorage.removeItem(cacheKey);
-                    } catch (e) {
-                         console.error("[Parent] 解析缓存的JSON失败，将回退到文件下载方式。", e);
-                         this.loadReviewSheetFromFile(); // 解析失败，回退
+        loadReviewSheet(url, fileName) {
+            if (this.reviewIframeLoaded && url && fileName) {
+                 this.sendMessageToIframe(this.$refs.reviewIframe, {
+                    type: 'LOAD_SHEET',
+                    payload: {
+                        fileUrl: url,
+                        fileName: fileName,
+                        options: { lang: 'zh', allowUpdate: true, showtoolbar: true }
                     }
-                } else {
-                    console.log(`[Parent] ℹ️ 未发现缓存，将从服务器下载 .xlsx 文件进行加载。`);
-                    this.loadReviewSheetFromFile(); // 没有缓存，正常从文件加载
-                }
+                });
             }
         },
 
@@ -353,11 +390,11 @@ Vue.component('record-review-panel', {
             });
         },
 
-            /**
-         * 【新增翻译官】: 将 Luckysheet 的 'r_c' 范围字符串转换为 Excel 的 'A1' 地址
-         * @param {string} luckysheetRange - 例如 '5_0'
-         * @returns {string} 例如 'A6'
-         */
+        /**
+     * 【新增翻译官】: 将 Luckysheet 的 'r_c' 范围字符串转换为 Excel 的 'A1' 地址
+     * @param {string} luckysheetRange - 例如 '5_0'
+     * @returns {string} 例如 'A6'
+     */
         convertLuckysheetRangeToExcel(luckysheetRange) {
             // Luckysheet 的数据验证范围通常是单个单元格的 r_c 格式
             const parts = luckysheetRange.split('_');
@@ -376,10 +413,10 @@ Vue.component('record-review-panel', {
                 colName = String.fromCharCode((tempC % 26) + 65) + colName;
                 tempC = Math.floor(tempC / 26) - 1;
             }
-            
+
             // Excel 行号是 1-based
             const rowNum = r + 1;
-            
+
             return `${colName}${rowNum}`;
         },
     },
@@ -392,12 +429,15 @@ Vue.component('record-review-panel', {
     beforeDestroy() {
         window.removeEventListener('message', this.boundMessageListener);
     },
+// record-review-panel.js -> watch
     watch: {
         recordId: {
             immediate: true,
             handler(newId) {
                 if (newId) {
-                    this.fetchRecordData();
+                    // 【【【 核心修正 】】】
+                    // 调用新的、统一的、健壮的数据加载方法
+                    this.fetchAllData(); 
                 }
             }
         }
