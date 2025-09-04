@@ -33,6 +33,16 @@ Vue.component('record-workspace-panel', {
                                 <div class="d-flex align-items-center">
                                 <el-button @click="goBack" icon="el-icon-back" plain>返回列表</el-button>
                                 <!-- 【核心修正】: 只有在可编辑状态且当前Tab不是'recordMeta'时，才显示编辑按钮 -->
+                                <!-- 只要当前 Tab 不是元数据，就显示导出按钮 -->
+                                <el-button 
+                                    v-if="activeTab !== 'recordMeta'"
+                                    type="success" 
+                                    plain
+                                    icon="el-icon-download"
+                                    @click="handleExport"
+                                    style="margin-left: 10px;">
+                                    导出当前文件
+                                </el-button>
                                 <template v-if="canEdit">
                                     <el-button type="primary" plain icon="el-icon-document" @click="handleSaveDraft" :loading="isSaving" style="margin-left: 10px;">
                                         保存在线修改
@@ -466,6 +476,37 @@ Vue.component('record-workspace-panel', {
         getStatusTagType(status) {
             const typeMap = { 'DRAFT': 'info', 'PENDING_REVIEW': 'warning', 'APPROVED': 'success', 'REJECTED': 'danger', 'CHANGES_REQUESTED': 'primary' };
             return typeMap[status] || 'primary';
+        },
+        handleExport() {
+            // 1. 找到当前激活的 Tab 对应的文件信息
+            const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
+            
+            if (!activeFile) {
+                this.$message.warning('当前没有可导出的 Excel 文件！');
+                return;
+            }
+    
+            // 2. 找到对应的 iframe 引用
+            const iframeRef = this.$refs['iframe-' + activeFile.id];
+            const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+            
+            if (!targetIframe) {
+                this.$message.error('无法找到对应的编辑器实例！');
+                return;
+            }
+    
+            // 3. 构造一个有意义的文件名
+            const fileName = `${activeFile.fileName || activeFile.documentType}.xlsx`;
+    
+            // 4. 向该 iframe 发送导出指令
+            targetIframe.contentWindow.postMessage({
+                type: 'EXPORT_SHEET',
+                payload: {
+                    fileName: fileName
+                }
+            }, window.location.origin);
+    
+            this.$message.info(`已发送导出指令给: ${fileName}`);
         },
     },
 

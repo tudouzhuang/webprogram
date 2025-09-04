@@ -81,23 +81,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. 从数据库加载用户实体
-        User user = this.findByUsername(username);
+        User user = this.lambdaQuery().eq(User::getUsername, username).one();
+
         if (user == null) {
-            throw new UsernameNotFoundException("用户 '" + username + "' 不存在");
+            throw new UsernameNotFoundException("用户 '" + username + "' 不存在。");
         }
 
-        // 2. 将用户的 identity (如 "REVIEWER", "DESIGNER") 转换为 Spring Security 的权限格式 ("ROLE_REVIEWER")
-        String role = "ROLE_" + user.getIdentity().toUpperCase();
-        GrantedAuthority authority = new SimpleGrantedAuthority(role);
-        List<GrantedAuthority> authorities = Collections.singletonList(authority);
-
-        // 3. 创建并返回 Spring Security 可识别的 UserDetails 对象
-        return new org.springframework.security.core.userdetails.User(
-                user.getUsername(),
-                user.getPassword(),
-                authorities
-        );
+        // ======================= 【请务必确认】 =======================
+        //  这里必须是直接返回从数据库查出来的 user 对象！
+        return user; 
+        // ==========================================================
+        
+        /* 
+         * 【请确保类似这样的旧代码已经被删除或注释掉！】
+         * return new org.springframework.security.core.userdetails.User(...);
+         */
     }
 
     /**

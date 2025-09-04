@@ -3,7 +3,11 @@ package org.example.project.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.example.project.dto.ReviewProblemCreateDTO;
+import org.example.project.dto.ReviewProblemUpdateDTO;
 import org.example.project.entity.ReviewProblem;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 import java.util.List;
 
 public interface ReviewProblemService extends IService<ReviewProblem> {
@@ -22,4 +26,19 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
      * @return 创建成功后的问题实体
      */
     ReviewProblem createProblem(Long recordId, ReviewProblemCreateDTO createDTO);
+
+        /**
+     * 更新问题详情
+     */
+    ReviewProblem updateProblem(Long problemId, ReviewProblemUpdateDTO updateDTO);
+
+    /**
+     * 删除问题（包括关联的截图文件）
+     */
+    void deleteProblem(Long problemId);
+
+    /**
+     * 上传并关联截图
+     */
+    String uploadAndLinkScreenshot(Long problemId, MultipartFile file) throws IOException;
 }

@@ -43,23 +43,27 @@
     <script src="/luckysheet/plugins/js/plugin.js"></script>
     <script src="/luckysheet/luckysheet.umd.js"></script>
     <script src="/luckysheet/luckyexcel.umd.js"></script>
+    <script src="/js/libs/exceljs.min.js"></script>
 
-    <script>
+    <!-- 【【【 核心修改：将 script 标签类型改为 module 以支持 import 】】】 -->
+    <script type="module">
+        // --- [NEW] 导入外部的、可复用的导出函数 ---
+        import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
+
         const container = document.getElementById('luckysheet-container');
-        let originalDataValidation = {}; // 用于存储初始加载时的数据验证规则
+        let originalDataValidation = {}; 
+        let lastLoadedData = null;
 
-        // 【核心修正】: 回调函数的参数是 event，我们在整个函数体内都应该使用 event
+        // 监听来自父窗口的消息
         window.addEventListener('message', function (event) {
             // 安全检查: 确保消息来自同源
             if (event.origin !== window.location.origin) return;
 
-            // 从 event.data 中解构出 type 和 payload
             const { type, payload } = event.data;
             console.log(`[Iframe] 收到消息: type=${type}`, payload);
 
             if (type === 'LOAD_SHEET') {
                 if (payload.luckysheetData) {
-                    console.log("[Iframe] 检测到直接传入的 Luckysheet 数据，将使用它进行渲染。");
                     renderSheet(payload.luckysheetData, payload.fileName, payload.options);
                 } else {
                     loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
@@ -68,16 +72,10 @@
             else if (type === 'GET_DATA_AND_IMAGES') {
                 if (window.luckysheet) {
                     const liveSheets = luckysheet.getAllSheets();
-                    
-                    // 为了保证数据验证规则不丢失，我们需要将其与实时数据合并
-                    // originalDataValidation 在 renderSheet 时被填充
                     const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
                     
                     console.log(`[Iframe] ✅ 成功融合实时数据与数据验证规则。准备回发...`);
 
-                    // 【【【 关键修正点 】】】
-                    // 使用 event.data 来访问父组件传来的完整数据
-                    // 将需要透传的所有字段都包含在回传的 payload 中
                     window.parent.postMessage({
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
                         payload: {
@@ -92,15 +90,65 @@
                     console.error('[Iframe] 错误: 尝试获取数据时，Luckysheet实例不存在。');
                 }
             }
+            // --- [MODIFIED] 修改处理 EXPORT_SHEET 指令的逻辑 ---
+            else if (type === 'EXPORT_SHEET') {
+                if (window.luckysheet) {
+                    const fileName = payload.fileName || '导出文件.xlsx';
+                    // 直接调用新的、独立的 handleExport 函数
+                    handleExport(fileName);
+                } else {
+                    console.error('[Iframe] 错误: 尝试导出时，Luckysheet实例不存在。');
+                }
+            }
         });
 
+        // --- [NEW] 专门用于处理“一键导出”的函数 ---
+        async function handleExport(fileName) {
+            console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
+            
+            // 临时显示加载状态
+            const loaderDiv = document.createElement('div');
+            loaderDiv.className = 'loader';
+            loaderDiv.style.position = 'absolute';
+            loaderDiv.style.top = '0';
+            loaderDiv.style.left = '0';
+            loaderDiv.style.width = '100%';
+            loaderDiv.style.height = '100%';
+            loaderDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+            loaderDiv.style.zIndex = '10000';
+            loaderDiv.textContent = '正在生成Excel文件，请稍候...';
+            container.appendChild(loaderDiv);
+
+            try {
+                // 1. 直接从 Luckysheet 实例获取实时、完整的数据
+                const allSheetsData = luckysheet.getAllSheets();
+                
+                // 2. 调用从外部模块导入的通用导出函数
+                const blob = await exportWithExcelJS(allSheetsData);
+                
+                // 3. 触发下载
+                downloadBlob(blob, fileName);
+                
+                console.log("[Iframe] 通过复用模块，成功导出文件！");
+
+            } catch (error) {
+                console.error("[Iframe] 复用导出模块时出错:", error);
+                alert("导出文件时发生错误，详情请查看控制台。");
+            } finally {
+                // 移除加载提示
+                container.removeChild(loaderDiv);
+            }
+        }
+
+        // --- 以下函数保持不变 ---
+
         function renderSheet(luckysheetData, fileName, options) {
+            lastLoadedData = { luckysheetData, fileName, options };
             if (window.luckysheet) {
                 luckysheet.destroy();
             }
             container.innerHTML = '';
             
-            // 【重要】: 暂存原始的数据验证规则
             originalDataValidation = {};
             if (Array.isArray(luckysheetData)) {
                  luckysheetData.forEach(sheet => {
@@ -117,7 +165,6 @@
                 ...options
             };
             
-            // 使用 setTimeout 确保 DOM 渲染完成
             setTimeout(() => {
                 try {
                     console.log(`[Iframe] 准备使用传入的JSON创建实例...`, finalOptions);
@@ -156,17 +203,26 @@
                 });
         }
         
-        // 新增辅助函数，用于合并实时数据和原始的数据验证规则
         function mergeDataWithValidation(liveSheets, validationRules) {
             return liveSheets.map(liveSheet => {
                 if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
-                    // 如果实时数据中没有 dataVerification，或者为空对象，就用原始的覆盖
                     if (!liveSheet.dataVerification || Object.keys(liveSheet.dataVerification).length === 0) {
                         liveSheet.dataVerification = validationRules[liveSheet.order];
                     }
                 }
                 return liveSheet;
             });
+        }
+        
+        function downloadBlob(blob, fileName) {
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         }
 
         console.log('[Iframe] 加载器已就绪，等待消息...');
