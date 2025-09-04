@@ -1,5 +1,4 @@
 // src/main/java/org/example/project/service/impl/ReviewProblemServiceImpl.java
-
 package org.example.project.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -7,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.example.project.dto.ReviewProblemCreateDTO;
 import org.example.project.dto.ReviewProblemUpdateDTO;
+import org.example.project.dto.ReviewProblemVO;
 import org.example.project.entity.ReviewProblem;
 import org.example.project.entity.ReviewProblemStatus;
 import org.example.project.entity.User;
@@ -34,11 +34,10 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
     private String uploadDir;
 
     @Override
-    public List<ReviewProblem> findProblemsByRecordId(Long recordId) {
-        QueryWrapper<ReviewProblem> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("record_id", recordId);
-        queryWrapper.orderByDesc("created_at");
-        return this.list(queryWrapper);
+    // 【修改返回类型和实现】
+    public List<ReviewProblemVO> findProblemsByRecordId(Long recordId) {
+        // 调用我们新创建的、带有JOIN查询的Mapper方法
+        return baseMapper.findProblemsWithUsernameByRecordId(recordId);
     }
 
     @Override
@@ -74,11 +73,19 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
         }
 
         // 按需更新字段
-        if (updateDTO.getStage() != null) problem.setStage(updateDTO.getStage());
-        if (updateDTO.getProblemPoint() != null) problem.setProblemPoint(updateDTO.getProblemPoint());
-        if (updateDTO.getDescription() != null) problem.setDescription(updateDTO.getDescription());
-        if (updateDTO.getStatus() != null) problem.setStatus(updateDTO.getStatus());
-        
+        if (updateDTO.getStage() != null) {
+            problem.setStage(updateDTO.getStage());
+        }
+        if (updateDTO.getProblemPoint() != null) {
+            problem.setProblemPoint(updateDTO.getProblemPoint());
+        }
+        if (updateDTO.getDescription() != null) {
+            problem.setDescription(updateDTO.getDescription());
+        }
+        if (updateDTO.getStatus() != null) {
+            problem.setStatus(updateDTO.getStatus());
+        }
+
         problem.setUpdatedAt(LocalDateTime.now());
         this.updateById(problem);
         return problem;
@@ -127,7 +134,7 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
             fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
         }
         String uniqueFileName = UUID.randomUUID().toString() + fileExtension;
-        
+
         // 3. 保存文件到物理路径
         Path destinationFile = screenshotDir.resolve(uniqueFileName);
         Files.copy(file.getInputStream(), destinationFile);
@@ -141,5 +148,51 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
         this.updateById(problem);
 
         return webAccessiblePath;
+    }
+
+    @Override
+    @Transactional
+    public ReviewProblem resolveProblem(Long problemId) {
+        // 1. 获取问题
+        ReviewProblem problem = this.getById(problemId);
+        if (problem == null) {
+            throw new RuntimeException("未找到ID为 " + problemId + " 的问题记录");
+        }
+        // 2. 检查状态是否为 OPEN
+        if (problem.getStatus() != ReviewProblemStatus.OPEN) {
+            throw new IllegalStateException("该问题当前状态不是'OPEN'，无法标记为已解决。");
+        }
+        // 3. 获取当前操作的设计员
+        User currentUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        // 4. 更新状态和确认信息
+        problem.setStatus(ReviewProblemStatus.RESOLVED); // 状态变为“已解决”
+        problem.setConfirmedByUserId(currentUser.getId()); // 记录确认人
+        problem.setConfirmedAt(LocalDateTime.now());       // 记录确认时间
+        problem.setUpdatedAt(LocalDateTime.now());
+
+        this.updateById(problem);
+        return problem;
+    }
+
+    @Override
+    @Transactional
+    public ReviewProblem closeProblem(Long problemId) {
+        ReviewProblem problem = this.getById(problemId);
+        if (problem == null) {
+            throw new RuntimeException("未找到ID为 " + problemId + " 的问题记录");
+        }
+        if (problem.getStatus() != ReviewProblemStatus.RESOLVED) {
+            throw new IllegalStateException("该问题当前不是'待复核'状态，无法关闭。");
+        }
+        User currentUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        
+        problem.setStatus(ReviewProblemStatus.CLOSED);
+        problem.setUpdatedAt(LocalDateTime.now());
+        
+        this.updateById(problem);
+        log.info("审核员 {} 已成功关闭问题 #{}", currentUser.getUsername(), problemId);
+        
+        return problem;
     }
 }

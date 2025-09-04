@@ -8,6 +8,9 @@ Vue.component('record-workspace-panel', {
             required: true
         }
     },
+    components: {
+        'problem-record-table': ProblemRecordTable
+    },
     // 【第2步】: 大幅修改模板，增加在线编辑相关的按钮和状态
     template: `
         <div class="main-panel" style="width:100%;height:100%">
@@ -27,6 +30,15 @@ Vue.component('record-workspace-panel', {
                                         <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
                                         <el-descriptions-item label="状态">
                                             <el-tag :type="getStatusTagType(recordInfo.status)">{{ formatStatus(recordInfo.status) }}</el-tag>
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="累计设计时长" :span="2">
+                                            {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
+                                        </el-descriptions-item>
+                                        <el-descriptions-item label="本次设计时长">
+                                            <!-- 绑定到新的 data 属性，并实时格式化 -->
+                                            <span style="color: #409EFF; font-weight: bold;">
+                                                {{ formatDuration(currentSessionSeconds) }}
+                                            </span>
                                         </el-descriptions-item>
                                     </el-descriptions>
                                 </div>
@@ -214,6 +226,12 @@ Vue.component('record-workspace-panel', {
                         </el-tabs>
                     </div>
                 </div>
+
+                <problem-record-table
+                    v-if="recordInfo && recordInfo.status === 'CHANGES_REQUESTED'"
+                    :record-id="Number(recordId)"
+                    mode="designer">
+                </problem-record-table>
             </div>
         </div>
     `,
@@ -229,9 +247,13 @@ Vue.component('record-workspace-panel', {
             isSaving: false,
             isSubmitting: false,
             iframesLoaded: {},
-            // 【新】: 专门用于存储和加载元数据JSON的内容
             metaDataContent: null,
-            isMetaDataLoading: false
+            isMetaDataLoading: false,
+            workSessionId: null,      
+            heartbeatInterval: null,  
+            isPaused: false,
+            currentSessionSeconds: 0, // 用于存储本次会话已经过的秒数
+            sessionTimer: null        // 用于存储驱动UI更新的秒级定时器 
         }
     },
 
@@ -508,25 +530,134 @@ Vue.component('record-workspace-panel', {
     
             this.$message.info(`已发送导出指令给: ${fileName}`);
         },
+        async startWorkSession() {
+            if (!this.recordId || !this.canEdit) return;
+            try {
+                const response = await axios.post(`/api/process-records/${this.recordId}/work-sessions/start`);
+                this.workSessionId = response.data.id;
+                console.log(`[WorkTimer] 工作会话已开始，Session ID: ${this.workSessionId}`);
+                
+                // --- 【【【 新增调用 】】】 ---
+                this.startSessionTimer(); // 启动 UI 计时器
+                this.startHeartbeat();    // 启动心跳
+                
+            } catch (error) {
+                console.error("[WorkTimer] 启动工作会话失败:", error);
+            }
+        },
+        async stopWorkSession() {
+            if (this.workSessionId) {
+                try {
+                    // 使用 navigator.sendBeacon 可以在页面关闭时更可靠地发送请求
+                    const url = `/api/work-sessions/${this.workSessionId}/stop`;
+                    navigator.sendBeacon(url);
+                    console.log(`[WorkTimer] 已发送停止会话信标, Session ID: ${this.workSessionId}`);
+                } catch (error) {
+                    // 如果 sendBeacon 失败，尝试用 axios
+                    axios.post(`/api/work-sessions/${this.workSessionId}/stop`).catch(e => {});
+                }
+                this.stopSessionTimer(); // 停止 UI 计时器
+                this.stopHeartbeat();    // 停止心跳
+                this.workSessionId = null;
+            }
+        },
+        startHeartbeat() {
+            this.stopHeartbeat(); // 先清除旧的，防止重复
+            this.heartbeatInterval = setInterval(() => {
+                if (this.workSessionId && !this.isPaused) {
+                    axios.post(`/api/work-sessions/${this.workSessionId}/heartbeat`)
+                         .catch(err => console.warn("[WorkTimer] 心跳发送失败", err));
+                }
+            }, 60 * 1000); // 每分钟一次
+        },
+        stopHeartbeat() {
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+                this.heartbeatInterval = null;
+            }
+        },
+        formatDuration(totalSeconds) {
+            if (totalSeconds == null || totalSeconds < 0) {
+                return '暂无记录';
+            }
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return `${hours} 小时 ${minutes} 分钟 ${seconds} 秒`;
+        },
+        startSessionTimer() {
+            this.stopSessionTimer(); // 先清除旧的，确保只有一个计时器在运行
+            this.currentSessionSeconds = 0; // 每次开始都从0计时
+    
+            this.sessionTimer = setInterval(() => {
+                // 如果会话ID存在且没有被暂停，则秒数+1
+                if (this.workSessionId && !this.isPaused) {
+                    this.currentSessionSeconds++;
+                }
+            }, 1000); // 每1000毫秒 (1秒) 执行一次
+        },
+    
+        /**
+         * 停止 UI 计时器
+         */
+        stopSessionTimer() {
+            if (this.sessionTimer) {
+                clearInterval(this.sessionTimer);
+                this.sessionTimer = null;
+            }
+        },
     },
 
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
     mounted() {
+        // 1. 绑定并添加 postMessage 的监听器 (您已有的逻辑)
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
+    
+        // 2. 【【【 新增 】】】 添加 beforeunload 事件监听器
+        //    确保用户关闭或刷新页面时，也能触发 stopWorkSession
+        window.addEventListener('beforeunload', this.stopWorkSession);
     },
+    
+    // 【【【 修改 beforeDestroy 】】】
     beforeDestroy() {
+        // 1. 移除 postMessage 的监听器 (您已有的逻辑)
         window.removeEventListener('message', this.boundMessageListener);
+        this.stopSessionTimer();
+        this.stopHeartbeat(); // 再次确认心跳也停止
+        window.removeEventListener('beforeunload', this.stopWorkSession);
     },
-    watch: {
-        recordId: {
-            immediate: true,
-            handler(newId) {
-                if (newId) {
-                    this.activeTab = 'design';
-                    this.fetchData();
+watch: {
+    recordId: {
+        immediate: true,
+        handler(newId, oldId) {
+            // 当 recordId 发生有效变化时，执行清理和重新加载
+            if (newId) {
+                // 如果是从一个有效的旧ID切换过来的，先停止上一个会话
+                if (oldId && this.workSessionId) {
+                    console.log(`[WorkTimer] Record ID 从 ${oldId} 切换到 ${newId}，停止旧会话。`);
+                    this.stopWorkSession();
                 }
+
+                // 保持原有的逻辑
+                this.activeTab = 'design'; 
+
+                // 【【【 核心修改 】】】
+                // fetchData 是一个 async 函数，所以它返回一个 Promise。
+                // 我们使用 .then() 来确保在数据获取成功之后再执行后续操作。
+                this.fetchData().then(() => {
+                    console.log("[WorkTimer] fetchData 完成，准备启动工作会话。");
+                    // 在这里调用 startWorkSession，可以确保 this.recordInfo 和 this.canEdit 都是最新的
+                    this.startWorkSession();
+                }).catch(error => {
+                    console.error("[WorkTimer] fetchData 失败，无法启动工作会话。", error);
+                });
+
+            } else {
+                // 如果 recordId 变为 null 或 undefined (例如返回列表页)，也停止会话
+                this.stopWorkSession();
             }
         }
     }
+}
 });

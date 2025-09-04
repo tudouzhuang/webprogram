@@ -150,9 +150,14 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
     // --- 查询方法 (保持不变) ---
     @Override
+    // 【【【 修改返回类型和实现 】】】
     public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
         log.info("【SERVICE】正在查询项目ID {} 的过程记录表列表...", projectId);
-        return processRecordMapper.selectList(new QueryWrapper<ProcessRecord>().eq("project_id", projectId).orderByDesc("created_at"));
+        // 使用 MyBatis-Plus 自带的标准查询方法
+        return this.lambdaQuery()
+                   .eq(ProcessRecord::getProjectId, projectId)
+                   .orderByDesc(ProcessRecord::getUpdatedAt)
+                   .list();
     }
 
     @Override

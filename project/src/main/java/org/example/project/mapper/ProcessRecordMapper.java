@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.example.project.entity.ProcessRecord;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -24,6 +26,8 @@ public interface ProcessRecordMapper extends BaseMapper<ProcessRecord> {
         "</script>"
     })
     List<Map<String, Object>> countPendingTasksByAssignees(@Param("assigneeIds") List<Long> assigneeIds);
+
+
 }
 
 

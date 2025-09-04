@@ -33,6 +33,9 @@ public class ProcessRecord {
     private Long assigneeId;  // ID of the user assigned to this process.
     @TableField("rejection_comment") // 确保与数据库列名匹配
     private String rejectionComment;
+
+    @TableField("total_design_duration_seconds")
+    private Integer totalDesignDurationSeconds;
 }
 
 

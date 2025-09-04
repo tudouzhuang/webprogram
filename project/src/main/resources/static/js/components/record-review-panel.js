@@ -29,6 +29,9 @@ Vue.component('record-review-panel', {
                                 <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
                                 <el-descriptions-item label="所属项目ID">{{ recordInfo.projectId }}</el-descriptions-item>
                                 <el-descriptions-item label="记录创建时间">{{ recordInfo.createdAt }}</el-descriptions-item>
+                                <el-descriptions-item label="累计设计时长" :span="2">
+                                    {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
+                                </el-descriptions-item>
                             </el-descriptions>
                         </div>
                      </div>
@@ -397,6 +400,35 @@ Vue.component('record-review-panel', {
             });
 
             this.$message.info("已发送导出指令给审核表...");
+        },
+                /**
+         * 将总秒数格式化为 "X 小时 Y 分钟 Z 秒" 的字符串
+         * @param {number} totalSeconds - 总秒数
+         * @returns {string} 格式化后的时间字符串
+         */
+        formatDuration(totalSeconds) {
+            if (totalSeconds == null || totalSeconds < 0) {
+                return '暂无记录';
+            }
+            if (totalSeconds === 0) {
+                return '0 秒';
+            }
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            
+            let result = '';
+            if (hours > 0) {
+                result += `${hours} 小时 `;
+            }
+            if (minutes > 0) {
+                result += `${minutes} 分钟 `;
+            }
+            if (seconds > 0 || result === '') { // 如果总时长小于1分钟，也显示秒
+                result += `${seconds} 秒`;
+            }
+            
+            return result.trim();
         },
 
     },

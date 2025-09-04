@@ -4,6 +4,7 @@ package org.example.project.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.example.project.dto.ReviewProblemCreateDTO;
 import org.example.project.dto.ReviewProblemUpdateDTO;
+import org.example.project.dto.ReviewProblemVO;
 import org.example.project.entity.ReviewProblem;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -17,7 +18,7 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
      * @param recordId 过程记录ID
      * @return 问题列表
      */
-    List<ReviewProblem> findProblemsByRecordId(Long recordId);
+    List<ReviewProblemVO> findProblemsByRecordId(Long recordId);
 
     /**
      * 为指定的过程记录创建一个新的问题
@@ -41,4 +42,11 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
      * 上传并关联截图
      */
     String uploadAndLinkScreenshot(Long problemId, MultipartFile file) throws IOException;
+    
+    /**
+     * [NEW] 解决一个问题
+     */
+    ReviewProblem resolveProblem(Long problemId);
+
+    ReviewProblem closeProblem(Long problemId);
 }

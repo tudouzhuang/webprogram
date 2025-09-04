@@ -9,6 +9,18 @@ const ProblemRecordTable = {
         recordId: {
             type: Number,
             required: true
+        },
+        mode: {
+            type: String,
+            default: 'reviewer'
+        }
+    },
+    computed: {
+        isReviewerMode() {
+            return this.mode === 'reviewer';
+        },
+        isDesignerMode() {
+            return this.mode === 'designer';
         }
     },
     /**
@@ -25,7 +37,7 @@ const ProblemRecordTable = {
                 stage: 'FMC',
                 problemPoint: '',   // [FIXED] 统一为驼峰式
                 description: '',
-                status: 'OPEN' 
+                status: 'OPEN'
             },
             formRules: {            // Element UI 表单的验证规则
                 stage: [{ required: true, message: '请选择问题阶段', trigger: 'change' }],
@@ -37,11 +49,18 @@ const ProblemRecordTable = {
      * Lifecycle Hook: 在组件实例被创建后立即调用。
      * 这是发起初始数据请求的最佳位置。
      */
-    created() {
-        if (this.recordId) {
-            this.fetchProblems();
+    watch: {
+        recordId: {
+            immediate: true,
+            handler(newId) {
+                if (newId) {
+                    this.fetchProblems();
+                }
+            }
         }
     },
+
+
     /**
      * Methods: 包含组件的所有业务逻辑方法。
      */
@@ -63,7 +82,7 @@ const ProblemRecordTable = {
                     this.isLoading = false;
                 });
         },
-        
+
         /**
          * 重置表单绑定的数据模型到初始状态。
          */
@@ -84,18 +103,14 @@ const ProblemRecordTable = {
          * 处理“新增问题”按钮的点击事件。
          */
         handleAddNew() {
+            if (!this.isReviewerMode) return;
             this.isEditMode = false;
             this.resetForm();
             this.dialogVisible = true;
         },
-
-        /**
-         * 处理表格行内“编辑”按钮的点击事件。
-         * @param {object} row - 当前行对应的问题数据对象。
-         */
         handleEdit(row) {
+            if (!this.isReviewerMode) return;
             this.isEditMode = true;
-            // 使用深拷贝，避免在表单中修改时直接影响到表格中的数据
             this.currentProblem = JSON.parse(JSON.stringify(row));
             this.dialogVisible = true;
         },
@@ -124,13 +139,33 @@ const ProblemRecordTable = {
             });
         },
 
+        handleResolve(problem) {
+            this.$confirm(`确定要将问题 "${problem.problemPoint}" 标记为已解决吗？`, '确认操作', {
+                confirmButtonText: '确定', cancelButtonText: '取消', type: 'info'
+            }).then(() => {
+                axios.post(`/api/problems/${problem.id}/resolve`)
+                    .then(response => {
+                        this.$message.success('问题已成功标记为已解决！');
+                        // 使用后端返回的数据进行局部更新，体验更好
+                        const index = this.problems.findIndex(p => p.id === problem.id);
+                        if (index !== -1) {
+                            this.$set(this.problems, index, response.data);
+                        } else {
+                            this.fetchProblems(); // 兜底刷新
+                        }
+                    })
+                    .catch(error => {
+                        this.$message.error('操作失败: ' + (error.response?.data?.message || '未知错误'));
+                    });
+            }).catch(() => { });
+        },
         /**
          * 提交表单（新增或更新）。
          */
         submitForm() {
             this.$refs.problemForm.validate(valid => {
                 if (valid) {
-                    const action = this.isEditMode 
+                    const action = this.isEditMode
                         ? axios.put(`/api/problems/${this.currentProblem.id}`, this.currentProblem)
                         : axios.post(`/api/process-records/${this.recordId}/problems`, this.currentProblem);
 
@@ -147,7 +182,7 @@ const ProblemRecordTable = {
                 }
             });
         },
-        
+
         /**
          * 截图上传成功时的回调函数。
          * @param {object} res - 服务器返回的响应数据，应包含 { filePath: '...' }。
@@ -158,13 +193,13 @@ const ProblemRecordTable = {
             console.log('截图上传成功，服务器响应:', res);
             this.$message.success('截图上传成功!');
             if (res.filePath) {
-                 // [FIXED] 直接修改行数据对象的属性，Vue的响应式系统会自动更新UI
-                 problem.screenshotPath = res.filePath;
+                // [FIXED] 直接修改行数据对象的属性，Vue的响应式系统会自动更新UI
+                problem.screenshotPath = res.filePath;
             } else {
-                 this.$message.error('未能从服务器获取文件路径！');
+                this.$message.error('未能从服务器获取文件路径！');
             }
         },
-        
+
         /**
          * 截图上传失败时的回调函数。
          * @param {Error} err - 错误对象。
@@ -172,8 +207,31 @@ const ProblemRecordTable = {
         handleScreenshotError(err) {
             this.$message.error('截图上传失败，请检查网络或联系管理员。');
             console.error("截图上传失败:", err);
-        }
+        },
+
+        handleClose(problem) {
+            this.$confirm(`确定要关闭问题 "${problem.problemPoint}" 吗？此操作表示问题已最终确认解决。`, '确认关闭', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'success'
+            }).then(() => {
+                axios.post(`/api/problems/${problem.id}/close`)
+                    .then(response => {
+                        this.$message.success('问题已成功关闭！');
+                        const index = this.problems.findIndex(p => p.id === problem.id);
+                        if (index !== -1) {
+                            this.$set(this.problems, index, response.data);
+                        } else {
+                            this.fetchProblems();
+                        }
+                    })
+                    .catch(error => {
+                        this.$message.error('操作失败: ' + (error.response?.data?.message || '未知错误'));
+                    });
+            }).catch(() => { });
+        },
     },
+
     /**
      * Template: 组件的HTML模板。
      */
@@ -184,28 +242,7 @@ const ProblemRecordTable = {
                     <h4 class="card-title mb-0">问题记录表</h4>
                     <el-button type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                 </div>
-                
-                <!-- 组件内嵌样式，用于美化上传按钮 -->
-                <style>
-                    .screenshot-uploader .el-upload {
-                        border: 1px dashed #d9d9d9;
-                        border-radius: 6px;
-                        cursor: pointer;
-                        position: relative;
-                        overflow: hidden;
-                        width: 50px;
-                        height: 50px;
-                        line-height: 58px; /* 微调使图标居中 */
-                        text-align: center;
-                    }
-                    .screenshot-uploader .el-upload:hover {
-                        border-color: #409EFF;
-                    }
-                    .screenshot-uploader .el-icon-plus {
-                        font-size: 20px;
-                        color: #8c939d;
-                    }
-                </style>
+            
 
                 <el-table :data="problems" v-loading="isLoading" stripe style="width: 100%" border>
                     <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
@@ -239,16 +276,84 @@ const ProblemRecordTable = {
 
                     <el-table-column prop="status" label="状态" width="150" align="center">
                         <template slot-scope="scope">
-                            <el-tag :type="scope.row.status === 'OPEN' ? 'danger' : (scope.row.status === 'CLOSED' ? 'success' : 'warning')">
+                            
+                            <el-tag v-if="scope.row.status === 'OPEN'" type="danger">
+                                待解决
+                            </el-tag>
+                    
+                            <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning">
+                                待复核
+                            </el-tag>
+                            
+                            <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success">
+                                已复核
+                            </el-tag>
+                            
+                            <el-tag v-else type="info">
                                 {{ scope.row.status }}
                             </el-tag>
+                    
                         </template>
                     </el-table-column>
 
+
+                    <el-table-column prop="confirmedByUsername" label="确认人" width="120"></el-table-column>
+                    <el-table-column prop="confirmedAt" label="确认时间" width="160"></el-table-column>
+
+                    <el-table-column prop="reviewerUsername" label="审核人" width="120"></el-table-column>
+                    
+                    <!-- 审核时间列：绑定到别名 reviewedAt -->
+                    <el-table-column prop="reviewedAt" label="审核时间" width="160"></el-table-column>
+
                     <el-table-column label="操作" width="180" align="center" fixed="right">
                         <template slot-scope="scope">
-                            <el-button size="mini" @click="handleEdit(scope.row)">编辑</el-button>
-                            <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)">删除</el-button>
+                        
+                            <!-- ======================= 审核员模式下的操作按钮 ======================= -->
+                            <div v-if="isReviewerMode">
+                                
+                                <!-- 场景1: 当问题状态为 OPEN (待解决) 时，审核员可以编辑和删除 -->
+                                <template v-if="scope.row.status === 'OPEN'">
+                                    <el-button size="mini" @click="handleEdit(scope.row)" icon="el-icon-edit">编辑</el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)" icon="el-icon-delete">删除</el-button>
+                                </template>
+                                
+                                <!-- 场景2: 当问题状态为 RESOLVED (待复核) 时，审核员可以关闭问题 -->
+                                <el-button 
+                                    v-else-if="scope.row.status === 'RESOLVED'"
+                                    size="mini" 
+                                    type="success" 
+                                    icon="el-icon-circle-check"
+                                    @click="handleClose(scope.row)">
+                                    关闭问题
+                                </el-button>
+                                
+                                <!-- 场景3: 当问题状态为 CLOSED (已关闭) 时，显示提示信息 -->
+                                <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success" effect="plain">已关闭</el-tag>
+                    
+                                <!-- 其他意外状态的兜底显示 -->
+                                <el-tag v-else type="info">状态未知</el-tag>
+                    
+                            </div>
+                    
+                            <!-- ======================= 设计员模式下的操作按钮 ======================= -->
+                            <div v-if="isDesignerMode">
+                                
+                                <!-- 场景1: 当问题状态为 OPEN (待解决) 时，设计员可以标记为已解决 -->
+                                <el-button 
+                                    v-if="scope.row.status === 'OPEN'"
+                                    size="mini" 
+                                    type="success" 
+                                    icon="el-icon-check"
+                                    @click="handleResolve(scope.row)">
+                                    标记为已解决
+                                </el-button>
+                                
+                                <!-- 场景2: 其他状态下，设计员都无需操作 -->
+                                <el-tag v-else :type="scope.row.status === 'RESOLVED' ? 'warning' : 'info'" effect="plain">
+                                    无需操作
+                                </el-tag>
+                    
+                            </div>
                         </template>
                     </el-table-column>
                 </el-table>

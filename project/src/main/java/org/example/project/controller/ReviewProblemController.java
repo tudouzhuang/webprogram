@@ -58,4 +58,27 @@ public class ReviewProblemController {
         String filePath = reviewProblemService.uploadAndLinkScreenshot(problemId, file);
         return ResponseEntity.ok(Map.of("filePath", filePath));
     }
+
+        /**
+     * [NEW] 设计员确认解决一个问题
+     * @param problemId 问题ID
+     * @return 更新后的问题对象
+     */
+    @PostMapping("/{problemId}/resolve")
+    public ResponseEntity<ReviewProblem> resolveProblem(@PathVariable Long problemId) {
+        ReviewProblem resolvedProblem = reviewProblemService.resolveProblem(problemId);
+        return ResponseEntity.ok(resolvedProblem);
+    }
+
+    
+    /**
+     * [NEW] 审核员关闭一个已解决的问题
+     * @param problemId 问题ID
+     * @return 更新后的问题对象
+     */
+    @PostMapping("/{problemId}/close")
+    public ResponseEntity<ReviewProblem> closeProblem(@PathVariable Long problemId) {
+        ReviewProblem closedProblem = reviewProblemService.closeProblem(problemId);
+        return ResponseEntity.ok(closedProblem);
+    }
 }

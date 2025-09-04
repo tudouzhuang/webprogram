@@ -2,6 +2,8 @@
 package org.example.project.controller;
 
 import org.example.project.dto.ReviewProblemCreateDTO;
+import org.example.project.dto.ReviewProblemVO;
+import org.example.project.entity.DesignWorkSession;
 // --- 基础 Spring 和 Java 依赖 ---
 import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.ProjectFile;
@@ -9,6 +11,8 @@ import org.example.project.entity.ReviewProblem;
 import org.example.project.service.ProcessRecordService;
 import org.example.project.service.ProjectService;
 import org.example.project.service.ReviewProblemService;
+import org.example.project.service.DesignWorkSessionService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +49,9 @@ public class ProcessRecordController {
 
     @Autowired
     private ReviewProblemService reviewProblemService;
+
+    @Autowired
+    private DesignWorkSessionService sessionService;
     /**
      * API: 根据ID获取单个过程记录表的详细信息 路径: GET /api/process-records/{recordId}
      */
@@ -244,14 +251,10 @@ public class ProcessRecordController {
         }
     }
 
-        /**
-     * 获取指定过程记录下的所有问题列表
-     * @param recordId 过程记录ID
-     * @return 问题列表
-     */
     @GetMapping("/{recordId}/problems")
-    public ResponseEntity<List<ReviewProblem>> getProblemsByRecordId(@PathVariable Long recordId) {
-        List<ReviewProblem> problems = reviewProblemService.findProblemsByRecordId(recordId);
+    // 【修改返回类型】
+    public ResponseEntity<List<ReviewProblemVO>> getProblemsByRecordId(@PathVariable Long recordId) {
+        List<ReviewProblemVO> problems = reviewProblemService.findProblemsByRecordId(recordId);
         return ResponseEntity.ok(problems);
     }
 
@@ -268,5 +271,11 @@ public class ProcessRecordController {
         
         ReviewProblem createdProblem = reviewProblemService.createProblem(recordId, createDTO);
         return new ResponseEntity<>(createdProblem, HttpStatus.CREATED);
+    }
+
+    @PostMapping("/{recordId}/work-sessions/start")
+    public ResponseEntity<DesignWorkSession> startWorkSession(@PathVariable Long recordId) {
+        DesignWorkSession session = sessionService.startSession(recordId);
+        return ResponseEntity.ok(session);
     }
 }

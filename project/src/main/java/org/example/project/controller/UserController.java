@@ -2,7 +2,6 @@
 package org.example.project.controller;
 
 import org.example.project.dto.UserRegisterDTO;
-import org.example.project.dto.UserSummaryDto;
 import org.example.project.entity.User;
 import org.example.project.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,24 +53,5 @@ public class UserController {
                 .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()); // 如果 principal 为空或用户不存在，返回 401 Unauthorized
     }
 
-    /**
-     * API: 根据角色查询用户列表
-     * GET /api/users?role=REVIEWER
-     * @param role 角色名称 (例如 "REVIEWER")
-     * @return 用户简要信息列表 (只包含 id 和 username)
-     */
-    @GetMapping // 直接映射到 /api/users
-    public ResponseEntity<List<UserSummaryDto>> getUsersByRole(@RequestParam String role) {
-        // 1. 调用 Service 获取用户实体列表
-        List<User> users = userService.findUsersByRole(role.toUpperCase());
 
-        // 2. 将实体列表转换为安全的 DTO 列表
-        List<UserSummaryDto> userSummaries = users.stream()
-                .map(user -> new UserSummaryDto(user.getId(), user.getUsername()))
-                // 【核心修正】: 使用 Java 8 兼容的 .collect(Collectors.toList())
-                .collect(Collectors.toList());
-
-        // 3. 返回成功响应
-        return ResponseEntity.ok(userSummaries);
-    }
 }
