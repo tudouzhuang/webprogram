@@ -36,6 +36,9 @@ public class ProcessRecord {
 
     @TableField("total_design_duration_seconds")
     private Integer totalDesignDurationSeconds;
+
+    @TableField("updated_at") // 推荐加上注解以明确映射
+    private LocalDateTime updatedAt;
 }
 
 
