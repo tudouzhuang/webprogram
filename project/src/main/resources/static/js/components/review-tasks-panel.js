@@ -40,9 +40,20 @@ Vue.component('review-tasks-panel', {
                             <!-- 新增: 当前处理人列 -->
                             <el-table-column label="当前处理人" width="120">
                                 <template slot-scope="scope">
-                                    <span v-if="scope.row.assignee">{{ scope.row.assignee.username }}</span>
-                                    <el-tag v-else-if="scope.row.status === 'APPROVED' || scope.row.status === 'REJECTED'" type="info" size="mini">流程结束</el-tag>
-                                    <span v-else>N/A</span>
+                                    <!-- 场景1: 记录有关联人 (assigneeId)，并且我们能在 userMap 中找到他 -->
+                                    <span v-if="scope.row.assigneeId && userMap[scope.row.assigneeId]">
+                                        {{ userMap[scope.row.assigneeId] }}
+                                    </span>
+                                    
+                                    <!-- 场景2: 记录状态表示流程已结束，此时没有负责人 -->
+                                    <el-tag v-else-if="scope.row.status === 'APPROVED' || scope.row.status === 'REJECTED'" type="info" size="mini">
+                                        流程结束
+                                    </el-tag>
+                                    
+                                    <!-- 场景3: 兜底情况，例如 assigneeId 存在但 userMap 还没加载完，或者其他未知状态 -->
+                                    <span v-else class="text-muted">
+                                        N/A
+                                    </span>
                                 </template>
                             </el-table-column>
 
@@ -146,7 +157,8 @@ Vue.component('review-tasks-panel', {
             currentRecord: null,      // 当前正在操作的记录对象
             reviewerUsers: [],        // 存储所有审核员用户列表
             selectedAssigneeId: null, // 转交时选中的新审核员ID
-            requestChangesComment: '' // 打回修改的意见
+            requestChangesComment: '', // 打回修改的意见
+            userMap: {} // 【新增】用于存储 { userId: username } 的映射
         }
     },
 
@@ -345,12 +357,28 @@ Vue.component('review-tasks-panel', {
             }).catch(() => {
                 this.$message.info('已取消删除操作');
             });
-        }
+        },
+        async fetchAllUsers() {
+            try {
+                // 这个接口返回所有用户列表
+                const response = await axios.get('/api/users');
+                const userMap = {};
+                response.data.forEach(user => {
+                    userMap[user.id] = user.username;
+                });
+                this.userMap = userMap;
+                console.log("[ReviewPanel] 用户映射表加载成功:", this.userMap);
+            } catch (error) {
+                this.$message.error("加载用户信息失败！");
+            }
+        },
     },
 
     mounted() {
-        this.fetchReviewList();
-        this.fetchReviewerUsers(); // 组件加载时，预先获取审核员列表
+        Promise.all([
+            this.fetchAllUsers(), // 新方法
+            this.fetchReviewList()
+        ]);
     },
 
     watch: {

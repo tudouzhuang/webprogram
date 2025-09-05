@@ -490,7 +490,11 @@ Vue.component('record-workspace-panel', {
         },
 
         // --- 其他辅助方法保持不变 ---
-        goBack() { this.$emit('back-to-list'); },
+        goBack() { 
+            console.log("[Action] 用户点击返回列表。");
+            this.stopWorkSession(); // 在发出事件前，先停止会话
+            this.$emit('back-to-list'); 
+        },
         formatStatus(status) {
             const statusMap = { 'DRAFT': '草稿', 'PENDING_REVIEW': '审核中', 'APPROVED': '已通过', 'REJECTED': '已驳回', 'CHANGES_REQUESTED': '待修改' };
             return statusMap[status] || status;
@@ -621,10 +625,11 @@ Vue.component('record-workspace-panel', {
     
     // 【【【 修改 beforeDestroy 】】】
     beforeDestroy() {
-        // 1. 移除 postMessage 的监听器 (您已有的逻辑)
+        console.log("[LifeCycle] beforeDestroy: 组件即将销毁，执行清理操作。");
+        // 【【【 关键修正 】】】
+        this.stopWorkSession(); // 确保在销毁前停止并保存工作会-话
+    
         window.removeEventListener('message', this.boundMessageListener);
-        this.stopSessionTimer();
-        this.stopHeartbeat(); // 再次确认心跳也停止
         window.removeEventListener('beforeunload', this.stopWorkSession);
     },
 watch: {
@@ -639,8 +644,6 @@ watch: {
                     this.stopWorkSession();
                 }
 
-                // 保持原有的逻辑
-                this.activeTab = 'design'; 
 
                 // 【【【 核心修改 】】】
                 // fetchData 是一个 async 函数，所以它返回一个 Promise。

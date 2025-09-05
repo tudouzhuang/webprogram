@@ -33,6 +33,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     /**
      * 处理用户注册的核心业务逻辑
+     *
      * @param userRegisterDTO 包含注册信息的DTO对象
      */
     @Override
@@ -63,6 +64,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     /**
      * 根据用户名查找用户
+     *
      * @param username 用户名
      * @return User 实体 或 null
      */
@@ -75,6 +77,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     /**
      * 实现 UserDetailsService 接口，为 Spring Security 提供用户认证服务
+     *
      * @param username 用户在登录时输入的用户名
      * @return UserDetails 对象，包含了用户名、加密后的密码和权限信息
      * @throws UsernameNotFoundException 如果用户不存在
@@ -89,9 +92,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         // ======================= 【请务必确认】 =======================
         //  这里必须是直接返回从数据库查出来的 user 对象！
-        return user; 
+        return user;
         // ==========================================================
-        
+
         /* 
          * 【请确保类似这样的旧代码已经被删除或注释掉！】
          * return new org.springframework.security.core.userdetails.User(...);
@@ -99,21 +102,28 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 【新功能】根据角色/身份查询用户列表
-     * 这个方法将被 UserController 调用，为前端提供审核员列表
+     * 【新功能】根据角色/身份查询用户列表 这个方法将被 UserController 调用，为前端提供审核员列表
+     *
      * @param role 角色字符串 (例如 "REVIEWER")
      * @return 匹配该角色的用户列表
      */
-        @Override
-        public List<User> findUsersByRole(String role) {
-            // 【核心修正】: 应用 "manager 也是 reviewer" 的业务规则
-            if ("REVIEWER".equalsIgnoreCase(role)) {
-                // 如果要找审核员，就把 'REVIEWER' 和 'MANAGER' 都找出来
-                List<String> rolesToFind = Arrays.asList("REVIEWER", "MANAGER");
-                return baseMapper.findUsersByRoles(rolesToFind);
-            } else {
-                // 对于其他角色 (如 DESIGNER)，只查找它自己
-                return baseMapper.findUsersByRoles(Collections.singletonList(role));
-            }
-}
+    @Override
+    public List<User> findUsersByRole(String role) {
+        // 【核心修正】: 应用 "manager 也是 reviewer" 的业务规则
+        if ("REVIEWER".equalsIgnoreCase(role)) {
+            // 如果要找审核员，就把 'REVIEWER' 和 'MANAGER' 都找出来
+            List<String> rolesToFind = Arrays.asList("REVIEWER", "MANAGER");
+            return baseMapper.findUsersByRoles(rolesToFind);
+        } else {
+            // 对于其他角色 (如 DESIGNER)，只查找它自己
+            return baseMapper.findUsersByRoles(Collections.singletonList(role));
+        }
+    }
+
+
+    @Override
+    public List<User> findAllUsers() {
+        // 直接调用父类 (ServiceImpl) 自带的 list() 方法即可
+        return this.list();
+    }
 }

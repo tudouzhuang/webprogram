@@ -157,16 +157,18 @@ Vue.component('record-review-panel', {
         }
     },
     methods: {
+        // record-review-panel.js -> methods
+
         async fetchAllData() {
             console.log(`%c[fetchAllData] STAGE 0: Initialization for recordId=${this.recordId}`, 'color: blue; font-weight: bold;');
             if (!this.recordId) return;
 
             this.isLoading = true;
             this.loadError = null;
-            this.reviewSheet = null;
+            this.reviewSheetData = null; // 清空旧数据
 
             try {
-                // STAGE 1 & 2
+                // STAGE 1 & 2: 获取记录详情和文件列表 (保持不变)
                 const [recordResponse, filesResponse] = await Promise.all([
                     axios.get(`/api/process-records/${this.recordId}`),
                     axios.get(`/api/process-records/${this.recordId}/files`)
@@ -190,38 +192,38 @@ Vue.component('record-review-panel', {
                     }
                 });
 
-                // STAGE 3
-                console.log('%c[fetchAllData] STAGE 3: Fetching review sheet info...', 'color: blue; font-weight: bold;');
-                try {
-                    const reviewSheetResponse = await axios.get(`/api/process-records/${this.recordId}/review-sheet-info`);
-                    let savedReviewSheet = reviewSheetResponse.data;
-                    if (typeof savedReviewSheet === 'string') {
-                        savedReviewSheet = JSON.parse(savedReviewSheet);
-                    }
-                    const fileId = savedReviewSheet.id;
-                    const fileName = savedReviewSheet.fileName || savedReviewSheet.file_name;
-
-                    if (!fileId || !fileName) throw new Error("Response missing key fields.");
-
-                    // 【【【 关键修正点 1：赋值给正确的变量 this.reviewSheetData 】】】
-                    this.reviewSheetData = {
-                        url: `/api/files/content/${fileId}?t=${new Date().getTime()}`,
-                        fileName: fileName
-                    };
-
-                } catch (error) {
-                    // 【【【 关键修正点 2：回退时也赋值给 this.reviewSheetData 】】】
-                    this.reviewSheetData = {
-                        url: this.reviewTemplateUrl,
-                        fileName: '审核模板.xlsx'
-                    };
+                // STAGE 3: 尝试获取已保存的审核表信息
+                console.log('%c[fetchAllData] STAGE 3: Fetching unified review sheet info...', 'color: blue; font-weight: bold;');
+        
+                // 后端接口现在总是返回 200 OK，所以不再需要内部的 try-catch
+                const reviewSheetResponse = await axios.get(`/api/process-records/${this.recordId}/review-sheet-info`);
+                const fileInfo = reviewSheetResponse.data;
+        
+                let fileUrl;
+        
+                // 【【【 这是解决问题的核心逻辑 】】】
+                // 根据后端返回的 documentType，智能地判断应该使用哪个 URL
+                if (fileInfo.documentType === 'TEMPLATE_SHEET') {
+                    // 如果是模板，直接使用后端在 filePath 字段中提供的 API 地址
+                    fileUrl = fileInfo.filePath; // e.g., "/api/files/templates/review-sheet"
+                } else {
+                    // 如果是真实文件，像以前一样根据 ID 构造内容下载地址
+                    fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
                 }
-
-                // 调用 loadReviewSheet，它会去检查 reviewSheetData
+                
+                // 将最终确定的正确 URL 和文件名存起来
+                this.reviewSheetData = {
+                    url: fileUrl,
+                    fileName: fileInfo.fileName
+                };
+                console.log("[Parent] 已准备好加载审核表, 将使用 URL:", fileUrl);
+        
+                // 调用加载方法
                 this.loadReviewSheet();
-
+        
             } catch (error) {
-                this.loadError = "加载核心数据失败：" + error.message;
+                // 这个 catch 现在只处理获取记录详情或文件列表时的严重错误
+                this.loadError = "加载工作区核心数据失败：" + (error.response?.data?.message || error.message);
             } finally {
                 this.isLoading = false;
             }
@@ -283,54 +285,54 @@ Vue.component('record-review-panel', {
             if (this.isSavingSheet || !this.reviewIframeLoaded) return;
             this.isSavingSheet = true;
             this.$message.info("正在生成审核文件...");
-        
+
             // 像 workspace 一样，在 payload 中添加一个明确的 purpose
-            this.sendMessageToIframe(this.$refs.reviewIframe, { 
-                type: 'GET_DATA_AND_IMAGES', 
+            this.sendMessageToIframe(this.$refs.reviewIframe, {
+                type: 'GET_DATA_AND_IMAGES',
                 payload: {
                     purpose: 'save-review-sheet' // 使用一个唯一的 purpose
-                } 
+                }
             });
         },
-        
+
         async messageEventListener(event) {
             // 1. 安全检查
             if (event.origin !== window.location.origin || !event.data) {
                 return;
             }
-        
+
             // 2. 只处理我们关心的数据响应类型
             if (event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
                 return;
             }
-        
+
             const { payload } = event.data;
-        
+
             // 3. 【重要】根据 purpose 判断是否应该处理此消息
             //    这确保了只有点击 "保存审核结果" 按钮时，这个逻辑才会被触发
             if (!payload || payload.purpose !== 'save-review-sheet') {
                 return;
             }
-        
+
             console.log('[Review Panel] ✅ Purpose 检查通过，开始执行保存审核结果逻辑...');
-        
+
             try {
                 // 4. 【核心修正】将从 iframe 收到的完整 payload 直接传递给导出函数
                 //    这与 workspace 的工作方式完全一致
                 const exportBlob = await exportWithExcelJS(payload);
-                
+
                 const formData = new FormData();
                 const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
                 formData.append('file', exportBlob, reviewFileName);
-                
+
                 const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
                 await axios.post(apiUrl, formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
-        
+
                 this.$message.success("审核表已成功保存！");
                 this.fetchAllData(); // 重新加载以显示最新版本
-                
+
             } catch (error) {
                 this.$message.error(error.message || "导出或上传过程出错！");
                 console.error("在线保存审核文件时出错:", error);
@@ -401,11 +403,11 @@ Vue.component('record-review-panel', {
 
             this.$message.info("已发送导出指令给审核表...");
         },
-                /**
-         * 将总秒数格式化为 "X 小时 Y 分钟 Z 秒" 的字符串
-         * @param {number} totalSeconds - 总秒数
-         * @returns {string} 格式化后的时间字符串
-         */
+        /**
+ * 将总秒数格式化为 "X 小时 Y 分钟 Z 秒" 的字符串
+ * @param {number} totalSeconds - 总秒数
+ * @returns {string} 格式化后的时间字符串
+ */
         formatDuration(totalSeconds) {
             if (totalSeconds == null || totalSeconds < 0) {
                 return '暂无记录';
@@ -416,7 +418,7 @@ Vue.component('record-review-panel', {
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
-            
+
             let result = '';
             if (hours > 0) {
                 result += `${hours} 小时 `;
@@ -427,7 +429,7 @@ Vue.component('record-review-panel', {
             if (seconds > 0 || result === '') { // 如果总时长小于1分钟，也显示秒
                 result += `${seconds} 秒`;
             }
-            
+
             return result.trim();
         },
 

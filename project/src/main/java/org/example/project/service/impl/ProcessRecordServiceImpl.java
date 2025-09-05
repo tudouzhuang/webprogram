@@ -174,34 +174,39 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Override
     public ProjectFile findReviewSheetByRecordId(Long recordId) {
         log.info("【SERVICE】正在查询 recordId {} 对应的审核表...", recordId);
-
+    
         // 1. 创建查询条件
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
-
-        // 2. 设置精确的查询条件
-        queryWrapper
-                // 条件一: 记录ID必须匹配
-                .eq("record_id", recordId)
-                // 条件二: 文件类型必须是 'REVIEW_SHEET'
-                .eq("document_type", "REVIEW_SHEET");
-
-        // 3. 按ID降序排序，以确保我们总是获取到最新提交的那一份审核表
-        queryWrapper.orderByDesc("id");
-
-        // 4. 使用 selectList 并取第一个，这比 selectOne 更能避免因意外查出多条记录而报错
-        List<ProjectFile> reviewSheets = projectFileMapper.selectList(queryWrapper);
-
-        // 5. 判断结果
-        if (reviewSheets == null || reviewSheets.isEmpty()) {
-            // 如果列表为空，说明没找到，抛出异常，Controller会将其转换为404
-            log.warn("【SERVICE】未找到 recordId {} 对应的审核表。", recordId);
-            throw new NoSuchElementException("未找到ID为 " + recordId + " 的过程记录所对应的审核表。");
+        queryWrapper.eq("record_id", recordId)
+                    .eq("document_type", "REVIEW_SHEET")
+                    .orderByDesc("id");
+    
+        // 2. 查询数据库。使用 getOne 可以简化代码，它会取第一条记录
+        ProjectFile reviewSheet = this.projectFileMapper.selectOne(queryWrapper);
+    
+        // 3. 判断结果
+        if (reviewSheet != null) {
+            // 3a. 如果找到了，正常返回
+            log.info("【SERVICE】已成功找到 recordId {} 对应的审核表，文件ID为: {}", recordId, reviewSheet.getId());
+            return reviewSheet;
+        } else {
+            // 3b. 如果没找到，构造并返回一个指向模板的“伪” ProjectFile 对象
+            log.warn("【SERVICE】未找到 recordId {} 对应的审核表。将返回模板文件信息。", recordId);
+            
+            ProjectFile templateFile = new ProjectFile();
+            templateFile.setId(-1L); // 使用一个特殊的ID，表示这是模板
+            templateFile.setFileName("审核模板.xlsx");
+            
+            // 【核心修正】
+            // 提供前端可直接访问的模板 API 端点路径，不包含 .xlsx 后缀。
+            // 这个路径需要与 FileController 中的 @GetMapping("/templates/{templateName}") 匹配。
+            templateFile.setFilePath("/api/files/templates/review-sheet");
+            
+            // 使用一个特殊的类型，方便前端识别并采取不同的加载策略
+            templateFile.setDocumentType("TEMPLATE_SHEET");
+            
+            return templateFile;
         }
-
-        // 返回列表中的第一个（也就是最新的那一个）
-        ProjectFile latestReviewSheet = reviewSheets.get(0);
-        log.info("【SERVICE】已成功找到 recordId {} 对应的审核表，文件ID为: {}", recordId, latestReviewSheet.getId());
-        return latestReviewSheet;
     }
 
 // 在你的 ProcessRecordServiceImpl.java 文件中

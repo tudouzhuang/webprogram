@@ -41,8 +41,12 @@ Vue.component('process-record-list-panel', {
                                 <el-table-column prop="partName" label="零件名称" sortable></el-table-column>
                                 <el-table-column prop="processName" label="工序名称" width="150" sortable></el-table-column>
                                 <el-table-column label="提交人" width="120">
-                                    <template slot-scope="scope">
-                                        {{ getDesignerName(scope.row.specificationsJson) }}
+                                    <!-- 必须把所有使用 scope 的地方都包裹在 template 标签内 -->
+                                    <template slot-scope="scope"> 
+                                        <span v-if="scope.row.createdByUserId && userMap[scope.row.createdByUserId]">
+                                            {{ userMap[scope.row.createdByUserId] }}
+                                        </span>
+                                        <span v-else>N/A</span>
                                     </template>
                                 </el-table-column>
                                 <el-table-column prop="status" label="状态" width="120">
@@ -87,7 +91,8 @@ Vue.component('process-record-list-panel', {
         return {
             isLoading: false,
             recordList: [],
-            loadError: null
+            loadError: null,
+            userMap: {}
         }
     },
 
@@ -98,21 +103,46 @@ Vue.component('process-record-list-panel', {
     },
 
     methods: {
-        fetchRecordList() {
-            if (!this.projectId) return;
+        // 【新增】统一的刷新方法
+        reloadData() {
             this.isLoading = true;
+            Promise.all([
+                this.fetchAllUsers(),
+                this.fetchRecordList()
+            ]).catch(() => {
+                // 错误已在各自方法中提示，这里防止 unhandled rejection
+            }).finally(() => {
+                this.isLoading = false;
+            });
+        },
+        // 【新增】获取所有用户并创建映射表
+        async fetchAllUsers() {
+            try {
+                const response = await axios.get('/api/users');
+                const userMap = {};
+                if (response.data) {
+                    response.data.forEach(user => {
+                        userMap[user.id] = user.username;
+                    });
+                }
+                this.userMap = userMap;
+            } catch (error) {
+                this.$message.error("加载用户信息失败！");
+                throw error; // 抛出错误以便 Promise.all 捕获
+            }
+        },
+        // 【修改】fetchRecordList 现在只负责获取列表
+        async fetchRecordList() {
+            if (!this.projectId) return;
             this.loadError = null;
-            axios.get(`/api/projects/${this.projectId}/process-records`)
-                .then(response => {
-                    this.recordList = response.data;
-                })
-                .catch(error => {
-                    this.loadError = "加载列表失败，请刷新重试。";
-                    this.$message.error("加载列表失败！");
-                })
-                .finally(() => {
-                    this.isLoading = false;
-                });
+            try {
+                const response = await axios.get(`/api/projects/${this.projectId}/process-records`);
+                this.recordList = response.data;
+            } catch (error) {
+                this.loadError = "加载列表失败，请刷新重试。";
+                this.$message.error("加载列表失败！");
+                throw error; // 抛出错误
+            }
         },
 
         createNewRecord() {
@@ -186,23 +216,17 @@ Vue.component('process-record-list-panel', {
             };
             return typeMap[status] || 'primary';
         },
-        getDesignerName(jsonString) {
-            if (!jsonString) return 'N/A';
-            try {
-                const specData = JSON.parse(jsonString);
-                return specData.designerName || '未知';
-            } catch(e) { return '解析错误'; }
-        }
+
     },
 
     mounted() {
-        this.fetchRecordList();
+        this.reloadData();
     },
 
     watch: {
         projectId(newId) {
             if (newId) {
-                this.fetchRecordList();
+                this.reloadData();
             }
         }
     }

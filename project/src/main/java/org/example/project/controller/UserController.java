@@ -53,5 +53,17 @@ public class UserController {
                 .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()); // 如果 principal 为空或用户不存在，返回 401 Unauthorized
     }
 
-
+    @GetMapping
+    public ResponseEntity<List<User>> getUsers(@RequestParam(value = "role", required = false) String role) {
+        List<User> users;
+        if (role != null && !role.trim().isEmpty()) {
+            users = userService.findUsersByRole(role);
+    
+        } else {
+            // --- 【【【 在这里修改 】】】 ---
+            // 调用我们自己定义的、明确存在于接口中的 findAllUsers() 方法
+            users = userService.findAllUsers(); 
+        }
+        return ResponseEntity.ok(users);
+    }
 }
