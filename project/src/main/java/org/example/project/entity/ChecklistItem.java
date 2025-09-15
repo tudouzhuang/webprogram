@@ -1,3 +1,4 @@
+// src/main/java/org/example/project/entity/ChecklistItem.java
 package org.example.project.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -14,10 +15,16 @@ public class ChecklistItem {
     private Long id;
     private Long recordId;
     private String itemDescription;
-    private ChecklistItemStatus status;
+
+    // --- 设计员数据 ---
+    private ChecklistItemStatus designerStatus;
     private String designerRemarks;
+    private Long designedByUserId;
+    private LocalDateTime designedAt;
+
+    // --- 审核员数据 ---
+    private ChecklistItemStatus reviewerStatus;
     private String reviewerRemarks;
-    private String screenshotPath;
-    private Long checkedByUserId;
-    private LocalDateTime checkedAt;
+    private Long reviewedByUserId;
+    private LocalDateTime reviewedAt;
 }

@@ -1,3 +1,4 @@
+// src/main/java/org/example/project/entity/ItemScreenshot.java
 package org.example.project.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -7,12 +8,13 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("checklist_templates")
-public class ChecklistTemplate {
+@TableName("item_screenshots")
+public class ItemScreenshot {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String templateName;
-    private String description;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private Long itemId;
+    private Long uploaderId;
+    private String fileName;
+    private String filePath;
+    private LocalDateTime uploadedAt;
 }

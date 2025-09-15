@@ -36,7 +36,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
-
 /**
  * ProcessRecordService 的实现类。 负责处理所有与设计过程记录表相关的业务逻辑。
  */
@@ -91,24 +90,14 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
-    // =======================================================
-    // ↓↓↓ 【新增方法】新模式的核心创建逻辑 ↓↓↓
-    // =======================================================
-    /**
-     * 【新增实现】根据模板创建一条新的设计过程记录。
-     * 这是新“卡片/列表模式”的核心入口。
-     *
-     * @param projectId 项目ID
-     * @param createDTO 包含模板ID和基本信息的DTO
-     * @return 创建成功的主记录
-     */
+// 在 ProcessRecordServiceImpl.java 文件的内部
     @Override
-    @Transactional(rollbackFor = Exception.class) // 保证事务性
+    @Transactional(rollbackFor = Exception.class)
     public ProcessRecord createRecordFromTemplate(Long projectId, ProcessRecordTemplateCreateDTO createDTO) {
         log.info("【SERVICE-TEMPLATE】开始基于模板创建新的过程记录，项目ID: {}, 模板ID: {}", projectId, createDTO.getTemplateId());
 
-        Long currentUserId = getCurrentUserId();
-        if (currentUserId == null) {
+        User currentUser = getCurrentUser(); // 假设您有一个返回User实体的方法
+        if (currentUser == null) {
             throw new IllegalStateException("无法获取当前用户信息，无法创建记录。");
         }
 
@@ -117,31 +106,33 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         record.setProjectId(projectId);
         record.setPartName(createDTO.getPartName());
         record.setProcessName(createDTO.getProcessName());
-        record.setCreatedByUserId(currentUserId);
-        record.setAssigneeId(currentUserId); // 初始负责人是创建者自己
-        record.setStatus(ProcessRecordStatus.DRAFT); // 初始状态为草稿
-
+        record.setCreatedByUserId(currentUser.getId());
+        record.setAssigneeId(currentUser.getId());
+        record.setStatus(ProcessRecordStatus.DRAFT);
         this.save(record);
         Long recordId = record.getId();
         log.info("【SERVICE-TEMPLATE】主记录创建成功，新Record ID: {}", recordId);
 
         // 2. --- 根据模板ID，批量生成检查项 (ChecklistItem) ---
         Long templateId = createDTO.getTemplateId();
-
         List<ChecklistTemplateItem> templateItems = templateItemMapper.selectList(
                 new QueryWrapper<ChecklistTemplateItem>().eq("template_id", templateId)
         );
 
-        if (templateItems == null || templateItems.isEmpty()) {
-            log.warn("【SERVICE-TEMPLATE】警告：选择的模板ID {} 不包含任何检查项。", templateId);
-        } else {
+        if (templateItems != null && !templateItems.isEmpty()) {
             log.info("【SERVICE-TEMPLATE】从模板 {} 中查询到 {} 个检查项，准备批量生成。", templateId, templateItems.size());
 
             List<ChecklistItem> newItems = templateItems.stream().map(templateItem -> {
                 ChecklistItem newItem = new ChecklistItem();
                 newItem.setRecordId(recordId);
                 newItem.setItemDescription(templateItem.getItemDescription());
-                newItem.setStatus(ChecklistItemStatus.PENDING);
+
+                // 【【【核心修改】】】
+                // 初始化新的、分离后的字段
+                newItem.setDesignerStatus(ChecklistItemStatus.PENDING); // 初始状态为“待处理”
+                newItem.setReviewerStatus(null); // 审核员状态初始为 null
+
+                // 其他备注和操作人信息在后续操作中填充，创建时保持为null
                 return newItem;
             }).collect(Collectors.toList());
 
@@ -149,15 +140,12 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             log.info("【SERVICE-TEMPLATE】已成功为 Record ID {} 批量插入 {} 个检查项。", recordId, newItems.size());
         }
 
-        // 3. --- 返回创建成功的主记录对象 ---
         return record;
     }
-
 
     // =======================================================
     // ↓↓↓ 您原有的所有方法（保持不变） ↓↓↓
     // =======================================================
-    
     // ... (此处省略您原有的所有方法，如 getRecordsByProjectId, saveReviewSheet, resubmit 等等，它们都不需要动) ...
     /**
      * 新增的辅助方法：根据绝对路径计算相对于uploadDir的相对路径
@@ -651,7 +639,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("管理员 {} 成功删除了记录 #{}", currentUser.getUsername(), recordId);
     }
 
-
     @Override
     @Transactional
     public void updateAssociatedFile(Long recordId, Long fileId, MultipartFile file) throws IOException {
@@ -706,7 +693,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("【SERVICE-UPDATE_FILE】数据库中的文件记录 (ID: {}) 已成功更新。", fileId);
     }
 
-
     /**
      * 【新增实现 2】: 启动审核流程
      */
@@ -744,4 +730,25 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
     }
 
+
+    /**
+     * 【【【新增辅助方法】】】
+     * 从Spring Security上下文中获取当前登录的用户实体。
+     * @return 当前登录的User对象，如果未登录或找不到则返回null。
+     */
+    private User getCurrentUser() {
+        try {
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (principal instanceof UserDetails) {
+                String username = ((UserDetails) principal).getUsername();
+                // 确保 userMapper 已经被注入
+                return userMapper.selectByUsername(username);
+            } else if (principal instanceof String) {
+                return userMapper.selectByUsername((String) principal);
+            }
+        } catch (Exception e) {
+            log.error("获取当前登录用户时发生异常", e); // 使用log.error
+        }
+        return null;
+    }
 }

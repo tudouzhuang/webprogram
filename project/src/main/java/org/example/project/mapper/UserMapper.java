@@ -34,4 +34,12 @@ public interface UserMapper extends BaseMapper<User> {
         "</script>"
     })
     List<User> findUsersByRoles(@Param("roles") List<String> roles);
+
+        /**
+     * 根据用户名查询用户
+     * @param username 用户名
+     * @return User对象
+     */
+    @Select("SELECT * FROM users WHERE username = #{username}")
+    User selectByUsername(@Param("username") String username);
 }

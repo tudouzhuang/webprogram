@@ -31,6 +31,155 @@
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        .checklist-panel.content-wrapper {
+            padding: 1.5rem;
+            /* 使用模板的内边距 */
+        }
+
+        .checklist-panel .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding: 1rem 1.5rem;
+            background-color: #fff;
+            border: none;
+            border-radius: 0.5rem;
+        }
+
+        .checklist-panel .panel-header .header-left,
+        .checklist-panel .panel-header .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .checklist-panel .card-list {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        }
+
+        .check-item-card {
+            border-radius: 0.5rem !important;
+            border-left: 5px solid #dcdfe6;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .check-item-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        .check-item-card .el-card__header {
+            background-color: #f9fafc;
+            border-bottom: 1px solid #e4e7ed;
+        }
+
+        .check-item-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 24px;
+        }
+
+        .check-item-card .item-description {
+            font-weight: 600;
+            line-height: 1.5;
+            padding-right: 10px;
+            color: #303133;
+        }
+
+        .check-item-card .action-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .check-item-card .action-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .check-item-card .action-group .action-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 13px;
+            color: #606266;
+            font-weight: 500;
+        }
+
+        .check-item-card .screenshot-uploader .screenshot-thumbnail {
+            width: 120px;
+            height: 120px;
+            border: 1px dashed #d9d9d9;
+            border-radius: 6px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            background-color: #fafafa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: #8c939d;
+            transition: border-color 0.2s;
+        }
+
+        .check-item-card .screenshot-uploader .screenshot-thumbnail:hover {
+            border-color: #409EFF;
+        }
+
+        .check-item-card .screenshot-uploader .uploader-icon i {
+            font-size: 28px;
+        }
+
+        .check-item-card .screenshot-uploader .uploader-icon span {
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .check-item-card .screenshot-uploader .screenshot-thumbnail.uploaded {
+            border-style: solid;
+        }
+
+        .check-item-card.status-ok {
+            border-left-color: #67C23A;
+        }
+
+        .check-item-card.status-ng {
+            border-left-color: #F56C6C;
+        }
+
+        .check-item-card.status-pending {
+            border-left-color: #E6A23C;
+        }
+
+        .check-item-card.status-na {
+            border-left-color: #909399;
+        }
+
+        .check-item-card .card-footer {
+            text-align: right;
+            font-size: 12px;
+            color: #909399;
+            margin-top: 1rem;
+            border-top: 1px solid #f0f2f5;
+            padding-top: 0.8rem;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            /* 占据整行 */
+            text-align: center;
+            color: #909399;
+            padding: 60px 20px;
+            background-color: #fff;
+            border: 1px dashed #dcdfe6;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
         .mdi-rotate-180 {
             transform: rotate(180deg);
         }
@@ -303,6 +452,7 @@
             border-radius: 0.5rem;
             /* 推荐：保持圆角，视觉效果更统一 */
         }
+
         .nav>.nav-item>.nav-link:has(+ div.show) .menu-icon {
             color: #0d6efd;
             /* 确保图标颜色也与 hover 效果一致 */
@@ -767,14 +917,15 @@
                                         </a>
                                         <!-- (D) 子菜单容器: 由 showProjectMenu 状态控制 -->
                                         <ul class="nav flex-column sub-menu" :class="{'show': showProjectMenu}">
-                                            <li class="nav-item" v-if="!isProjectListLoading && projectList.length === 0">
-                                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                                            <li class="nav-item"
+                                                v-if="!isProjectListLoading && projectList.length === 0">
+                                                <a class="nav-link text-muted" href="#">暂无项目</a>
                                             </li>
                                             <li class="nav-item" v-for="project in projectList" :key="project.id">
                                                 <a class="nav-link" style="cursor: pointer;"
                                                     @click="viewProjectPlanning(project)">
                                                     {{ project.projectNumber }}
-                                            </a>
+                                                </a>
                                             </li>
                                         </ul>
                                     </li>
@@ -812,7 +963,7 @@
                                         <ul class="nav flex-column sub-menu" :class="{'show': showRecordProjectMenu}">
                                             <li class="nav-item"
                                                 v-if="!isProjectListLoading && projectList.length === 0">
-                                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                                                <a class="nav-link text-muted" href="#">暂无项目</a>
                                             </li>
                                             <li class="nav-item" v-if="isProjectListLoading">
                                                 <a class="nav-link text-muted" href="#">加载中...</a>
@@ -825,155 +976,150 @@
                                                 </a>
                                             </li>
                                         </ul>
-                                        <li class="nav-item">
-                                            <a class="nav-link" href="javascript:void(0)">膜具类别</a>
-                                          </li>
-                                    </li>
-                                </ul>
-                            </div>
-                        </li>
-
-                        <li class="nav-item nav-category">过程记录</li>
-
-                        <!-- ==================【过程记录表】(已优化) ================== -->
-                        <li class="nav-item">
-                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleInfoSummaryMenu">
-                                <i class="menu-icon mdi mdi-file-document-box-multiple-outline"></i>
-                                <span class="menu-title">过程记录表</span>
-                                <i class="menu-arrow" :class="{'mdi-rotate-180': showInfoSummaryMenu}"></i>
-                            </a>
-                            <div id="record-planning" :class="{'show': showInfoSummaryMenu}">
-                                <ul class="nav flex-column sub-menu">
                                     <li class="nav-item">
-                                        <!-- 【核心修改 1】子菜单触发器现在调用新的方法 -->
-                                        <a class="nav-link" href="javascript:void(0)"
-                                            @click.prevent="toggleRecordPlanningProjectMenu">
-                                            选择项目
-                                            <i class="menu-arrow"
-                                                :class="{'mdi-rotate-180': showRecordPlanningProjectMenu}"></i>
-                                        </a>
-                                        <!-- 【核心修改 3】子菜单容器的显示/隐藏也绑定到新的 data 属性 -->
-                                        <ul class="nav flex-column sub-menu":class="{'show': showRecordPlanningProjectMenu}">
-                                            <li v-for="project in projectList" :key="'record-plan-' + project.id"
-                                                class="nav-item">
-                                                <a class="nav-link" href="javascript:void(0)"
-                                                    @click="viewProcessRecordsForProject(project)">
-                                                    {{ project.projectName || project.projectNumber }}
-                                                </a>
-                                            </li>
-                                            <li class="nav-item"
-                                                v-if="!isProjectListLoading && projectList.length === 0">
-                                                <a class="nav-link text-muted" href="#">暂无项目</a>
-                                            </li>
-                                        </ul>
+                                        <a class="nav-link" href="javascript:void(0)">膜具类别</a>
                                     </li>
-                                </ul>
-                            </div>
-                        </li>
-
-                        <li class="nav-item nav-category">过程记录 (审查)</li>
-
-                        <!-- ==================【审查记录表】(修正版) ================== -->
-                        <li class="nav-item">
-                            <!-- (A) 触发器: 保持不变 -->
-                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleRecordReviewMenu">
-                                <i class="menu-icon mdi mdi-file-find-outline"></i>
-                                <span class="menu-title">审查记录表</span>
-                                <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordReviewMenu}"></i>
-                            </a>
-                            <!-- (B) 容器: 保持不变 -->
-                            <div id="record-review" :class="{'show': showRecordReviewMenu}">
-
-                                <!-- 【核心修正】: 移除了多余的 <li> 和 <ul> 嵌套 -->
-                                <!-- 现在项目列表是直接的二级菜单，不会被 .sub-menu .sub-menu 规则错误地隐藏 -->
-                                <ul class="nav flex-column sub-menu">
-                                    <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
-                                        <a class="nav-link" href="javascript:void(0)"
-                                            @click="goToViewProcessRecords(project)">
-                                            {{ project.projectName || project.projectNumber }}
-                                        </a>
-                                    </li>
-                                    <li v-if="isProjectListLoading" class="nav-item">
-                                        <span class="nav-link text-muted">加载中...</span>
-                                    </li>
-                                    <li v-if="!isProjectListLoading && projectList.length === 0" class="nav-item">
-                                        <a class="nav-link text-muted" href="#">暂无项目</a>
-                                    </li>
-                                </ul>
-
-                            </div>
-                        </li>
-
-                        <li class="nav-item nav-category">设变整改</li>
-                        <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#charts" aria-expanded="false"
-                                aria-controls="charts">
-                                <i class="menu-icon mdi mdi-chart-line"></i>
-                                <span class="menu-title">设变整改</span>
-                                <i class="menu-arrow"></i>
-                            </a>
-                            <div class="collapse" id="charts">
-                                <ul class="nav flex-column sub-menu">
-                                    <li class="nav-item"><a class="nav-link"
-                                            href="main/pages/charts/chartjs.html">整改台账</a>
-                                    </li>
-                                    <li class="nav-item">
-                                        <a class="nav-link" href="javascript:void(0)" @click="toggleInfoSummaryMenu">
-                                            信息汇总
-                                            <i class="menu-arrow" :class="{'mdi-rotate-180': showInfoSummaryMenu}"></i>
-                                        </a>
-                                        <ul class="nav flex-column sub-menu" :class="{'show': showInfoSummaryMenu}"
-                                            id="info-summary-submenu">
-                                            <li class="nav-item">
-                                                <a class="nav-link" href="main/pages/charts/chartjs.html">汇总1</a>
-                                            </li>
-                                            <li class="nav-item">
-                                                <a class="nav-link" href="main/pages/charts/chartjs.html">汇总2</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                            </div>
-                        </li>
-
-                        <li class="nav-item nav-category">用户</li>
-                        <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#auth" aria-expanded="false"
-                                aria-controls="auth">
-                                <i class="menu-icon mdi mdi-account-circle-outline"></i>
-                                <span class="menu-title">用户页面</span>
-                                <i class="menu-arrow"></i>
-                            </a>
-                            <div class="collapse" id="auth">
-                                <ul class="nav flex-column sub-menu">
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 登录
-                                        </a>
-                                    </li>
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 注销
-                                        </a>
-                                    </li>
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html">
-                                            用户信息 </a>
-                                    </li>
-                                </ul>
-                            </div>
                         </li>
                     </ul>
-                </nav>
-                <div class="main-panel">
-                    <component :is="activePanel" 
-                        :project-id="currentProjectId" 
-                        :record-id="currentRecordId"
-                        @create-new-record="handleCreateNewRecord" 
-                        @view-record-details="handleViewRecordDetails"
-                        @project-created="onProjectCreated" 
-                        @back-to-list="handleBackToList"
-                        @review-record="onReviewRecord"
-                        @edit-record="handleEditRecord">
-                    </component>
+            </div>
+            </li>
+
+            <li class="nav-item nav-category">过程记录</li>
+
+            <!-- ==================【过程记录表】(已优化) ================== -->
+            <li class="nav-item">
+                <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleInfoSummaryMenu">
+                    <i class="menu-icon mdi mdi-file-document-box-multiple-outline"></i>
+                    <span class="menu-title">过程记录表</span>
+                    <i class="menu-arrow" :class="{'mdi-rotate-180': showInfoSummaryMenu}"></i>
+                </a>
+                <div id="record-planning" :class="{'show': showInfoSummaryMenu}">
+                    <ul class="nav flex-column sub-menu">
+                        <li class="nav-item">
+                            <!-- 【核心修改 1】子菜单触发器现在调用新的方法 -->
+                            <a class="nav-link" href="javascript:void(0)"
+                                @click.prevent="toggleRecordPlanningProjectMenu">
+                                选择项目
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordPlanningProjectMenu}"></i>
+                            </a>
+                            <!-- 【核心修改 3】子菜单容器的显示/隐藏也绑定到新的 data 属性 -->
+                            <ul class="nav flex-column sub-menu" :class="{'show': showRecordPlanningProjectMenu}">
+                                <li v-for="project in projectList" :key="'record-plan-' + project.id" class="nav-item">
+                                    <a class="nav-link" href="javascript:void(0)"
+                                        @click="viewProcessRecordsForProject(project)">
+                                        {{ project.projectName || project.projectNumber }}
+                                    </a>
+                                </li>
+                                <li class="nav-item" v-if="!isProjectListLoading && projectList.length === 0">
+                                    <a class="nav-link text-muted" href="#">暂无项目</a>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
                 </div>
+            </li>
+
+            <li class="nav-item nav-category">过程记录 (审查)</li>
+
+            <!-- ==================【审查记录表】(修正版) ================== -->
+            <li class="nav-item">
+                <!-- (A) 触发器: 保持不变 -->
+                <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleRecordReviewMenu">
+                    <i class="menu-icon mdi mdi-file-find-outline"></i>
+                    <span class="menu-title">审查记录表</span>
+                    <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordReviewMenu}"></i>
+                </a>
+                <!-- (B) 容器: 保持不变 -->
+                <div id="record-review" :class="{'show': showRecordReviewMenu}">
+
+                    <!-- 【核心修正】: 移除了多余的 <li> 和 <ul> 嵌套 -->
+                    <!-- 现在项目列表是直接的二级菜单，不会被 .sub-menu .sub-menu 规则错误地隐藏 -->
+                    <ul class="nav flex-column sub-menu">
+                        <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
+                            <a class="nav-link" href="javascript:void(0)" @click="goToViewProcessRecords(project)">
+                                {{ project.projectName || project.projectNumber }}
+                            </a>
+                        </li>
+                        <li v-if="isProjectListLoading" class="nav-item">
+                            <span class="nav-link text-muted">加载中...</span>
+                        </li>
+                        <li v-if="!isProjectListLoading && projectList.length === 0" class="nav-item">
+                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                        </li>
+                    </ul>
+
+                </div>
+            </li>
+
+            <li class="nav-item nav-category">设变整改</li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="collapse" href="#charts" aria-expanded="false"
+                    aria-controls="charts">
+                    <i class="menu-icon mdi mdi-chart-line"></i>
+                    <span class="menu-title">设变整改</span>
+                    <i class="menu-arrow"></i>
+                </a>
+                <div class="collapse" id="charts">
+                    <ul class="nav flex-column sub-menu">
+                        <li class="nav-item"><a class="nav-link" href="main/pages/charts/chartjs.html">整改台账</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="javascript:void(0)" @click="toggleInfoSummaryMenu">
+                                信息汇总
+                                <i class="menu-arrow" :class="{'mdi-rotate-180': showInfoSummaryMenu}"></i>
+                            </a>
+                            <ul class="nav flex-column sub-menu" :class="{'show': showInfoSummaryMenu}"
+                                id="info-summary-submenu">
+                                <li class="nav-item">
+                                    <a class="nav-link" href="main/pages/charts/chartjs.html">汇总1</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="main/pages/charts/chartjs.html">汇总2</a>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+
+            <li class="nav-item nav-category">用户</li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="collapse" href="#auth" aria-expanded="false" aria-controls="auth">
+                    <i class="menu-icon mdi mdi-account-circle-outline"></i>
+                    <span class="menu-title">用户页面</span>
+                    <i class="menu-arrow"></i>
+                </a>
+                <div class="collapse" id="auth">
+                    <ul class="nav flex-column sub-menu">
+                        <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 登录
+                            </a>
+                        </li>
+                        <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 注销
+                            </a>
+                        </li>
+                        <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html">
+                                用户信息 </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            </ul>
+            </nav>
+            <div class="main-panel">
+                <!-- 【新增】当 activePanel 是 'checklist-panel' 时，显示我们的新组件 -->
+                <checklist-panel v-if="activePanel === 'checklist-panel'" :record-id="currentRecordId"
+                    :current-user="currentUser" @back-to-list="onBackToList"> <!-- 监听返回事件 -->
+                </checklist-panel>
+
+                <!-- 【修改】当 activePanel 不是 'checklist-panel' 时，显示原来的动态组件 -->
+                <component v-else :is="activePanel" :project-id="currentProjectId" :record-id="currentRecordId"
+                    :current-user="currentUser" @create-new-record="handleCreateNewRecord"
+                    @view-record-details="handleViewRecordDetails" @project-created="onProjectCreated"
+                    @back-to-list="handleBackToList" @review-record="onReviewRecord" @edit-record="handleEditRecord">
+                </component>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- 1. 核心框架库 -->
@@ -1006,7 +1152,8 @@
     <script src="/js/components/record-review-panel.js" type="module"></script>
     <script src="/js/components/record-workspace-panel.js" type="module"></script>
     <script src="/js/components/review-tasks-panel.js"></script>
-
+    <script src="/js/components/check-item-card.js"></script>
+    <script src="/js/components/checklist-panel.js"></script>
 
 
     <!-- 4.2 顶部导航栏动态组件 -->
@@ -1039,14 +1186,13 @@
                     currentUser: null,
                     // --- UI控制 ---
                     isProjectListLoading: false,
-
                     // --- 侧边栏菜单展开状态 ---
                     showProjectMenu: false,
                     showInfoSummaryMenu: false,
                     showDrawingCheckMenu: false,
                     showDesignInfoMenu: false,
-                    showRecordProjectMenu: false, // 设计人员的“过程记录”菜单
-                    showRecordReviewMenu: false,  // 审查人员的“审查记录”菜单
+                    showRecordProjectMenu: false,
+                    showRecordReviewMenu: false,
                     showRecordPlanningProjectMenu: false,
                     // --- 数据 ---
                     projectList: []
@@ -1077,15 +1223,15 @@
 
             methods: {
                 setCurrentUser(userRole) {
-                if (userRole) {
-                    this.currentUser = {
-                        identity: String(userRole).toUpperCase()
-                    };
-                    console.log("【主应用】用户状态已设置:", this.currentUser);
-                } else {
-                    this.currentUser = null;
-                }
-            },
+                    if (userRole) {
+                        this.currentUser = {
+                            identity: String(userRole).toUpperCase()
+                        };
+                        console.log("【主应用】用户状态已设置:", this.currentUser);
+                    } else {
+                        this.currentUser = null;
+                    }
+                },
 
                 // --------------------------------------------------
                 // (A) 核心导航方法 - 所有面板切换的唯一入口
@@ -1099,6 +1245,12 @@
                     // 只有在明确提供了 recordId 时才更新，否则清空
                     this.currentRecordId = props.recordId || null;
                     this.activePanel = panelName;
+                },
+
+
+                goToCardView(recordId) {
+                    console.log(`【主应用】导航到卡片视图, Record ID: ${recordId}`);
+                    this.navigateTo('checklist-panel', { recordId: recordId });
                 },
 
                 goToDashboard() {
@@ -1143,32 +1295,27 @@
                     this.navigateTo('process-record-panel', { projectId: this.currentProjectId });
                 },
                 onViewRecordDetails(recordId) {
-                    console.log("【父组件】收到 view-record-details 事件, 记录ID:", recordId);
-                    this.navigateTo('record-workspace-panel', { recordId: recordId });
+                    this.goToCardView(recordId);
                 },
                 onReviewRecord(recordId) {
-                    // 【日志1】: 确认事件被成功接收
-                    console.log(`%c【父组件】接收到 'review-record' 事件, 准备处理。记录ID: ${recordId}`, 'color: green; font-weight: bold;');
-
-                    // 调用统一的导航方法
-                    this.navigateTo('record-review-panel', { recordId: recordId });
+                    console.log(`【主应用】接收到 'review-record' 事件, 记录ID: ${recordId}`, "-> 重定向到卡片视图");
+                    // 旧逻辑: this.navigateTo('record-review-panel', { recordId: recordId });
+                    // 新逻辑:
+                    this.goToCardView(recordId);
                 },
                 onBackToList() {
-                    console.log("【父组件】收到 back-to-list 事件, 返回列表页");
-                    // 假设总是返回到设计人员的过程记录列表
-                    this.navigateTo('process-record-list-panel', { projectId: this.currentProjectId });
+                    if (this.currentProjectId) {
+                        this.navigateTo('process-record-list-panel', { projectId: this.currentProjectId });
+                    } else {
+                        this.navigateTo('dashboard-panel');
+                    }
                 },
 
                 handleEditRecord(recordId) {
-                    console.log("【主应用】接收到 edit-record 事件，准备切换到编辑面板。Record ID:", recordId);
-
-                    // 1. 将接收到的 recordId 保存到 data 中，
-                    //    这样它会被作为 prop 传递给即将加载的 process-record-panel 组件。
-                    this.currentRecordId = recordId;
-
-                    // 2. 切换当前面板为 process-record-panel。
-                    //    这个组件会根据传入的 currentRecordId (非null) 来加载已有数据，进入编辑模式。
-                    this.activePanel = 'record-workspace-panel';
+                    console.log("【主应用】接收到 edit-record 事件, 记录ID:", recordId, "-> 重定向到卡片视图");
+                    // 旧逻辑: this.activePanel = 'record-workspace-panel';
+                    // 新逻辑:
+                    this.goToCardView(recordId);
                 },
                 // --------------------------------------------------
                 // (D) 数据获取方法 - 负责与后端API通信
@@ -1227,20 +1374,20 @@
                 handleBackToList() { this.onBackToList(); }
             },
             created() {
-            console.log("【主应用】Vue 实例已创建 (created hook)。");
-            console.log("  - 正在尝试从 sessionStorage 恢复登录状态...");
+                console.log("【主应用】Vue 实例已创建 (created hook)。");
+                console.log("  - 正在尝试从 sessionStorage 恢复登录状态...");
 
-            // 从 sessionStorage 中读取之前存储的角色
-            const userRole = sessionStorage.getItem('userRole');
+                // 从 sessionStorage 中读取之前存储的角色
+                const userRole = sessionStorage.getItem('userRole');
 
-            if (userRole) {
-                console.log(`  - 在 sessionStorage 中找到角色: '${userRole}'`);
-                // 调用方法来更新 currentUser
-                this.setCurrentUser(userRole);
-            } else {
-                console.log("  - sessionStorage 中未找到用户角色，用户状态为未登录。");
-            }
-        },
+                if (userRole) {
+                    console.log(`  - 在 sessionStorage 中找到角色: '${userRole}'`);
+                    // 调用方法来更新 currentUser
+                    this.setCurrentUser(userRole);
+                } else {
+                    console.log("  - sessionStorage 中未找到用户角色，用户状态为未登录。");
+                }
+            },
             mounted() {
                 console.log("【父组件】Vue 实例已挂载，开始获取初始数据...");
                 this.fetchProjectList();

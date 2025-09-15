@@ -22,7 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException; // 【重要】确保导入这个类
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
+import org.example.project.dto.ProcessRecordTemplateCreateDTO;
 import lombok.Data;
 
 import java.io.IOException;
@@ -289,4 +289,6 @@ public class ProcessRecordController {
         ProcessRecord newRecord = processRecordService.createRecordFromTemplate(projectId, createDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
     }
+
+    
 }
