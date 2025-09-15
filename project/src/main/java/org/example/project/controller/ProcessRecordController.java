@@ -1,6 +1,7 @@
 // 文件路径: src/main/java/org/example/project/controller/ProcessRecordController.java
 package org.example.project.controller;
 
+import org.example.project.dto.ProcessRecordTemplateCreateDTO;
 import org.example.project.dto.ReviewProblemCreateDTO;
 import org.example.project.dto.ReviewProblemVO;
 import org.example.project.entity.DesignWorkSession;
@@ -277,5 +278,15 @@ public class ProcessRecordController {
     public ResponseEntity<DesignWorkSession> startWorkSession(@PathVariable Long recordId) {
         DesignWorkSession session = sessionService.startSession(recordId);
         return ResponseEntity.ok(session);
+    }
+
+
+        @PostMapping("/projects/{projectId}/records/from-template")
+    public ResponseEntity<ProcessRecord> createRecordFromTemplate(
+            @PathVariable Long projectId,
+            @Valid @RequestBody ProcessRecordTemplateCreateDTO createDTO) {
+        
+        ProcessRecord newRecord = processRecordService.createRecordFromTemplate(projectId, createDTO);
+        return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
     }
 }

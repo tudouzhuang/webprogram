@@ -6,43 +6,36 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.example.project.dto.ProcessRecordCreateDTO;
-import org.example.project.entity.ProcessRecord;
-import org.example.project.entity.Project;
-import org.example.project.entity.ProjectFile;
-import org.example.project.entity.User;
-import org.example.project.mapper.ProcessRecordMapper;
-import org.example.project.mapper.ProjectFileMapper;
-import org.example.project.mapper.ProjectMapper;
-import org.example.project.mapper.UserMapper;
-import org.example.project.service.ExcelSplitterService;
-import org.example.project.service.ProcessRecordService;
-import org.example.project.service.ProjectService;
-import org.example.project.service.UserService;
+import org.example.project.dto.ProcessRecordTemplateCreateDTO;
+import org.example.project.entity.*; // 使用通配符导入所有entity
+import org.example.project.entity.enums.ChecklistItemStatus; // 导入枚举
+import org.example.project.mapper.*; // 使用通配符导入所有mapper
+import org.example.project.service.*; // 使用通配符导入所有service
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import java.util.Comparator;
-// --- Java IO, NIO, 和 Stream 依赖 ---
 
+// --- Java IO, NIO, 和 Stream 依赖 ---
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
-import org.example.project.entity.ProcessRecordStatus;
-import org.springframework.security.access.AccessDeniedException;
+
 
 /**
  * ProcessRecordService 的实现类。 负责处理所有与设计过程记录表相关的业务逻辑。
@@ -55,6 +48,15 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Autowired
     private UserService userService;
 
+    // =======================================================
+    // ↓↓↓ 【新增注入】 ↓↓↓
+    // =======================================================
+    @Autowired
+    private ChecklistItemService checklistItemService;
+    @Autowired
+    private ChecklistTemplateItemMapper templateItemMapper;
+    // =======================================================
+
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
 
     // --- 常量定义 ---
@@ -63,7 +65,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     private static final String SOURCE_FILE_PREFIX = "source_";
 
     // --- 依赖注入 ---
-    @Autowired
     private final ProcessRecordMapper processRecordMapper;
     private final ProjectFileMapper projectFileMapper;
     private final ExcelSplitterService excelSplitterService;
@@ -90,7 +91,74 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
+    // =======================================================
+    // ↓↓↓ 【新增方法】新模式的核心创建逻辑 ↓↓↓
+    // =======================================================
+    /**
+     * 【新增实现】根据模板创建一条新的设计过程记录。
+     * 这是新“卡片/列表模式”的核心入口。
+     *
+     * @param projectId 项目ID
+     * @param createDTO 包含模板ID和基本信息的DTO
+     * @return 创建成功的主记录
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class) // 保证事务性
+    public ProcessRecord createRecordFromTemplate(Long projectId, ProcessRecordTemplateCreateDTO createDTO) {
+        log.info("【SERVICE-TEMPLATE】开始基于模板创建新的过程记录，项目ID: {}, 模板ID: {}", projectId, createDTO.getTemplateId());
 
+        Long currentUserId = getCurrentUserId();
+        if (currentUserId == null) {
+            throw new IllegalStateException("无法获取当前用户信息，无法创建记录。");
+        }
+
+        // 1. --- 创建并保存主记录 (ProcessRecord) ---
+        ProcessRecord record = new ProcessRecord();
+        record.setProjectId(projectId);
+        record.setPartName(createDTO.getPartName());
+        record.setProcessName(createDTO.getProcessName());
+        record.setCreatedByUserId(currentUserId);
+        record.setAssigneeId(currentUserId); // 初始负责人是创建者自己
+        record.setStatus(ProcessRecordStatus.DRAFT); // 初始状态为草稿
+
+        this.save(record);
+        Long recordId = record.getId();
+        log.info("【SERVICE-TEMPLATE】主记录创建成功，新Record ID: {}", recordId);
+
+        // 2. --- 根据模板ID，批量生成检查项 (ChecklistItem) ---
+        Long templateId = createDTO.getTemplateId();
+
+        List<ChecklistTemplateItem> templateItems = templateItemMapper.selectList(
+                new QueryWrapper<ChecklistTemplateItem>().eq("template_id", templateId)
+        );
+
+        if (templateItems == null || templateItems.isEmpty()) {
+            log.warn("【SERVICE-TEMPLATE】警告：选择的模板ID {} 不包含任何检查项。", templateId);
+        } else {
+            log.info("【SERVICE-TEMPLATE】从模板 {} 中查询到 {} 个检查项，准备批量生成。", templateId, templateItems.size());
+
+            List<ChecklistItem> newItems = templateItems.stream().map(templateItem -> {
+                ChecklistItem newItem = new ChecklistItem();
+                newItem.setRecordId(recordId);
+                newItem.setItemDescription(templateItem.getItemDescription());
+                newItem.setStatus(ChecklistItemStatus.PENDING);
+                return newItem;
+            }).collect(Collectors.toList());
+
+            checklistItemService.saveBatch(newItems);
+            log.info("【SERVICE-TEMPLATE】已成功为 Record ID {} 批量插入 {} 个检查项。", recordId, newItems.size());
+        }
+
+        // 3. --- 返回创建成功的主记录对象 ---
+        return record;
+    }
+
+
+    // =======================================================
+    // ↓↓↓ 您原有的所有方法（保持不变） ↓↓↓
+    // =======================================================
+    
+    // ... (此处省略您原有的所有方法，如 getRecordsByProjectId, saveReviewSheet, resubmit 等等，它们都不需要动) ...
     /**
      * 新增的辅助方法：根据绝对路径计算相对于uploadDir的相对路径
      */
@@ -155,9 +223,9 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("【SERVICE】正在查询项目ID {} 的过程记录表列表...", projectId);
         // 使用 MyBatis-Plus 自带的标准查询方法
         return this.lambdaQuery()
-                   .eq(ProcessRecord::getProjectId, projectId)
-                   .orderByDesc(ProcessRecord::getUpdatedAt)
-                   .list();
+                .eq(ProcessRecord::getProjectId, projectId)
+                .orderByDesc(ProcessRecord::getUpdatedAt)
+                .list();
     }
 
     @Override
@@ -174,16 +242,16 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Override
     public ProjectFile findReviewSheetByRecordId(Long recordId) {
         log.info("【SERVICE】正在查询 recordId {} 对应的审核表...", recordId);
-    
+
         // 1. 创建查询条件
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("record_id", recordId)
-                    .eq("document_type", "REVIEW_SHEET")
-                    .orderByDesc("id");
-    
+                .eq("document_type", "REVIEW_SHEET")
+                .orderByDesc("id");
+
         // 2. 查询数据库。使用 getOne 可以简化代码，它会取第一条记录
         ProjectFile reviewSheet = this.projectFileMapper.selectOne(queryWrapper);
-    
+
         // 3. 判断结果
         if (reviewSheet != null) {
             // 3a. 如果找到了，正常返回
@@ -192,24 +260,24 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         } else {
             // 3b. 如果没找到，构造并返回一个指向模板的“伪” ProjectFile 对象
             log.warn("【SERVICE】未找到 recordId {} 对应的审核表。将返回模板文件信息。", recordId);
-            
+
             ProjectFile templateFile = new ProjectFile();
             templateFile.setId(-1L); // 使用一个特殊的ID，表示这是模板
             templateFile.setFileName("审核模板.xlsx");
-            
+
             // 【核心修正】
             // 提供前端可直接访问的模板 API 端点路径，不包含 .xlsx 后缀。
             // 这个路径需要与 FileController 中的 @GetMapping("/templates/{templateName}") 匹配。
             templateFile.setFilePath("/api/files/templates/review-sheet");
-            
+
             // 使用一个特殊的类型，方便前端识别并采取不同的加载策略
             templateFile.setDocumentType("TEMPLATE_SHEET");
-            
+
             return templateFile;
         }
     }
 
-// 在你的 ProcessRecordServiceImpl.java 文件中
+    // 在你的 ProcessRecordServiceImpl.java 文件中
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException {
@@ -408,7 +476,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("【SERVICE-REASSIGN】任务已成功转交给用户: {} (ID: {})", newAssignee.getUsername(), newAssigneeId);
     }
 
-// 在 ProcessRecordServiceImpl.java 中
+    // 在 ProcessRecordServiceImpl.java 中
     @Override
     @Transactional
     public void requestChanges(Long recordId, String comment) {
@@ -588,12 +656,12 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Transactional
     public void updateAssociatedFile(Long recordId, Long fileId, MultipartFile file) throws IOException {
         log.info("【SERVICE-UPDATE_FILE】开始更新文件, recordId: {}, fileId: {}", recordId, fileId);
-    
+
         // 1. 验证文件是否为空
         if (file.isEmpty()) {
             throw new IllegalArgumentException("上传的文件不能为空。");
         }
-    
+
         // 2. 查找并验证文件记录 (ProjectFile)
         //    确保它存在，并且确实属于传入的 recordId
         ProjectFile fileRecord = projectFileMapper.selectById(fileId);
@@ -605,7 +673,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new AccessDeniedException("权限错误：文件 " + fileId + " 不属于过程记录 " + recordId);
         }
         log.info("【SERVICE-UPDATE_FILE】文件记录校验通过。");
-    
+
         // 3. 删除旧的物理文件
         //    fileRecord.getFilePath() 中存储的是相对路径，如 "70/19/xxx.xlsx"
         Path oldPath = Paths.get(uploadDir, fileRecord.getFilePath());
@@ -615,20 +683,20 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         } catch (IOException e) {
             log.error("【SERVICE-UPDATE_FILE】删除旧物理文件失败，但将继续执行覆盖操作。", e);
         }
-    
+
         // 4. 保存新的物理文件 (保持原有的目录结构)
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         // 为了避免重名，仍然建议使用时间戳或UUID
         String newStoredFileName = System.currentTimeMillis() + "_" + originalFilename;
-        
+
         // 构建新的相对路径和绝对路径
         Path newRelativePath = Paths.get(String.valueOf(fileRecord.getProjectId()), String.valueOf(recordId), newStoredFileName);
         Path newAbsolutePath = Paths.get(uploadDir).resolve(newRelativePath);
-    
+
         Files.createDirectories(newAbsolutePath.getParent());
         Files.copy(file.getInputStream(), newAbsolutePath, StandardCopyOption.REPLACE_EXISTING);
         log.info("【SERVICE-UPDATE_FILE】新物理文件已保存: {}", newAbsolutePath);
-        
+
         // 5. 更新数据库中的文件记录 (ProjectFile)
         fileRecord.setFileName(originalFilename); // 存储原始文件名
         fileRecord.setFilePath(newRelativePath.toString().replace("\\", "/")); // 更新为新的相对路径
@@ -675,4 +743,5 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
         System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
     }
+
 }

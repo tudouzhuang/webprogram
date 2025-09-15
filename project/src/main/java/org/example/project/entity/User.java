@@ -62,6 +62,11 @@ public class User implements UserDetails {
         return Collections.singletonList(new SimpleGrantedAuthority(role));
     }
 
+    @Override
+    public String getUsername() {
+        return this.username;
+    }
+    
     /**
      * 账户是否未过期。
      * 业务上没有此要求，直接返回 true。
