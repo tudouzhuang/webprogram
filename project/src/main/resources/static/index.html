@@ -31,146 +31,55 @@
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .checklist-panel.content-wrapper {
-            padding: 1.5rem;
-            /* 使用模板的内边距 */
+        .checklist-panel .panel-header.el-card {
+            margin-bottom: 1.5rem;
+            border: none;
         }
-
-        .checklist-panel .panel-header {
+        .checklist-panel .panel-header .el-card__body {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 1.5rem;
             padding: 1rem 1.5rem;
-            background-color: #fff;
-            border: none;
-            border-radius: 0.5rem;
         }
-
-        .checklist-panel .panel-header .header-left,
-        .checklist-panel .panel-header .header-right {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
         .checklist-panel .card-list {
             display: grid;
             gap: 1.5rem;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            grid-template-columns: 1fr; /* 每张卡片占据一行 */
         }
 
-        .check-item-card {
-            border-radius: 0.5rem !important;
-            border-left: 5px solid #dcdfe6;
-            transition: all 0.2s ease-in-out;
-        }
+        /* check-item-card 的样式保持不变，因为它本身就是独立的卡片 */
+        .check-item-card { border-radius: 0.5rem !important; border-left: 5px solid #dcdfe6; transition: all 0.2s ease-in-out; }
+        .check-item-card:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.08) !important; }
+        .check-item-card .el-card__header { background-color: #f9fafc; border-bottom: 1px solid #e4e7ed; padding: 15px 20px; }
+        .check-item-card .card-header .item-description { font-weight: 600; line-height: 1.5; color: #303133; }
+        .check-item-card .el-card__body { padding: 20px; }
+        .check-item-card .action-group { margin-bottom: 1.5rem; }
+        .check-item-card .action-label { display: flex; align-items: center; margin-bottom: 0.75rem; font-size: 14px; font-weight: 600; }
+        .check-item-card .action-label .el-tag { margin-left: 10px; }
+        .check-item-card .action-label i { margin-right: 5px; }
+        .check-item-card .designer-label { color: #409EFF; }
+        .check-item-card .reviewer-label { color: #67C23A; }
+        .check-item-card .remarks-input { margin-top: 10px; }
+        .check-item-card .readonly-info { padding: 10px 15px; background-color: #f7f8fa; border-radius: 4px; font-size: 13px; }
+        .check-item-card .readonly-info p { margin: 0 0 8px 0; }
+        .check-item-card .readonly-info p:last-child { margin-bottom: 0; }
+        .check-item-card .readonly-info .info-text { color: #555; white-space: pre-wrap; }
+        .check-item-card .el-divider__text { background-color: #f7f8fa; }
+        .check-item-card .screenshot-list { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .check-item-card .screenshot-item { position: relative; }
+        .check-item-card .screenshot-item .screenshot-thumbnail { width: 80px; height: 80px; border-radius: 6px; border: 1px solid #dcdfe6; }
+        .check-item-card .screenshot-item .screenshot-actions { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); border-radius: 6px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+        .check-item-card .screenshot-item:hover .screenshot-actions { opacity: 1; }
+        .check-item-card .no-screenshot { font-size: 13px; color: #909399; margin-top: 10px; padding: 20px; text-align: center; background-color: #f9f9f9; border-radius: 4px; }
+        .check-item-card.status-ok { border-left-color: #67C23A; }
+        .check-item-card.status-ng { border-left-color: #F56C6C; }
+        .check-item-card.status-pending { border-left-color: #E6A23C; }
+        .check-item-card.status-na { border-left-color: #909399; }
+        .check-item-card .card-footer { font-size: 12px; color: #909399; margin-top: 1rem; border-top: 1px solid #f0f2f5; padding: 0.8rem 20px 0; display: flex; justify-content: space-between; align-items: center; }
 
-        .check-item-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1) !important;
-        }
-
-        .check-item-card .el-card__header {
-            background-color: #f9fafc;
-            border-bottom: 1px solid #e4e7ed;
-        }
-
-        .check-item-card .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            min-height: 24px;
-        }
-
-        .check-item-card .item-description {
-            font-weight: 600;
-            line-height: 1.5;
-            padding-right: 10px;
-            color: #303133;
-        }
-
-        .check-item-card .action-group {
-            margin-bottom: 1.2rem;
-        }
-
-        .check-item-card .action-group:last-child {
-            margin-bottom: 0;
-        }
-
-        .check-item-card .action-group .action-label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-size: 13px;
-            color: #606266;
-            font-weight: 500;
-        }
-
-        .check-item-card .screenshot-uploader .screenshot-thumbnail {
-            width: 120px;
-            height: 120px;
-            border: 1px dashed #d9d9d9;
-            border-radius: 6px;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-            background-color: #fafafa;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            color: #8c939d;
-            transition: border-color 0.2s;
-        }
-
-        .check-item-card .screenshot-uploader .screenshot-thumbnail:hover {
-            border-color: #409EFF;
-        }
-
-        .check-item-card .screenshot-uploader .uploader-icon i {
-            font-size: 28px;
-        }
-
-        .check-item-card .screenshot-uploader .uploader-icon span {
-            font-size: 12px;
-            margin-top: 4px;
-        }
-
-        .check-item-card .screenshot-uploader .screenshot-thumbnail.uploaded {
-            border-style: solid;
-        }
-
-        .check-item-card.status-ok {
-            border-left-color: #67C23A;
-        }
-
-        .check-item-card.status-ng {
-            border-left-color: #F56C6C;
-        }
-
-        .check-item-card.status-pending {
-            border-left-color: #E6A23C;
-        }
-
-        .check-item-card.status-na {
-            border-left-color: #909399;
-        }
-
-        .check-item-card .card-footer {
-            text-align: right;
-            font-size: 12px;
-            color: #909399;
-            margin-top: 1rem;
-            border-top: 1px solid #f0f2f5;
-            padding-top: 0.8rem;
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-        }
-
-        .empty-state {
+        /* 优化后的空状态和加载状态 */
+        .empty-state, .loading-state {
             grid-column: 1 / -1;
-            /* 占据整行 */
             text-align: center;
             color: #909399;
             padding: 60px 20px;
@@ -179,10 +88,10 @@
             border-radius: 8px;
             margin-top: 20px;
         }
-
-        .mdi-rotate-180 {
-            transform: rotate(180deg);
-        }
+        .empty-state-icon { font-size: 4rem; color: #dcdfe6; margin-bottom: 1rem; }
+                .mdi-rotate-180 {
+                    transform: rotate(180deg);
+                }
 
         /* --- 原有布局样式 (保留不变) --- */
         #process-record-menu .sub-menu .sub-menu {
@@ -489,6 +398,12 @@
                         </li>
                     </ul>
                     <ul class="navbar-nav ms-auto">
+                        <li class="nav-item d-none d-lg-block">
+                            <el-tag type="info" size="medium" style="margin-right: 15px; margin-top:5px; cursor:pointer;" @click="toggleUserRole">
+                                <i class="el-icon-sort"></i>
+                                切换角色 (当前: {{ currentUser ? currentUser.identity : '未登录' }})
+                            </el-tag>
+                        </li>
                         <li class="nav-item dropdown d-none d-lg-block">
                             <a class="nav-link dropdown-bordered dropdown-toggle dropdown-toggle-split"
                                 id="messageDropdown" href="#" data-bs-toggle="dropdown" aria-expanded="false"> 选择类别 </a>
@@ -1222,16 +1137,49 @@
             },
 
             methods: {
-                setCurrentUser(userRole) {
-                    if (userRole) {
-                        this.currentUser = {
-                            identity: String(userRole).toUpperCase()
-                        };
-                        console.log("【主应用】用户状态已设置:", this.currentUser);
-                    } else {
-                        this.currentUser = null;
+
+
+                toggleUserRole() {
+                    if (!this.currentUser) {
+                        this.$message.warning('请先模拟登录 (刷新页面或手动设置角色)');
+                        // 首次使用时，可以先默认设置为设计员
+                        this.setCurrentUser('DESIGNER'); 
+                        return;
                     }
+
+                    // 定义两个可切换的角色
+                    const roles = ['DESIGNER', 'REVIEWER'];
+                    
+                    // 找到当前角色在数组中的索引
+                    const currentIndex = roles.indexOf(this.currentUser.identity);
+                    
+                    // 计算下一个角色的索引 (循环切换)
+                    const nextIndex = (currentIndex + 1) % roles.length;
+                    
+                    // 获取下一个角色名称
+                    const nextRole = roles[nextIndex];
+
+                    // 调用已有的 setCurrentUser 方法来更新角色
+                    this.setCurrentUser(nextRole);
+
+                    this.$message.success(`角色已切换为: ${nextRole}`);
                 },
+
+
+                setCurrentUser(userRole) {
+                if (userRole) {
+                    // 如果 currentUser 不存在，先创建一个
+                    if (!this.currentUser) {
+                        this.currentUser = {};
+                    }
+                    // 使用 this.$set 确保响应性
+                    this.$set(this.currentUser, 'identity', String(userRole).toUpperCase());
+                    
+                    console.log("【主应用】用户角色已更新:", this.currentUser);
+                } else {
+                    this.currentUser = null;
+                }
+            },
 
                 // --------------------------------------------------
                 // (A) 核心导航方法 - 所有面板切换的唯一入口
@@ -1386,6 +1334,7 @@
                     this.setCurrentUser(userRole);
                 } else {
                     console.log("  - sessionStorage 中未找到用户角色，用户状态为未登录。");
+                    this.setCurrentUser('DESIGNER'); // 默认角色
                 }
             },
             mounted() {
