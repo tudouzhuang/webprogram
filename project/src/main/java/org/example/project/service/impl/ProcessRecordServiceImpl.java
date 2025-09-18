@@ -54,6 +54,11 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     private ChecklistItemService checklistItemService;
     @Autowired
     private ChecklistTemplateItemMapper templateItemMapper;
+
+    @Autowired
+    private ChecklistTemplateService checklistTemplateService;
+    @Autowired
+    private ChecklistTemplateItemMapper checklistTemplateItemMapper;
     // =======================================================
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
@@ -90,58 +95,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
-// 在 ProcessRecordServiceImpl.java 文件的内部
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public ProcessRecord createRecordFromTemplate(Long projectId, ProcessRecordTemplateCreateDTO createDTO) {
-        log.info("【SERVICE-TEMPLATE】开始基于模板创建新的过程记录，项目ID: {}, 模板ID: {}", projectId, createDTO.getTemplateId());
-
-        User currentUser = getCurrentUser(); // 假设您有一个返回User实体的方法
-        if (currentUser == null) {
-            throw new IllegalStateException("无法获取当前用户信息，无法创建记录。");
-        }
-
-        // 1. --- 创建并保存主记录 (ProcessRecord) ---
-        ProcessRecord record = new ProcessRecord();
-        record.setProjectId(projectId);
-        record.setPartName(createDTO.getPartName());
-        record.setProcessName(createDTO.getProcessName());
-        record.setCreatedByUserId(currentUser.getId());
-        record.setAssigneeId(currentUser.getId());
-        record.setStatus(ProcessRecordStatus.DRAFT);
-        this.save(record);
-        Long recordId = record.getId();
-        log.info("【SERVICE-TEMPLATE】主记录创建成功，新Record ID: {}", recordId);
-
-        // 2. --- 根据模板ID，批量生成检查项 (ChecklistItem) ---
-        Long templateId = createDTO.getTemplateId();
-        List<ChecklistTemplateItem> templateItems = templateItemMapper.selectList(
-                new QueryWrapper<ChecklistTemplateItem>().eq("template_id", templateId)
-        );
-
-        if (templateItems != null && !templateItems.isEmpty()) {
-            log.info("【SERVICE-TEMPLATE】从模板 {} 中查询到 {} 个检查项，准备批量生成。", templateId, templateItems.size());
-
-            List<ChecklistItem> newItems = templateItems.stream().map(templateItem -> {
-                ChecklistItem newItem = new ChecklistItem();
-                newItem.setRecordId(recordId);
-                newItem.setItemDescription(templateItem.getItemDescription());
-
-                // 【【【核心修改】】】
-                // 初始化新的、分离后的字段
-                newItem.setDesignerStatus(ChecklistItemStatus.PENDING); // 初始状态为“待处理”
-                newItem.setReviewerStatus(null); // 审核员状态初始为 null
-
-                // 其他备注和操作人信息在后续操作中填充，创建时保持为null
-                return newItem;
-            }).collect(Collectors.toList());
-
-            checklistItemService.saveBatch(newItems);
-            log.info("【SERVICE-TEMPLATE】已成功为 Record ID {} 批量插入 {} 个检查项。", recordId, newItems.size());
-        }
-
-        return record;
-    }
 
     // =======================================================
     // ↓↓↓ 您原有的所有方法（保持不变） ↓↓↓
@@ -730,25 +683,97 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
     }
 
-
-    /**
-     * 【【【新增辅助方法】】】
-     * 从Spring Security上下文中获取当前登录的用户实体。
-     * @return 当前登录的User对象，如果未登录或找不到则返回null。
-     */
     private User getCurrentUser() {
         try {
             Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
             if (principal instanceof UserDetails) {
                 String username = ((UserDetails) principal).getUsername();
-                // 确保 userMapper 已经被注入
                 return userMapper.selectByUsername(username);
             } else if (principal instanceof String) {
                 return userMapper.selectByUsername((String) principal);
             }
         } catch (Exception e) {
-            log.error("获取当前登录用户时发生异常", e); // 使用log.error
+            log.error("获取当前登录用户时发生异常", e);
         }
         return null;
     }
+
+
+
+@Override
+@Transactional
+public ProcessRecord createProcessRecord(ProcessRecordCreateDTO dto) {
+    log.info("开始创建新的设计过程记录...");
+    User currentUser = getCurrentUser();
+    if (currentUser == null) {
+        throw new IllegalStateException("无法获取当前用户信息，无法创建记录。");
+    }
+
+    // 1. 创建并填充 ProcessRecord 主记录对象
+    ProcessRecord record = new ProcessRecord();
+    BeanUtils.copyProperties(dto, record); // 自动复制匹配的属性
+    
+    record.setCreatedByUserId(currentUser.getId());
+    record.setAssigneeId(currentUser.getId());
+    record.setStatus(ProcessRecordStatus.DRAFT);
+    
+    // 处理特殊的 DTO 字段
+    if (dto.getQuoteSize() != null) {
+        record.setQuoteLength(dto.getQuoteSize().getLength());
+        record.setQuoteWidth(dto.getQuoteSize().getWidth());
+        record.setQuoteHeight(dto.getQuoteSize().getHeight());
+    }
+    if (dto.getActualSize() != null) {
+        record.setActualLength(dto.getActualSize().getLength());
+        record.setActualWidth(dto.getActualSize().getWidth());
+        record.setActualHeight(dto.getActualSize().getHeight());
+    }
+    
+    // 保存主记录到数据库，以便获取其生成的ID
+    this.save(record);
+    log.info("主记录创建成功, 新 Record ID: {}", record.getId());
+    
+    // -----------------------------------------------------
+    // 2. 【核心逻辑】自动生成默认检查项
+    // -----------------------------------------------------
+    final Long DEFAULT_TEMPLATE_ID = 1L; // 约定 ID=1 为默认模板
+
+    // 直接使用ID查询，这是最可靠的方式
+    ChecklistTemplate defaultTemplate = checklistTemplateService.getById(DEFAULT_TEMPLATE_ID);
+
+    // 增加一个判断，确保默认模板存在且是激活状态
+    if (defaultTemplate != null && Boolean.TRUE.equals(defaultTemplate.getIsActive())) {
+        
+        log.info("发现已激活的默认模板 '{}'，准备生成检查项...", defaultTemplate.getTemplateName());
+        
+        List<ChecklistTemplateItem> templateItems = checklistTemplateItemMapper.selectList(
+            new QueryWrapper<ChecklistTemplateItem>().eq("template_id", DEFAULT_TEMPLATE_ID)
+        );
+
+        if (templateItems != null && !templateItems.isEmpty()) {
+            log.info("从默认模板中加载了 {} 条检查项。", templateItems.size());
+            
+            // 将模板条目转换为新的 ChecklistItem 实例
+            List<ChecklistItem> newItems = templateItems.stream().map(templateItem -> {
+                ChecklistItem newItem = new ChecklistItem();
+                newItem.setRecordId(record.getId());
+                newItem.setItemDescription(templateItem.getItemDescription());
+                newItem.setDesignerStatus(ChecklistItemStatus.PENDING); // 初始状态为待处理
+                return newItem;
+            }).collect(Collectors.toList());
+            
+            // 批量保存到数据库
+            checklistItemService.saveBatch(newItems);
+            log.info("已为 Record ID {} 成功批量创建了 {} 条默认检查项。", record.getId(), newItems.size());
+        } else {
+            log.warn("默认模板 (ID={}) 中不包含任何检查项条目。", DEFAULT_TEMPLATE_ID);
+        }
+    } else {
+        log.warn("ID为 {} 的默认模板不存在或未激活，本次未生成任何默认检查项。", DEFAULT_TEMPLATE_ID);
+    }
+    // -----------------------------------------------------
+    
+    // 3. 返回创建好的、包含了ID的主记录对象
+    return record;
+}
 }

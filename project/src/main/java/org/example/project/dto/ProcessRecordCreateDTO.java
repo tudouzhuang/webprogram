@@ -13,7 +13,7 @@ import lombok.Data;
  */
 @Data
 public class ProcessRecordCreateDTO {
-
+    private Long projectId; 
     // 核心信息
     private String partName;
     private String processName;

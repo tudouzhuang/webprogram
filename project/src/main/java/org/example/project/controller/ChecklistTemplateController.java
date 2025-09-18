@@ -14,30 +14,36 @@ public class ChecklistTemplateController {
     @Autowired
     private ChecklistTemplateService templateService;
 
-    // GET /api/templates - 获取所有模板列表
+    // 获取所有模板列表 (这个接口保持不变，用于前端下拉框)
     @GetMapping
     public ResponseEntity<List<ChecklistTemplate>> getAllTemplates() {
         return ResponseEntity.ok(templateService.list());
     }
 
-    // GET /api/templates/{id} - 获取单个模板详情
+    /**
+     * 【【【核心修改】】】
+     * 获取单个模板的详情。现在它调用的不再是简单的 getById，
+     * 而是我们新创建的 getTemplateWithDetails 方法，
+     * 因此返回的JSON中会包含一个 "items" 数组。
+     */
     @GetMapping("/{id}")
     public ResponseEntity<ChecklistTemplate> getTemplateById(@PathVariable Long id) {
-        ChecklistTemplate template = templateService.getById(id);
+        ChecklistTemplate template = templateService.getTemplateWithDetails(id); 
+        
         if (template == null) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(template);
     }
 
-    // POST /api/templates - 创建一个新模板
+    // 创建新模板 (保持不变)
     @PostMapping
     public ResponseEntity<ChecklistTemplate> createTemplate(@RequestBody ChecklistTemplate template) {
         templateService.save(template);
         return ResponseEntity.ok(template);
     }
 
-    // PUT /api/templates/{id} - 更新一个模板
+    // 更新模板 (保持不变)
     @PutMapping("/{id}")
     public ResponseEntity<ChecklistTemplate> updateTemplate(@PathVariable Long id, @RequestBody ChecklistTemplate template) {
         template.setId(id);
@@ -45,7 +51,7 @@ public class ChecklistTemplateController {
         return ResponseEntity.ok(template);
     }
 
-    // DELETE /api/templates/{id} - 删除一个模板
+    // 删除模板 (保持不变)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteTemplate(@PathVariable Long id) {
         templateService.removeById(id);

@@ -1022,7 +1022,7 @@
             </nav>
             <div class="main-panel">
                 <!-- 【新增】当 activePanel 是 'checklist-panel' 时，显示我们的新组件 -->
-                <checklist-panel v-if="activePanel === 'checklist-panel'" :record-id="currentRecordId"
+                <checklist-panel v-if="activePanel === 'record-item-config-panel'" :record-id="currentRecordId"
                     :current-user="currentUser" @back-to-list="onBackToList"> <!-- 监听返回事件 -->
                 </checklist-panel>
 
@@ -1068,7 +1068,7 @@
     <script src="/js/components/record-workspace-panel.js" type="module"></script>
     <script src="/js/components/review-tasks-panel.js"></script>
     <script src="/js/components/check-item-card.js"></script>
-    <script src="/js/components/checklist-panel.js"></script>
+    <script src="/js/components/record-item-config-panel.js"></script>
 
 
     <!-- 4.2 顶部导航栏动态组件 -->
@@ -1198,7 +1198,7 @@
 
                 goToCardView(recordId) {
                     console.log(`【主应用】导航到卡片视图, Record ID: ${recordId}`);
-                    this.navigateTo('checklist-panel', { recordId: recordId });
+                    this.navigateTo('record-item-config-panel', { recordId: recordId });
                 },
 
                 goToDashboard() {

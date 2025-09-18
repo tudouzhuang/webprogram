@@ -1,6 +1,7 @@
 // 文件路径: src/main/java/org/example/project/controller/ProcessRecordController.java
 package org.example.project.controller;
 
+import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.dto.ProcessRecordTemplateCreateDTO;
 import org.example.project.dto.ReviewProblemCreateDTO;
 import org.example.project.dto.ReviewProblemVO;
@@ -281,14 +282,21 @@ public class ProcessRecordController {
     }
 
 
-        @PostMapping("/projects/{projectId}/records/from-template")
-    public ResponseEntity<ProcessRecord> createRecordFromTemplate(
-            @PathVariable Long projectId,
-            @Valid @RequestBody ProcessRecordTemplateCreateDTO createDTO) {
-        
-        ProcessRecord newRecord = processRecordService.createRecordFromTemplate(projectId, createDTO);
-        return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
-    }
-
+/**
+ * 【【【处理您那个大型创建表单的核心API - 修正版】】】
+ */
+@PostMapping("/projects/{projectId}/process-records") 
+public ResponseEntity<ProcessRecord> createProcessRecord(
+        @PathVariable Long projectId,
+        // 【【【核心修正：确保这里的参数类型是 ProcessRecordCreateDTO】】】
+        @Valid @RequestBody ProcessRecordCreateDTO createDTO) { 
     
+    // 确保DTO中有关联的项目ID
+    createDTO.setProjectId(projectId);
+    
+    // 现在类型完全匹配，可以安全调用
+    ProcessRecord newRecord = processRecordService.createProcessRecord(createDTO);
+    
+    return ResponseEntity.status(HttpStatus.CREATED).body(newRecord);
+}
 }

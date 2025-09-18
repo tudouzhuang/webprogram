@@ -1,5 +1,6 @@
 package org.example.project.service;
 
+import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.dto.ProcessRecordTemplateCreateDTO;
 import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.ProjectFile;
@@ -60,5 +61,5 @@ public interface ProcessRecordService {
      * @throws IllegalArgumentException 如果记录不存在
      */
     void startReviewProcess(Long recordId);
-        ProcessRecord createRecordFromTemplate(Long projectId, ProcessRecordTemplateCreateDTO createDTO);
+    ProcessRecord createProcessRecord(ProcessRecordCreateDTO dto);
 }

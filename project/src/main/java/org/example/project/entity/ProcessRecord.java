@@ -1,44 +1,51 @@
 package org.example.project.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-
-import lombok.Data;
+import lombok.Data; // 【【【关键点1：必须导入Data】】】
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import org.example.project.entity.ProcessRecordStatus;
-@Data // Lombok annotation to automatically generate getters, setters, toString, equals, and hashCode methods.
-@TableName("process_records") // MyBatis-Plus annotation to map the class to the "process_records" table in the database.
+
+@Data // 【【【关键点2：必须有@Data注解！！！】】】
+@TableName("process_records")
 public class ProcessRecord {
 
-    @TableId(type = IdType.AUTO) // This annotation is used to indicate that the "id" field is the primary key and auto-incremented.
-    private Long id;  // The primary key of the table.
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
-    private Long projectId;  // ID of the project this process record belongs to.
-
-    private String partName;  // The name of the part associated with this process.
-
-    private String processName;  // The name of the process.
-
-    private Long createdByUserId;  // The ID of the user who created this record.
-
-    private LocalDateTime createdAt;  // The timestamp when the record was created.
-
-    // This is used to store JSON data in the database, which will be handled by MyBatis-Plus's JsonTypeHandler.
-    private String specificationsJson; 
-    private String sourceFilePath; // 对应数据库的 source_file_path 列
-    private ProcessRecordStatus status;
-
-    private Long assigneeId;  // ID of the user assigned to this process.
-    @TableField("rejection_comment") // 确保与数据库列名匹配
-    private String rejectionComment;
-
-    @TableField("total_design_duration_seconds")
-    private Integer totalDesignDurationSeconds;
-
-    @TableField("updated_at") // 推荐加上注解以明确映射
+    private Long projectId;
+    private String partName;
+    private String processName;
+    private Long createdByUserId;
+    private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    
+    // 【【【关键点3：确保所有这些字段都存在，且类型为 BigDecimal】】】
+    private String material;
+    private BigDecimal thickness;
+    private BigDecimal tensileStrength;
+    private String customerName;
+    private String moldDrawingNumber;
+    private String equipment;
+    
+    private BigDecimal quoteLength;
+    private BigDecimal quoteWidth;
+    private BigDecimal quoteHeight;
+    private BigDecimal quoteWeight;
+    
+    private BigDecimal actualLength;
+    private BigDecimal actualWidth;
+    private BigDecimal actualHeight;
+    private BigDecimal actualWeight;
+    
+    // 流程控制字段
+    private ProcessRecordStatus status;
+    private Long assigneeId;
+    private String rejectionComment;
+    private Integer totalDesignDurationSeconds;
+    
+    // 旧的JSON字段，可以保留以兼容历史数据
+    private String specificationsJson; 
+    private String sourceFilePath;
 }
-
-
