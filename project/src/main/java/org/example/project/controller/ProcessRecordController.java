@@ -100,6 +100,27 @@ public class ProcessRecordController {
         }
     }
 
+    @PostMapping("/{recordId}/files/{fileId}")
+    public ResponseEntity<Void> updateAssociatedFile(
+            @PathVariable Long recordId,
+            @PathVariable Long fileId,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            processRecordService.updateAssociatedFile(recordId, fileId, file);
+            return ResponseEntity.ok().build();
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+
     /**
      * API: 查询指定过程记录的审核表文件信息。 路径: GET
      * /api/process-records/{recordId}/review-sheet-info
@@ -277,5 +298,11 @@ public class ProcessRecordController {
     public ResponseEntity<DesignWorkSession> startWorkSession(@PathVariable Long recordId) {
         DesignWorkSession session = sessionService.startSession(recordId);
         return ResponseEntity.ok(session);
+    }
+
+    @PostMapping("/{recordId}/approve")
+    public ResponseEntity<Void> approveRecord(@PathVariable Long recordId) {
+        processRecordService.approveRecord(recordId); // 假设Service中有此方法
+        return ResponseEntity.ok().build();
     }
 }

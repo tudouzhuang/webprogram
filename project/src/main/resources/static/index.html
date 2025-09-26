@@ -1157,6 +1157,11 @@
                     console.log("【父组件】收到 back-to-list 事件, 返回列表页");
                     // 假设总是返回到设计人员的过程记录列表
                     this.navigateTo('process-record-list-panel', { projectId: this.currentProjectId });
+                    if (this.currentProjectId) {
+                        this.navigateTo('process-record-list-panel', { projectId: this.currentProjectId });
+                    } else {
+                        this.navigateTo('dashboard-panel');
+                    }
                 },
 
                 handleEditRecord(recordId) {
@@ -1247,6 +1252,7 @@
             }
         });
     </script>
+<span id="focus-catcher" tabindex="-1" style="position:absolute; top:-9999px; left:-9999px;"></span>
 </body>
 
 </html>

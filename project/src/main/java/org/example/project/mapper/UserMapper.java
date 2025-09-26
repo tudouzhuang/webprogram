@@ -1,13 +1,14 @@
 // 文件路径: src/main/java/org/example/project/mapper/UserMapper.java
 package org.example.project.mapper;
 
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import java.util.List;
+
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.example.project.entity.User;
 
-import java.util.List;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 @Mapper
 public interface UserMapper extends BaseMapper<User> {
@@ -34,4 +35,7 @@ public interface UserMapper extends BaseMapper<User> {
         "</script>"
     })
     List<User> findUsersByRoles(@Param("roles") List<String> roles);
+
+    @Select("SELECT * FROM users WHERE username = #{username}")
+    User selectByUsername(@Param("username") String username);
 }

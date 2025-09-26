@@ -14,10 +14,7 @@ import org.example.project.mapper.ProcessRecordMapper;
 import org.example.project.mapper.ProjectFileMapper;
 import org.example.project.mapper.ProjectMapper;
 import org.example.project.mapper.UserMapper;
-import org.example.project.service.ExcelSplitterService;
-import org.example.project.service.ProcessRecordService;
-import org.example.project.service.ProjectService;
-import org.example.project.service.UserService;
+import org.example.project.service.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
@@ -145,6 +142,22 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             log.warn("【Security】获取当前登录用户ID时发生异常", e);
         }
         log.warn("【Security】无法获取当前登录用户ID，将返回 null。");
+        return null;
+    }
+    
+    private User getCurrentUser() {
+        try {
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (principal instanceof UserDetails) {
+                String username = ((UserDetails) principal).getUsername();
+                // 确保 userMapper 已经被注入
+                return userMapper.selectByUsername(username);
+            } else if (principal instanceof String) {
+                return userMapper.selectByUsername((String) principal);
+            }
+        } catch (Exception e) {
+            log.error("获取当前登录用户时发生异常", e);
+        }
         return null;
     }
 
@@ -459,6 +472,28 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.updateById(record);
 
         System.out.println("记录 " + recordId + " 已被打回，原因: " + comment);
+    }
+
+    @Override
+    @Transactional
+    public void approveRecord(Long recordId) {
+        User currentUser = getCurrentUser(); // 确保有这个辅助方法
+        ProcessRecord record = this.getById(recordId);
+        if (record == null) throw new NoSuchElementException("记录不存在");
+
+        // 权限校验：只有当前负责人才能批准
+        if (!record.getAssigneeId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("权限不足，您不是当前任务的负责人。");
+        }
+        // 状态校验：只有“审核中”的状态才能批准
+        if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
+            throw new IllegalStateException("操作失败：当前状态无法批准。");
+        }
+
+        record.setStatus(ProcessRecordStatus.APPROVED);
+        record.setAssigneeId(null); // 任务完成，负责人清空
+        this.updateById(record);
+        log.info("记录 {} 已被用户 {} 批准。", recordId, currentUser.getUsername());
     }
 
     @Override

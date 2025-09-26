@@ -15,110 +15,94 @@ Vue.component('record-review-panel', {
     template: `
             <div class="content-wrapper" style="height:100%;width:100%">
                 
-                <!-- 1. 过程记录表主信息 -->
-                <div class="card mb-4">
-                     <div class="card-body">
-                        <div v-if="isLoading" class="text-center p-3">
-                            <p>正在加载过程记录表信息...</p>
-                            <el-progress :percentage="100" status="success" :indeterminate="true" :duration="1"></el-progress>
-                        </div>
-                        <div v-else-if="loadError" class="alert alert-danger">{{ loadError }}</div>
-                        <div v-else-if="recordInfo">
-                            <el-descriptions title="过程记录表详情" :column="2" border>
-                                <el-descriptions-item label="零件名称">{{ recordInfo.partName }}</el-descriptions-item>
-                                <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
-                                <el-descriptions-item label="所属项目ID">{{ recordInfo.projectId }}</el-descriptions-item>
-                                <el-descriptions-item label="记录创建时间">{{ recordInfo.createdAt }}</el-descriptions-item>
-                                <el-descriptions-item label="累计设计时长" :span="2">
-                                    {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
-                                </el-descriptions-item>
-                            </el-descriptions>
-                        </div>
-                     </div>
-                </div>
 
-                <!-- 2. 左右分栏布局 -->
-                <el-row :gutter="20">
-                    <!-- 2a. 左侧：只读预览 Iframe -->
-                        <el-col :span="16">
+                <!-- 2. 【核心修改】布局变为单栏，并添加新的操作按钮 -->
+                <el-row>
+                    <el-col :span="24">
                         <div class="card">
                             <div class="card-body">
-                                <!-- 【修改】将所有头部元素都包裹在一个 flex 容器中 -->
                                 <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <!-- 左侧部分：标题和描述 -->
                                     <div>
-                                        <h4 class="card-title mb-0 d-inline-block mr-2">文件预览 (只读)</h4>
-                                        <p class="card-description d-inline-block mb-0">点击下方标签页，切换查看不同的检查项文件。</p>
+                                        <h4 class="card-title mb-0">设计记录表审核工作区</h4>
+                                        <p class="card-description mb-0">可直接在下方表格中进行批注和修改。</p>
                                     </div>
-                                    
-                                    <!-- 右侧部分：导出按钮 -->
-                                    <el-button 
-                                        v-if="excelFilesToPreview.length > 0"
-                                        type="success" 
-                                        size="mini" 
-                                        icon="el-icon-download"
-                                        @click="exportPreviewSheet">
-                                        导出当前预览文件
-                                    </el-button>
+                                    <div>
+                                        <el-button-group>
+                                            <el-button type="primary" @click="saveChanges" :loading="isSaving" icon="el-icon-document-checked">保存修改</el-button>
+                                            <el-button type="success" @click="exportCurrentSheet" icon="el-icon-download">导出当前表格</el-button>
+                                        </el-button-group>
+                                        <el-button-group style="margin-left: 10px;">
+                                            <el-button @click="approveRecord" type="success" icon="el-icon-check">批准</el-button>
+                                            <el-button @click="rejectRecord" type="danger" icon="el-icon-close">打回修改</el-button>
+                                        </el-button-group>
+                                    </div>
                                 </div>
-                                    <p class="card-description">点击下方标签页，切换查看不同的检查项文件。</p>
-                                <el-tabs v-model="activePreviewTab" type="border-card">
-                                    
-                                    <!-- 为 recordMeta 文件创建一个专门的、静态的Tab页 -->
-                                    <el-tab-pane v-if="metaFile" label="表单元数据" name="recordMeta" lazy>
-                                        <!-- ... (这里可以复用 workspace-panel 中展示元数据的 el-form 结构) ... -->
-                                        <div class="p-3">只读的表单元数据将在这里展示...</div>
-                                    </el-tab-pane>
             
-                                    <!-- 使用 v-for 动态生成所有检查项文件的 Tab 页 -->
+                                <el-tabs v-model="activeTab" type="border-card">
+                                    <el-tab-pane v-if="metaFile" label="表单元数据" name="recordMeta" lazy>
+                                        <!-- 【【【用下面的内容替换掉旧的 <div>】】】 -->
+                                        <div class="p-4" v-if="metaData">
+                                            <el-descriptions title="详细规格信息" :column="3" border>
+                                                <el-descriptions-item label="制件材质">{{ metaData.material || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="制件料厚">{{ metaData.thickness || 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="抗拉强度">{{ metaData.tensileStrength || 'N/A' }} MPa</el-descriptions-item>
+                                                <el-descriptions-item label="客户名称">{{ metaData.customerName || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="模具图号" :span="2">{{ metaData.moldDrawingNumber || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="使用设备">{{ metaData.equipment || 'N/A' }}</el-descriptions-item>
+                                            </el-descriptions>
+                                            
+                                            <el-descriptions title="人员信息" :column="3" border class="mt-4">
+                                                <el-descriptions-item label="设计人员">{{ metaData.designerName || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="日期">{{ metaData.designerDate || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="校对人员">{{ metaData.checkerName || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="日期">{{ metaData.checkerDate || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="审核人员">{{ metaData.auditorName || 'N/A' }}</el-descriptions-item>
+                                                <el-descriptions-item label="日期">{{ metaData.auditorDate || 'N/A' }}</el-descriptions-item>
+                                            </el-descriptions>
+                                    
+                                            <el-descriptions title="尺寸与重量" :column="4" border class="mt-4">
+                                                <el-descriptions-item label="报价 长度">{{ metaData.quoteSize ? metaData.quoteSize.length : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="报价 宽度">{{ metaData.quoteSize ? metaData.quoteSize.width : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="报价 高度">{{ metaData.quoteSize ? metaData.quoteSize.height : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="报价 重量">{{ metaData.quoteWeight || 'N/A' }} T</el-descriptions-item>
+                                                <el-descriptions-item label="实际 长度">{{ metaData.actualSize ? metaData.actualSize.length : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="实际 宽度">{{ metaData.actualSize ? metaData.actualSize.width : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="实际 高度">{{ metaData.actualSize ? metaData.actualSize.height : 'N/A' }} mm</el-descriptions-item>
+                                                <el-descriptions-item label="实际 重量">{{ metaData.actualWeight || 'N/A' }} T</el-descriptions-item>
+                                            </el-descriptions>
+                                        </div>
+                                        <div v-else class="p-4 text-muted">
+                                            正在加载元数据...
+                                        </div>
+                                    </el-tab-pane>
                                     <el-tab-pane
-                                        v-for="file in excelFilesToPreview"
+                                        v-for="file in excelFiles"
                                         :key="file.id"
                                         :label="file.documentType"
-                                        :name="file.documentType"
-                                        lazy>
+                                        :name="String(file.id)"
+                                        lazy
                                         
-                                        <!-- 每个Tab页内都有自己的只读 iframe -->
-                                        <iframe v-if="activePreviewTab === file.documentType"
+                                        @mouseover.native="lockScroll"
+                                        @mouseleave.native="unlockScroll"
+                                    >
+                                        <iframe v-if="activeTab === String(file.id)"
                                             :ref="'iframe-' + file.id"
                                             src="/luckysheet-iframe-loader.html" 
-                                            @load="() => loadSheetInPreviewIframe(file)"
+                                            @load="() => loadSheetIntoIframe(file)"
                                             style="width: 100%; height: 70vh; border: none;">
+                                            <!-- iframe 本身不需要任何事件 -->
                                         </iframe>
-            
                                     </el-tab-pane>
-            
-                                    <div v-if="!metaFile && excelFilesToPreview.length === 0" class="text-center text-muted p-5">
-                                        <h4>未找到任何可供预览的文件。</h4>
+                                    <div v-if="!metaFile && excelFiles.length === 0" class="text-center text-muted p-5">
+                                        <h4>未找到任何可供审核的文件。</h4>
                                     </div>
                                 </el-tabs>
                             </div>
                         </div>
                     </el-col>
-
-                    <!-- 2b. 右侧：可编辑审核 Iframe -->
-                    <el-col :span="8">
-                        <div class="card">
-                            <div class="card-body">
-                                <h4 class="card-title">在线审核与批注 (可编辑)</h4>
-                                <p class="card-description">可直接在下方表格中填写，完成后点击保存。</p>
-                                
-                                <iframe ref="reviewIframe" src="/luckysheet-iframe-loader.html" @load="onReviewIframeLoad" style="width: 100%; height: 70vh; border: none;"></iframe>
-                                
-                                <div class="mt-3 text-center">
-                                    <el-button type="primary" @click="saveReviewSheet" :loading="isSavingSheet">
-                                        <i class="el-icon-document-checked"></i> 保存审核结果
-                                    </el-button>
-                                    <el-button type="success" @click="exportReviewSheet">
-                                        <i class="el-icon-download"></i> 导出审核表
-                                    </el-button>
-                                </div>
-                            </div>
-                        </div>
-                    </el-col>
                 </el-row>
 
-
+\
                 <problem-record-table
                     v-if="recordId"
                     :record-id="Number(recordId)">
@@ -133,310 +117,290 @@ Vue.component('record-review-panel', {
             isLoading: true,
             recordInfo: null,
             loadError: null,
-            filesToPreview: [],
-            activePreviewTab: '',
-            isSavingSheet: false,
-            reviewTemplateUrl: '/api/files/templates/review-sheet.xlsx',
-
-            // --- 【核心修正】: 新增两个状态来管理加载流程 ---
-            reviewIframeLoaded: false,
-            reviewSheetData: null, // 用于暂存从 fetchAllData 获取的数据 {url, fileName}
-
-            metaDataContent: null,
-            isMetaDataLoading: false
+            allFiles: [],
+            activeTab: '', // 使用文件ID作为name
+            isSaving: false,
+            scrollTopBeforeFocus: 0,
+            // 【【【新增】】】 用于存储解析后的元数据
+            metaData: null,
         }
     },
     computed: {
-        excelFilesToPreview() {
-            return this.filesToPreview.filter(file =>
+        excelFiles() {
+            return this.allFiles.filter(file =>
                 file.fileType && (file.fileType.includes('spreadsheetml') || file.fileType.includes('excel'))
             );
         },
         metaFile() {
-            return this.filesToPreview.find(file => file.documentType === 'recordMeta');
+            return this.allFiles.find(file => file.documentType === 'recordMeta');
         }
     },
     methods: {
-        // record-review-panel.js -> methods
-
+        lockScroll() {
+            document.body.classList.add('body-scroll-lock');
+        },
+    
+        /**
+         * 【【【新增】】】 解锁父页面滚动
+         */
+        unlockScroll() {
+            document.body.classList.remove('body-scroll-lock');
+        },
+        handleIframeFocus() {
+            this.scrollTopBeforeFocus = window.scrollY || document.documentElement.scrollTop;
+            setTimeout(() => {
+                window.scrollTo(0, this.scrollTopBeforeFocus);
+            }, 0);
+        },
         async fetchAllData() {
-            console.log(`%c[fetchAllData] STAGE 0: Initialization for recordId=${this.recordId}`, 'color: blue; font-weight: bold;');
             if (!this.recordId) return;
-
             this.isLoading = true;
             this.loadError = null;
-            this.reviewSheetData = null; // 清空旧数据
-
             try {
-                // STAGE 1 & 2: 获取记录详情和文件列表 (保持不变)
                 const [recordResponse, filesResponse] = await Promise.all([
                     axios.get(`/api/process-records/${this.recordId}`),
                     axios.get(`/api/process-records/${this.recordId}/files`)
                 ]);
                 this.recordInfo = recordResponse.data;
-                this.filesToPreview = (filesResponse.data || []).sort((a, b) => a.documentType.localeCompare(b.documentType));
-
-                let defaultFileToLoad = null;
-                if (this.excelFilesToPreview.length > 0) {
-                    this.activePreviewTab = this.excelFilesToPreview[0].documentType;
-                    defaultFileToLoad = this.excelFilesToPreview[0];
+                this.allFiles = (filesResponse.data || []).sort((a, b) => a.documentType.localeCompare(b.documentType));
+                if (this.excelFiles.length > 0) {
+                    this.activeTab = String(this.excelFiles[0].id);
                 } else if (this.metaFile) {
-                    this.activePreviewTab = 'recordMeta';
+                    this.activeTab = 'recordMeta';
+                    // 立即获取元数据，因为 watch 不会立即触发
+                    this.$nextTick(() => {
+                        this.fetchMetaData();
+                    });
                 }
-
-                this.$nextTick(() => {
-                    if (this.activePreviewTab === 'recordMeta') {
-                        this.fetchAndDisplayMetaData();
-                    } else if (defaultFileToLoad) {
-                        this.loadSheetInPreviewIframe(defaultFileToLoad);
-                    }
-                });
-
-                // STAGE 3: 尝试获取已保存的审核表信息
-                console.log('%c[fetchAllData] STAGE 3: Fetching unified review sheet info...', 'color: blue; font-weight: bold;');
-        
-                // 后端接口现在总是返回 200 OK，所以不再需要内部的 try-catch
-                const reviewSheetResponse = await axios.get(`/api/process-records/${this.recordId}/review-sheet-info`);
-                const fileInfo = reviewSheetResponse.data;
-        
-                let fileUrl;
-        
-                // 【【【 这是解决问题的核心逻辑 】】】
-                // 根据后端返回的 documentType，智能地判断应该使用哪个 URL
-                if (fileInfo.documentType === 'TEMPLATE_SHEET') {
-                    // 如果是模板，直接使用后端在 filePath 字段中提供的 API 地址
-                    fileUrl = fileInfo.filePath; // e.g., "/api/files/templates/review-sheet"
-                } else {
-                    // 如果是真实文件，像以前一样根据 ID 构造内容下载地址
-                    fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
-                }
-                
-                // 将最终确定的正确 URL 和文件名存起来
-                this.reviewSheetData = {
-                    url: fileUrl,
-                    fileName: fileInfo.fileName
-                };
-                console.log("[Parent] 已准备好加载审核表, 将使用 URL:", fileUrl);
-        
-                // 调用加载方法
-                this.loadReviewSheet();
-        
             } catch (error) {
-                // 这个 catch 现在只处理获取记录详情或文件列表时的严重错误
-                this.loadError = "加载工作区核心数据失败：" + (error.response?.data?.message || error.message);
+                this.loadError = "加载工作区数据失败：" + (error.response?.data?.message || error.message);
             } finally {
                 this.isLoading = false;
             }
         },
 
-        // 【只保留唯一、正确的 loadReviewSheet 方法】
-        loadReviewSheet() {
-            console.log(`[Parent] Attempting to load review sheet. iframeLoaded=${this.reviewIframeLoaded}, dataReady=${!!this.reviewSheetData}`);
+        async fetchMetaData() {
+            if (!this.metaFile) {
+                console.warn("No meta file found to fetch.");
+                return;
+            }
 
-            // 只有在 iframe 已加载 并且 数据已准备好 这两个条件都满足时，才发送消息
-            if (this.reviewIframeLoaded && this.reviewSheetData) {
-                this.sendMessageToIframe(this.$refs.reviewIframe, {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: this.reviewSheetData.url,
-                        fileName: this.reviewSheetData.fileName,
-                        options: { lang: 'zh', allowUpdate: true, showtoolbar: true }
-                    }
-                });
-                console.log(`[Parent] ✅ LOAD_SHEET message sent to reviewIframe.`);
+            // 如果已经加载过，就不再重复请求
+            if (this.metaData) return;
+
+            console.log("Fetching meta data from:", this.metaFile.filePath);
+            try {
+                // 直接使用文件ID构造内容获取URL
+                const fileUrl = `/api/files/content/${this.metaFile.id}`;
+                const response = await axios.get(fileUrl);
+
+                // 后端返回的可能是JSON字符串，也可能是对象，我们做兼容处理
+                if (typeof response.data === 'string') {
+                    this.metaData = JSON.parse(response.data);
+                } else {
+                    this.metaData = response.data;
+                }
+                console.log("Meta data loaded and parsed:", this.metaData);
+
+            } catch (error) {
+                console.error("Failed to fetch or parse meta data:", error);
+                this.$message.error("加载表单元数据失败！");
             }
         },
 
-        // --- 其他必要的方法 ---
-        async fetchAndDisplayMetaData() {
-            // ... (这是您展示元数据JSON的方法，如果不需要可以删除)
-        },
-        loadSheetInPreviewIframe(fileInfo) {
+        loadSheetIntoIframe(fileInfo) {
             if (!fileInfo) return;
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
             if (targetIframe && targetIframe.contentWindow) {
-                const options = { allowUpdate: false, showtoolbar: false, showinfobar: false };
+                // 【【【核心修改】】】允许编辑
+                const options = { allowUpdate: true, showtoolbar: true };
                 const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
                 const message = {
                     type: 'LOAD_SHEET',
                     payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
                 };
-                targetIframe.contentWindow.postMessage(message, window.location.origin);
+                this.sendMessageToIframe(targetIframe, message);
             }
         },
-        handleTabClick(tab) {
-            if (tab.name === 'recordMeta') {
-                this.fetchAndDisplayMetaData();
-            } else {
-                const fileToLoad = this.excelFilesToPreview.find(f => f.documentType === tab.name);
-                this.$nextTick(() => this.loadSheetInPreviewIframe(fileToLoad));
-            }
-        },
-        onReviewIframeLoad() {
-            console.log("[DEBUG] onReviewIframeLoad: ✅ 右侧审核Iframe已加载。");
-            this.reviewIframeLoaded = true;
-            // iframe 加载完成后，立即尝试加载数据
-            // 这时 reviewSheetData 很可能已经被 fetchAllData 填充好了
-            this.loadReviewSheet();
-        },
 
-        saveReviewSheet() {
-            if (this.isSavingSheet || !this.reviewIframeLoaded) return;
-            this.isSavingSheet = true;
-            this.$message.info("正在生成审核文件...");
+        saveChanges() {
+            const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
+            if (!currentFile) { this.$message.error("没有活动的表格可供保存。"); return; }
 
-            // 像 workspace 一样，在 payload 中添加一个明确的 purpose
-            this.sendMessageToIframe(this.$refs.reviewIframe, {
+            const iframeRef = this.$refs['iframe-' + currentFile.id];
+            const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+            if (!targetIframe) { this.$message.error('找不到编辑器实例！'); return; }
+
+            // 【修改】: 在这里不再设置 isSaving=true
+            // this.isSaving = true;
+            this.$message.info("正在生成文件...");
+
+            this.sendMessageToIframe(targetIframe, {
                 type: 'GET_DATA_AND_IMAGES',
-                payload: {
-                    purpose: 'save-review-sheet' // 使用一个唯一的 purpose
-                }
+                payload: { purpose: `update-file-${currentFile.id}` }
             });
         },
 
         async messageEventListener(event) {
-            // 1. 安全检查
-            if (event.origin !== window.location.origin || !event.data) {
-                return;
-            }
-
-            // 2. 只处理我们关心的数据响应类型
-            if (event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
-                return;
-            }
-
+            if (event.origin !== window.location.origin || event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') return;
+            
             const { payload } = event.data;
+            const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
+            if (!payload || !currentFile || payload.purpose !== `update-file-${currentFile.id}`) return;
 
-            // 3. 【重要】根据 purpose 判断是否应该处理此消息
-            //    这确保了只有点击 "保存审核结果" 按钮时，这个逻辑才会被触发
-            if (!payload || payload.purpose !== 'save-review-sheet') {
-                return;
-            }
-
-            console.log('[Review Panel] ✅ Purpose 检查通过，开始执行保存审核结果逻辑...');
-
+            // 【【【核心修改】】】
+            this.isSaving = true; // 在开始上传时，设置加载状态
             try {
-                // 4. 【核心修正】将从 iframe 收到的完整 payload 直接传递给导出函数
-                //    这与 workspace 的工作方式完全一致
                 const exportBlob = await exportWithExcelJS(payload);
-
                 const formData = new FormData();
-                const reviewFileName = `ReviewResult_${this.recordInfo.partName}_${this.recordId}.xlsx`;
-                formData.append('file', exportBlob, reviewFileName);
+                formData.append('file', exportBlob, currentFile.fileName);
+                
+                const apiUrl = `/api/process-records/${this.recordId}/files/${currentFile.id}`;
+                await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-                const apiUrl = `/api/process-records/${this.recordId}/save-review-sheet`;
-                await axios.post(apiUrl, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
+                this.$message.success(`文件 "${currentFile.fileName}" 已成功保存！`);
 
-                this.$message.success("审核表已成功保存！");
-                this.fetchAllData(); // 重新加载以显示最新版本
+                // --- 【【【无感刷新逻辑】】】 ---
+                // 1. 不再调用 this.fetchAllData()
+                // this.fetchAllData(); 
+
+                // 2. 而是直接调用 loadSheetIntoIframe 方法，
+                //    并传入当前激活的文件信息。
+                //    这会命令 iframe 重新从后端加载最新的文件内容，
+                //    而不会重新渲染 iframe 标签本身。
+                console.log("执行无感刷新，重新加载 iframe 内容...");
+                this.loadSheetIntoIframe(currentFile);
 
             } catch (error) {
-                this.$message.error(error.message || "导出或上传过程出错！");
-                console.error("在线保存审核文件时出错:", error);
+                this.$message.error("保存文件时出错！");
+                console.error("保存失败:", error);
             } finally {
-                this.isSavingSheet = false;
+                this.isSaving = false; // 无论成功失败，都结束加载状态
             }
+            if (event.origin !== window.location.origin || !event.data) return;
+
         },
+
+        exportCurrentSheet() {
+            const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
+            if (!currentFile) { this.$message.warning("没有可导出的活动文件。"); return; }
+            const iframeRef = this.$refs['iframe-' + currentFile.id];
+            const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+            if (!targetIframe) return;
+            const fileName = `${currentFile.fileName || 'export'}.xlsx`;
+            this.sendMessageToIframe(targetIframe, { type: 'EXPORT_SHEET', payload: { fileName: fileName } });
+        },
+
+        approveRecord() {
+            this.$confirm('您确定所有内容都已审核完毕，并批准此设计记录吗?', '批准确认', { 
+                confirmButtonText: '确定批准',
+                cancelButtonText: '取消',
+                type: 'success' 
+            })
+            .then(async () => {
+                try {
+                    // 【【【核心修改】】】
+                    // 解开注释，调用后端API
+                    await axios.post(`/api/process-records/${this.recordId}/approve`);
+                    
+                    this.$message.success('操作成功，该记录已批准！');
+                    
+                    // 操作成功后，可以返回列表页或刷新当前页
+                    this.goBack(); // 调用已有的返回方法
+
+                } catch (error) {
+                    this.$message.error('批准失败：' + (error.response?.data?.message || '未知错误'));
+                    console.error("批准操作失败:", error);
+                }
+            }).catch(() => {
+                this.$message.info('已取消操作');
+            });
+        },
+
+        rejectRecord() {
+            this.$prompt('请输入打回意见（必填）：', '打回修改', {
+                confirmButtonText: '确定打回',
+                cancelButtonText: '取消',
+                inputPattern: /.+/, // 正则表达式，确保不为空
+                inputErrorMessage: '打回意见不能为空'
+            }).then(async ({ value }) => {
+                try {
+                    // 【【【核心修改】】】
+                    // 解开注释，调用后端API，并传递comment
+                    await axios.post(`/api/process-records/${this.recordId}/request-changes`, { comment: value });
+                    
+                    this.$message.success('操作成功，该记录已打回修改！');
+                    
+                    // 打回后，也返回列表页
+                    this.goBack();
+
+                } catch (error) {
+                    this.$message.error('打回失败：' + (error.response?.data?.message || '未知错误'));
+                    console.error("打回操作失败:", error);
+                }
+            }).catch(() => {
+                this.$message.info('已取消操作');
+            });
+        },
+
+        // 辅助方法
         sendMessageToIframe(iframe, message) {
             if (iframe && iframe.contentWindow) {
                 iframe.contentWindow.postMessage(message, window.location.origin);
             }
         },
-        /**
-     * 导出左侧当前正在预览的 Excel 文件
-     */
-        exportPreviewSheet() {
-            // 1. 找到当前激活的 Tab 对应的文件信息
-            const currentFile = this.excelFilesToPreview.find(file => file.documentType === this.activePreviewTab);
-
-            if (!currentFile) {
-                this.$message.warning("没有可导出的预览文件。");
-                return;
-            }
-
-            // 2. 找到对应的 iframe 引用
-            const iframeRef = this.$refs['iframe-' + currentFile.id];
-            const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
-
-            if (!targetIframe) {
-                this.$message.error("无法找到对应的预览窗口实例。");
-                return;
-            }
-
-            // 3. 构造一个有意义的文件名
-            const fileName = `${currentFile.fileName || currentFile.documentType}.xlsx`;
-
-            // 4. 向该 iframe 发送导出指令
-            this.sendMessageToIframe(targetIframe, {
-                type: 'EXPORT_SHEET',
-                payload: {
-                    fileName: fileName
-                }
-            });
-
-            this.$message.info(`已发送导出指令给: ${fileName}`);
-        },
-
-        /**
-         * 导出右侧的审核表
-         */
-        exportReviewSheet() {
-            // 1. 检查右侧 iframe 是否已加载
-            if (!this.$refs.reviewIframe) {
-                this.$message.error("无法找到审核窗口实例。");
-                return;
-            }
-
-            // 2. 构造一个有意义的文件名
-            const fileName = `审核结果_${this.recordInfo.partName}_${this.recordId}.xlsx`;
-
-            // 3. 向右侧的审核 iframe 发送导出指令
-            this.sendMessageToIframe(this.$refs.reviewIframe, {
-                type: 'EXPORT_SHEET',
-                payload: {
-                    fileName: fileName
-                }
-            });
-
-            this.$message.info("已发送导出指令给审核表...");
-        },
-        /**
- * 将总秒数格式化为 "X 小时 Y 分钟 Z 秒" 的字符串
- * @param {number} totalSeconds - 总秒数
- * @returns {string} 格式化后的时间字符串
- */
         formatDuration(totalSeconds) {
-            if (totalSeconds == null || totalSeconds < 0) {
-                return '暂无记录';
-            }
-            if (totalSeconds === 0) {
-                return '0 秒';
-            }
+            if (totalSeconds == null || totalSeconds < 0) return '暂无记录';
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
-
             let result = '';
-            if (hours > 0) {
-                result += `${hours} 小时 `;
-            }
-            if (minutes > 0) {
-                result += `${minutes} 分钟 `;
-            }
-            if (seconds > 0 || result === '') { // 如果总时长小于1分钟，也显示秒
-                result += `${seconds} 秒`;
-            }
-
+            if (hours > 0) result += `${hours} 小时 `;
+            if (minutes > 0) result += `${minutes} 分钟 `;
+            if (seconds > 0 || result === '') result += `${seconds} 秒`;
             return result.trim();
         },
-
+        handleTabClick(tab) {
+            // 当用户点击 "表单元数据" Tab时，触发数据加载
+            if (tab.name === 'recordMeta') {
+                this.fetchMetaData();
+            }
+            // 对于Excel文件Tab，loadSheetIntoIframe 会在iframe的 @load 事件中自动触发
+        },
+        goBack() {
+            this.$emit('back-to-list');
+        },
+        handleIframeBlur() {
+            // 我们不需要记录和恢复滚动位置，因为那太复杂了。
+            // 我们直接找到页面上一个固定且不会引起滚动的元素，比如页面的主标题。
+            // 如果您的页面标题有一个ID，那是最好的。如果没有，我们可以用 class 来查找。
+            
+            // 尝试找到页面主标题的DOM元素
+            // 这里的选择器 '.page-title' 需要根据您 index.html 的实际结构来定
+            const mainTitle = document.querySelector('.main-panel .page-header .page-title');
+            
+            if (mainTitle) {
+                // 为了让一个普通元素能获得焦点，我们需要临时给它设置 tabindex
+                mainTitle.setAttribute('tabindex', '-1');
+                mainTitle.focus();
+                mainTitle.removeAttribute('tabindex'); // 获得焦点后马上移除，避免影响页面行为
+                console.log('Iframe lost focus. Focus returned to main title.');
+            } else {
+                // 如果找不到标题，就用我们之前那个隐藏的 "焦点捕获器"
+                const focusCatcher = document.getElementById('focus-catcher');
+                if (focusCatcher) {
+                    focusCatcher.focus();
+                    console.log('Iframe lost focus. Focus returned to focus-catcher.');
+                }
+            }
+        },
+        
     },
     mounted() {
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
+        
     },
     beforeDestroy() {
         window.removeEventListener('message', this.boundMessageListener);
@@ -448,6 +412,15 @@ Vue.component('record-review-panel', {
                 if (newId) {
                     this.fetchAllData();
                 }
+            }
+        },
+        // 【【【新增】】】
+        activeTab(newTabName, oldTabName) {
+            if (newTabName && newTabName !== oldTabName) {
+                if (newTabName === 'recordMeta') {
+                    this.fetchMetaData();
+                }
+                // 对于Excel Tab，加载会在 iframe 的 @load 事件中自动触发，所以这里不需要额外操作
             }
         }
     }

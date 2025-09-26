@@ -36,11 +36,12 @@ public interface ProcessRecordService {
      * @param comment 打回意见
      */
     void requestChanges(Long recordId, String comment);
+    void approveRecord(Long recordId);
 
     void resubmit(Long recordId, MultipartFile file) throws IOException;
 
     void deleteRecordById(Long recordId) throws IOException;
-
+    
         /**
      * 【新增方法声明 1】
      * 保存草稿文件。
