@@ -85,13 +85,15 @@ Vue.component('record-review-panel', {
                                         @mouseover.native="lockScroll"
                                         @mouseleave.native="unlockScroll"
                                     >
+                                    <div style="height: 70vh; overflow: hidden;">
                                         <iframe v-if="activeTab === String(file.id)"
                                             :ref="'iframe-' + file.id"
-                                            src="/luckysheet-iframe-loader.html" 
+                                            src="/luckysheet-iframe-loader.html"
                                             @load="() => loadSheetIntoIframe(file)"
-                                            style="width: 100%; height: 70vh; border: none;">
-                                            <!-- iframe 本身不需要任何事件 -->
+                                            style="width: 100%; height: 100%; border: none;">
                                         </iframe>
+                                    </div>
+                                
                                     </el-tab-pane>
                                     <div v-if="!metaFile && excelFiles.length === 0" class="text-center text-muted p-5">
                                         <h4>未找到任何可供审核的文件。</h4>
@@ -212,8 +214,24 @@ Vue.component('record-review-panel', {
             if (!fileInfo) return;
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+        
             if (targetIframe && targetIframe.contentWindow) {
-                // 【【【核心修改】】】允许编辑
+        
+                // ===== 新增：锁定 window.scrollY =====
+                let lastScrollY = window.scrollY;
+        
+                // 阻止 window 在 iframe 渲染期间滚动
+                const preventScroll = e => e.preventDefault();
+                window.addEventListener('scroll', preventScroll, { passive: false });
+        
+                // 渲染完成后恢复滚动（这里用 1.5s 假设 Luckysheet 完成初始化）
+                setTimeout(() => {
+                    window.removeEventListener('scroll', preventScroll);
+                    window.scrollTo(0, lastScrollY);
+                    console.log('[FIX] window.scrollY 恢复到', lastScrollY);
+                }, 1500);
+        
+                // ===== 原有 Luckysheet 加载逻辑 =====
                 const options = { allowUpdate: true, showtoolbar: true };
                 const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
                 const message = {
@@ -223,6 +241,9 @@ Vue.component('record-review-panel', {
                 this.sendMessageToIframe(targetIframe, message);
             }
         },
+        
+        
+        
 
         saveChanges() {
             const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
@@ -397,14 +418,75 @@ Vue.component('record-review-panel', {
         },
         
     },
-    mounted() {
-        this.boundMessageListener = this.messageEventListener.bind(this);
-        window.addEventListener('message', this.boundMessageListener);
-        
-    },
-    beforeDestroy() {
-        window.removeEventListener('message', this.boundMessageListener);
-    },
+// 在 record-review-panel.js 中
+
+mounted() {
+    console.log('[INIT] 启动最终的、精准的滚动拦截器...');
+
+    // 【步骤1】初始化状态对象
+    this._scrollLock = {
+        isActive: false,       // 【关键】锁默认是关闭的
+        lastScrollY: 0,
+        animationFrameId: null
+    };
+    
+    // 【步骤2】“帧级”循环函数（保持不变）
+    const scrollLockLoop = () => {
+        if (this && this._scrollLock) {
+            // 【核心修正】只有当锁是激活状态时，才执行检查和恢复
+            if (this._scrollLock.isActive && window.scrollY !== this._scrollLock.lastScrollY) {
+                console.warn(`[LOCK] 检测到 iframe 焦点导致的滚动！恢复到: ${this._scrollLock.lastScrollY}`);
+                window.scrollTo(0, this._scrollLock.lastScrollY);
+            }
+            this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
+        }
+    };
+
+    // 【步骤3】启动循环
+    scrollLockLoop();
+    
+    // 【步骤4】监听 iframe 的焦点事件，来动态地控制“锁”的开关
+    this.$nextTick(() => {
+        // 注意：我们可能需要查找多个 iframe
+        const iframes = this.$el.querySelectorAll('iframe');
+        iframes.forEach(iframe => {
+            
+            // 当鼠标【点击进入】iframe 时，“激活”滚动锁
+            iframe.addEventListener('focus', () => {
+                console.log('[LOCK ACTIVATED] Iframe 获得焦点，滚动锁定已激活。');
+                // 记录下获得焦点【之前】的滚动位置
+                this._scrollLock.lastScrollY = window.scrollY;
+                // 打开锁
+                this._scrollLock.isActive = true;
+            });
+
+            // 当焦点【离开】iframe 时，“解除”滚动锁
+            iframe.addEventListener('blur', () => {
+                console.log('[LOCK DEACTIVATED] Iframe 失去焦点，滚动锁定已解除。');
+                // 关闭锁
+                this._scrollLock.isActive = false;
+            });
+        });
+    });
+    
+    // --- 您已有的其他 mounted 逻辑 ---
+    this.boundMessageListener = this.messageEventListener.bind(this);
+    window.addEventListener('message', this.boundMessageListener);
+},
+
+beforeDestroy() {
+    console.log('[CLEANUP] 停止智能滚动拦截器...');
+    
+    if (this._scrollLock) {
+        cancelAnimationFrame(this._scrollLock.animationFrameId);
+        clearTimeout(this._scrollLock.timeoutId);
+    }
+    
+    // 最好也移除 wheel 事件监听器，虽然在组件销毁时会自动移除
+    
+    // --- 您已有的其他 beforeDestroy 逻辑 ---
+    window.removeEventListener('message', this.boundMessageListener);
+},
     watch: {
         recordId: {
             immediate: true,
