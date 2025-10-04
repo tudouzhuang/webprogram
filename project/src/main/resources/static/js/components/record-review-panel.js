@@ -120,11 +120,11 @@ Vue.component('record-review-panel', {
             recordInfo: null,
             loadError: null,
             allFiles: [],
-            activeTab: '', // 使用文件ID作为name
+            activeTab: '',
             isSaving: false,
-            scrollTopBeforeFocus: 0,
-            // 【【【新增】】】 用于存储解析后的元数据
             metaData: null,
+            scrollTopBeforeClick: 0 
+            // 【【【确保这里没有 scrollTopBeforeFocus, _scrollLock, iframeIsActive 等任何东西】】】
         }
     },
     computed: {
@@ -420,54 +420,64 @@ Vue.component('record-review-panel', {
     },
 // 在 record-review-panel.js 中
 
+// 在 record-review-panel.js 中
+
 mounted() {
-    console.log('[INIT] 启动最终的、精准的滚动拦截器...');
+    console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
 
     // 【步骤1】初始化状态对象
-    this._scrollLock = {
-        isActive: false,       // 【关键】锁默认是关闭的
-        lastScrollY: 0,
+    this._scrollGuardian = {
+        // 【关键】这个变量记录的不是一个固定的值，而是【上一帧】的滚动位置
+        lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
+        
+        // 【关键】敌我识别标志位
+        isUserScrolling: false,
+        
+        scrollTimeoutId: null,
         animationFrameId: null
     };
     
-    // 【步骤2】“帧级”循环函数（保持不变）
-    const scrollLockLoop = () => {
-        if (this && this._scrollLock) {
-            // 【核心修正】只有当锁是激活状态时，才执行检查和恢复
-            if (this._scrollLock.isActive && window.scrollY !== this._scrollLock.lastScrollY) {
-                console.warn(`[LOCK] 检测到 iframe 焦点导致的滚动！恢复到: ${this._scrollLock.lastScrollY}`);
-                window.scrollTo(0, this._scrollLock.lastScrollY);
+    // 【步骤2】定义守护循环
+    const guardianLoop = () => {
+        if (this && this._scrollGuardian) {
+            const currentScrollY = window.scrollY;
+
+            // 【【【核心逻辑】】】
+            if (this._scrollGuardian.isUserScrolling) {
+                // 如果是用户在滚动，我们不干涉，只更新记录
+                this._scrollGuardian.lastKnownScrollY = currentScrollY;
+            } else {
+                // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
+                if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
+                    console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
+                    window.scrollTo(0, this._scrollGuardian.lastKnownScrollY);
+                }
             }
-            this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
+            this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
         }
     };
 
-    // 【步骤3】启动循环
-    scrollLockLoop();
+    // 【步骤3】启动守护循环
+    guardianLoop();
     
-    // 【步骤4】监听 iframe 的焦点事件，来动态地控制“锁”的开关
-    this.$nextTick(() => {
-        // 注意：我们可能需要查找多个 iframe
-        const iframes = this.$el.querySelectorAll('iframe');
-        iframes.forEach(iframe => {
-            
-            // 当鼠标【点击进入】iframe 时，“激活”滚动锁
-            iframe.addEventListener('focus', () => {
-                console.log('[LOCK ACTIVATED] Iframe 获得焦点，滚动锁定已激活。');
-                // 记录下获得焦点【之前】的滚动位置
-                this._scrollLock.lastScrollY = window.scrollY;
-                // 打开锁
-                this._scrollLock.isActive = true;
-            });
+    // 【步骤4】为“敌我识别系统”添加滚轮事件监听器
+    // 这个监听器只负责一件事：在用户滚动滚轮时，举起“自己人”的牌子
+    this.handleWheel = () => {
+        // 举起牌子：告诉守护神，现在是我在滚，别开枪！
+        this._scrollGuardian.isUserScrolling = true;
+        
+        // 清除之前的“放下牌子”定时器
+        clearTimeout(this._scrollGuardian.scrollTimeoutId);
+        
+        // 设置一个新的定时器：如果200毫秒内没再滚动，就自动放下牌子
+        this._scrollGuardian.scrollTimeoutId = setTimeout(() => {
+            this._scrollGuardian.isUserScrolling = false;
+            console.log('[GUARDIAN] 用户停止滚动，守护模式已恢复。');
+        }, 200);
+    };
 
-            // 当焦点【离开】iframe 时，“解除”滚动锁
-            iframe.addEventListener('blur', () => {
-                console.log('[LOCK DEACTIVATED] Iframe 失去焦点，滚动锁定已解除。');
-                // 关闭锁
-                this._scrollLock.isActive = false;
-            });
-        });
-    });
+    // 将滚轮监听器绑定到整个 window 上，这样无论鼠标在哪里都能捕捉到
+    window.addEventListener('wheel', this.handleWheel, { passive: true });
     
     // --- 您已有的其他 mounted 逻辑 ---
     this.boundMessageListener = this.messageEventListener.bind(this);
@@ -475,15 +485,16 @@ mounted() {
 },
 
 beforeDestroy() {
-    console.log('[CLEANUP] 停止智能滚动拦截器...');
+    console.log('[CLEANUP] 停止终极滚动守护神...');
     
-    if (this._scrollLock) {
-        cancelAnimationFrame(this._scrollLock.animationFrameId);
-        clearTimeout(this._scrollLock.timeoutId);
+    if (this._scrollGuardian) {
+        cancelAnimationFrame(this._scrollGuardian.animationFrameId);
+        clearTimeout(this._scrollGuardian.scrollTimeoutId);
     }
-    
-    // 最好也移除 wheel 事件监听器，虽然在组件销毁时会自动移除
-    
+
+    // 【【【核心清理】】】 必须移除全局的滚轮监听器
+    window.removeEventListener('wheel', this.handleWheel);
+
     // --- 您已有的其他 beforeDestroy 逻辑 ---
     window.removeEventListener('message', this.boundMessageListener);
 },

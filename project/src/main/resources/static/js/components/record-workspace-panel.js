@@ -614,23 +614,68 @@ Vue.component('record-workspace-panel', {
 
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
     mounted() {
-        // 1. 绑定并添加 postMessage 的监听器 (您已有的逻辑)
+        // --- 您已有的 message 监听器逻辑 (保持不变) ---
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
     
-        // 2. 【【【 新增 】】】 添加 beforeunload 事件监听器
-        //    确保用户关闭或刷新页面时，也能触发 stopWorkSession
+        // --- 您已有的 beforeunload 监听器逻辑 (保持不变) ---
         window.addEventListener('beforeunload', this.stopWorkSession);
+
+        // =======================================================
+        // ↓↓↓ 【【【新增：智能滚动锁的全部逻辑】】】 ↓↓↓
+        // =======================================================
+        console.log('[INIT] 启动智能滚动拦截器...');
+
+        this._scrollLock = {
+            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
+            isUserScrolling: false, 
+            timeoutId: null,
+            animationFrameId: null
+        };
+        
+        const scrollLockLoop = () => {
+            if (this && this._scrollLock) {
+                if (!this._scrollLock.isUserScrolling && window.scrollY !== this._scrollLock.lastKnownScrollY) {
+                    window.scrollTo(0, this._scrollLock.lastKnownScrollY);
+                } else {
+                    this._scrollLock.lastKnownScrollY = window.scrollY;
+                }
+                this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
+            }
+        };
+        scrollLockLoop();
+        
+        this.handleWheel = () => {
+            this._scrollLock.isUserScrolling = true;
+            clearTimeout(this._scrollLock.timeoutId);
+            this._scrollLock.timeoutId = setTimeout(() => {
+                this._scrollLock.isUserScrolling = false;
+            }, 200);
+        };
+
+        window.addEventListener('wheel', this.handleWheel, { passive: true });
+        // =======================================================
     },
     
     // 【【【 修改 beforeDestroy 】】】
     beforeDestroy() {
         console.log("[LifeCycle] beforeDestroy: 组件即将销毁，执行清理操作。");
-        // 【【【 关键修正 】】】
-        this.stopWorkSession(); // 确保在销毁前停止并保存工作会-话
-    
+        
+        // --- 您已有的清理逻辑 (保持不变) ---
+        this.stopWorkSession();
         window.removeEventListener('message', this.boundMessageListener);
         window.removeEventListener('beforeunload', this.stopWorkSession);
+
+        // =======================================================
+        // ↓↓↓ 【【【新增：智能滚动锁的清理逻辑】】】 ↓↓↓
+        // =======================================================
+        console.log('[CLEANUP] 停止智能滚动拦截器...');
+        if (this._scrollLock) {
+            cancelAnimationFrame(this._scrollLock.animationFrameId);
+            clearTimeout(this._scrollLock.timeoutId);
+        }
+        window.removeEventListener('wheel', this.handleWheel);
+        // =======================================================
     },
 watch: {
     recordId: {

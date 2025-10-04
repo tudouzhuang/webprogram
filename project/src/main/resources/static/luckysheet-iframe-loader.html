@@ -225,6 +225,16 @@
             URL.revokeObjectURL(url);
         }
 
+        document.body.addEventListener('mousedown', () => {
+            // 步骤2：一旦发生点击，就立即向父页面发送一个“我被点了”的消息
+            console.log('[Iframe] 检测到点击，通知父页面准备恢复滚动位置。');
+            window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
+        }, true); // 使用捕获阶段，确保能最早监听到点击
+
+        // 步骤3：您已有的 message 监听器保持不变
+        window.addEventListener('message', function (event) {
+            // ... (您已有的处理 LOAD_SHEET, GET_DATA_AND_IMAGES, EXPORT_SHEET 的逻辑)
+        });
         console.log('[Iframe] 加载器已就绪，等待消息...');
     </script>
 </body>
