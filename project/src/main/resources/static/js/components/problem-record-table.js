@@ -21,6 +21,12 @@ const ProblemRecordTable = {
         },
         isDesignerMode() {
             return this.mode === 'designer';
+        },
+        uploadActionUrl() {
+            if (this.currentProblemForUpload) {
+                return `/api/problems/${this.currentProblemForUpload.id}/screenshot`;
+            }
+            return ''; // 如果没有选中问题，则返回空，避免出错
         }
     },
     /**
@@ -31,7 +37,9 @@ const ProblemRecordTable = {
             problems: [],           // 从服务器获取的问题列表
             isLoading: false,       // 控制表格的加载动画
             dialogVisible: false,   // 控制新增/编辑对话框的显示与隐藏
-            isEditMode: false,      // 标记对话框是用于“新增”还是“编辑”
+            isEditMode: false,      // 标记对话框是用于“新增”还是“编辑”   
+            screenshotUploadVisible: false, // 控制截图弹窗的显示
+            currentProblemForUpload: null,  // 记录正在操作截图的是哪个问题
             currentProblem: {       // 与对话框内表单双向绑定的数据模型
                 id: null,
                 stage: 'FMC',
@@ -184,17 +192,62 @@ const ProblemRecordTable = {
         },
 
         /**
-         * 截图上传成功时的回调函数。
-         * @param {object} res - 服务器返回的响应数据，应包含 { filePath: '...' }。
-         * @param {object} file - Element UI 提供的文件对象。
-         * @param {object} problem - 触发上传操作的那一行的问题数据对象。
+         * 【【【新增】】】 打开截图弹窗
          */
-        handleScreenshotSuccess(res, file, problem) {
+        openScreenshotUploader(problem) {
+            this.currentProblemForUpload = problem;
+            this.screenshotUploadVisible = true;
+        },
+
+        /**
+         * 【【【新增】】】 处理粘贴事件
+         */
+        handlePaste(event) {
+            const items = (event.clipboardData || window.clipboardData).items;
+            let imageFile = null;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    imageFile = items[i].getAsFile();
+                    break;
+                }
+            }
+
+            if (imageFile) {
+                event.preventDefault(); // 阻止默认粘贴行为
+                this.$message.info('检测到图片，正在上传...');
+                // 手动触发上传
+                this.uploadFile(imageFile);
+            }
+        },
+
+        /**
+         * 【【【新增】】】 统一的文件上传方法
+         */
+        async uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                // 使用 computed 属性获取正确的URL
+                const response = await axios.post(this.uploadActionUrl, formData);
+                // 直接调用您已有的成功处理方法
+                this.handleSingleScreenshotSuccess(response.data);
+            } catch (error) {
+                this.handleScreenshotError(error);
+            }
+        },
+
+        /**
+         * 【【【修改】】】 重命名您已有的 handleScreenshotSuccess 方法
+         * 并优化其逻辑
+         */
+        handleSingleScreenshotSuccess(res) {
             console.log('截图上传成功，服务器响应:', res);
             this.$message.success('截图上传成功!');
-            if (res.filePath) {
-                // [FIXED] 直接修改行数据对象的属性，Vue的响应式系统会自动更新UI
-                problem.screenshotPath = res.filePath;
+            if (res.filePath && this.currentProblemForUpload) {
+                // 更新表格中的对应行数据
+                this.currentProblemForUpload.screenshotPath = res.filePath;
+                // 关闭弹窗
+                this.screenshotUploadVisible = false;
             } else {
                 this.$message.error('未能从服务器获取文件路径！');
             }
@@ -236,13 +289,41 @@ const ProblemRecordTable = {
      * Template: 组件的HTML模板。
      */
     template: `
-        <div class="card mt-4">
+            <div class="card mt-4">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h4 class="card-title mb-0">问题记录表</h4>
-                    <el-button type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
+                    <!-- 只有审核员模式才能新增问题 -->
+                    <el-button v-if="isReviewerMode" type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                 </div>
             
+                <!-- 【【【新增：截图上传与粘贴弹窗】】】 -->
+                <!-- 使用 v-if 确保在需要时才渲染，提高性能 -->
+                <el-dialog
+                    v-if="screenshotUploadVisible"
+                    title="上传/粘贴截图"
+                    :visible.sync="screenshotUploadVisible"
+                    width="500px"
+                    @close="currentProblemForUpload = null"
+                    append-to-body>
+                    
+                    <div @paste="handlePaste" class="screenshot-paste-area">
+                        <el-upload
+                            class="screenshot-uploader-in-dialog"
+                            drag
+                            :action="uploadActionUrl"
+                            :show-file-list="false"
+                            :on-success="handleSingleScreenshotSuccess"
+                            :on-error="handleScreenshotError"
+                            name="file">
+                            <i class="el-icon-upload"></i>
+                            <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
+                            <div class="el-upload__tip" slot="tip">
+                                您也可以直接在本窗口内使用 <strong>Ctrl+V</strong> 粘贴剪贴板中的截图
+                            </div>
+                        </el-upload>
+                    </div>
+                </el-dialog>
 
                 <el-table :data="problems" v-loading="isLoading" stripe style="width: 100%" border>
                     <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
@@ -252,57 +333,53 @@ const ProblemRecordTable = {
                     
                     <el-table-column label="截图" width="100" align="center">
                         <template slot-scope="scope">
-                            <el-image 
-                                v-if="scope.row.screenshotPath" 
-                                style="width: 50px; height: 50px; display: block; margin: auto;"
-                                :src="scope.row.screenshotPath" 
-                                :preview-src-list="[scope.row.screenshotPath]">
-                                <div slot="error" class="image-slot" style="text-align: center; line-height: 50px;">
-                                    <i class="el-icon-picture-outline"></i>
-                                </div>
-                            </el-image>
-                            <el-upload
-                                v-else
-                                class="screenshot-uploader"
-                                :action="'/api/problems/' + scope.row.id + '/screenshot'"
-                                :show-file-list="false"
-                                :on-success="(res, file) => handleScreenshotSuccess(res, file, scope.row)"
-                                :on-error="handleScreenshotError"
-                                name="file">
-                                <i class="el-icon-plus"></i>
-                            </el-upload>
+                        
+                            <!-- 情况一：如果已有截图 (scope.row.screenshotPath 存在) -->
+                            <div v-if="scope.row.screenshotPath">
+                                <!-- 
+                                    el-image 组件自身就带有点击放大的功能。
+                                    关键在于 :preview-src-list 属性。
+                                    我们不需要给它绑定额外的 @click 事件。
+                                -->
+                                <el-image 
+                                    style="width: 50px; height: 50px; display: block; margin: auto;"
+                                    :src="scope.row.screenshotPath" 
+                                    :preview-src-list="[scope.row.screenshotPath]">
+                                    <div slot="error" class="image-slot" style="text-align: center; line-height: 50px;">
+                                        <i class="el-icon-picture-outline"></i>
+                                    </div>
+                                </el-image>
+                            </div>
+                            
+                            <!-- 情况二：如果没有截图 -->
+                            <div v-else>
+                                <!-- 
+                                    这个按钮只负责一件事：打开上传弹窗。
+                                -->
+                                <el-button
+                                    icon="el-icon-plus"
+                                    circle
+                                    size="mini"
+                                    title="上传/粘贴截图"
+                                    @click="openScreenshotUploader(scope.row)">
+                                </el-button>
+                            </div>
+                    
                         </template>
                     </el-table-column>
 
                     <el-table-column prop="status" label="状态" width="150" align="center">
                         <template slot-scope="scope">
-                            
-                            <el-tag v-if="scope.row.status === 'OPEN'" type="danger">
-                                待解决
-                            </el-tag>
-                    
-                            <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning">
-                                待复核
-                            </el-tag>
-                            
-                            <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success">
-                                已复核
-                            </el-tag>
-                            
-                            <el-tag v-else type="info">
-                                {{ scope.row.status }}
-                            </el-tag>
-                    
+                            <el-tag v-if="scope.row.status === 'OPEN'" type="danger">待解决</el-tag>
+                            <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning">待复核</el-tag>
+                            <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success">已关闭</el-tag>
+                            <el-tag v-else type="info">{{ scope.row.status }}</el-tag>
                         </template>
                     </el-table-column>
 
-
                     <el-table-column prop="confirmedByUsername" label="确认人" width="120"></el-table-column>
                     <el-table-column prop="confirmedAt" label="确认时间" width="160"></el-table-column>
-
                     <el-table-column prop="reviewerUsername" label="审核人" width="120"></el-table-column>
-                    
-                    <!-- 审核时间列：绑定到别名 reviewedAt -->
                     <el-table-column prop="reviewedAt" label="审核时间" width="160"></el-table-column>
 
                     <el-table-column label="操作" width="180" align="center" fixed="right">
@@ -310,14 +387,10 @@ const ProblemRecordTable = {
                         
                             <!-- ======================= 审核员模式下的操作按钮 ======================= -->
                             <div v-if="isReviewerMode">
-                                
-                                <!-- 场景1: 当问题状态为 OPEN (待解决) 时，审核员可以编辑和删除 -->
                                 <template v-if="scope.row.status === 'OPEN'">
                                     <el-button size="mini" @click="handleEdit(scope.row)" icon="el-icon-edit">编辑</el-button>
                                     <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)" icon="el-icon-delete">删除</el-button>
                                 </template>
-                                
-                                <!-- 场景2: 当问题状态为 RESOLVED (待复核) 时，审核员可以关闭问题 -->
                                 <el-button 
                                     v-else-if="scope.row.status === 'RESOLVED'"
                                     size="mini" 
@@ -326,19 +399,12 @@ const ProblemRecordTable = {
                                     @click="handleClose(scope.row)">
                                     关闭问题
                                 </el-button>
-                                
-                                <!-- 场景3: 当问题状态为 CLOSED (已关闭) 时，显示提示信息 -->
                                 <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success" effect="plain">已关闭</el-tag>
-                    
-                                <!-- 其他意外状态的兜底显示 -->
                                 <el-tag v-else type="info">状态未知</el-tag>
-                    
                             </div>
                     
                             <!-- ======================= 设计员模式下的操作按钮 ======================= -->
                             <div v-if="isDesignerMode">
-                                
-                                <!-- 场景1: 当问题状态为 OPEN (待解决) 时，设计员可以标记为已解决 -->
                                 <el-button 
                                     v-if="scope.row.status === 'OPEN'"
                                     size="mini" 
@@ -347,12 +413,9 @@ const ProblemRecordTable = {
                                     @click="handleResolve(scope.row)">
                                     标记为已解决
                                 </el-button>
-                                
-                                <!-- 场景2: 其他状态下，设计员都无需操作 -->
                                 <el-tag v-else :type="scope.row.status === 'RESOLVED' ? 'warning' : 'info'" effect="plain">
                                     无需操作
                                 </el-tag>
-                    
                             </div>
                         </template>
                     </el-table-column>
@@ -362,10 +425,10 @@ const ProblemRecordTable = {
                 <el-dialog :title="isEditMode ? '编辑问题' : '新增问题'" :visible.sync="dialogVisible" width="50%" :close-on-click-modal="false">
                     <el-form :model="currentProblem" :rules="formRules" ref="problemForm" label-width="100px">
                         <el-form-item label="问题阶段" prop="stage">
-                             <el-select v-model="currentProblem.stage" placeholder="请选择阶段">
+                            <el-select v-model="currentProblem.stage" placeholder="请选择阶段">
                                 <el-option label="FMC" value="FMC"></el-option>
                                 <el-option label="正式图" value="FORMAL_DRAWING"></el-option>
-                             </el-select>
+                            </el-select>
                         </el-form-item>
                         <el-form-item label="问题点" prop="problemPoint">
                             <el-input v-model="currentProblem.problemPoint" placeholder="请输入问题的简要标题"></el-input>

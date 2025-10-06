@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -51,12 +52,29 @@ public class ReviewProblemController {
      * @return 包含文件路径的响应
      * @throws IOException 文件保存异常
      */
+/**
+     * 【【【修正后的版本】】】
+     * 处理对单个 ReviewProblem 的截图上传请求。
+     * @param problemId 问题的ID
+     * @param file 上传的截图文件
+     * @return 包含文件访问路径的JSON响应, e.g., {"filePath": "/uploads/..."}
+     * @throws IOException 如果文件保存失败
+     */
     @PostMapping("/{problemId}/screenshot")
     public ResponseEntity<Map<String, String>> uploadScreenshot(
             @PathVariable Long problemId,
             @RequestParam("file") MultipartFile file) throws IOException {
+        
+        // 调用 Service 层处理文件保存和数据库更新的业务逻辑
         String filePath = reviewProblemService.uploadAndLinkScreenshot(problemId, file);
-        return ResponseEntity.ok(Map.of("filePath", filePath));
+
+        // 【【【核心修正】】】
+        // 使用 HashMap 来创建响应体，以兼容旧版Java
+        Map<String, String> responseBody = new HashMap<>();
+        responseBody.put("filePath", filePath);
+        
+        // 返回包含了 {"filePath": "..."} 的JSON对象
+        return ResponseEntity.ok(responseBody);
     }
 
         /**
