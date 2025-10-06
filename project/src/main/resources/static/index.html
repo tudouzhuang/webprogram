@@ -963,9 +963,12 @@
                     </ul>
                 </nav>
                 <div class="main-panel">
-                    <component :is="activePanel" 
+                    <component 
+                        :is="activePanel" 
                         :project-id="currentProjectId" 
-                        :record-id="currentRecordId"
+                        :record-id="currentRecordId"   
+                        v-bind="extraPanelProps"
+                        
                         @create-new-record="handleCreateNewRecord" 
                         @view-record-details="handleViewRecordDetails"
                         @project-created="onProjectCreated" 
@@ -1062,19 +1065,39 @@
             computed: {
                 activePanelProps() {
                     switch (this.activePanel) {
+                        // --- 您已有的 case (保持不变) ---
                         case 'project-planning-panel':
                         case 'process-record-list-panel':
-                        case 'project-review-list-panel': // 审查列表需要projectId
                         case 'process-record-panel':
                             return { projectId: this.currentProjectId };
 
                         case 'record-workspace-panel':
-                        case 'record-review-panel': // 审查面板需要recordId
+                        case 'record-review-panel':
                             return { recordId: this.currentRecordId };
+                        
+                        // 【【【核心修改：添加一个新的 case 分支】】】
+                        case 'review-tasks-panel':
+                            // 当面板是 review-tasks-panel 时，我们返回一个包含 projectId 和 currentUser 的对象
+                            return {
+                                projectId: this.currentProjectId,
+                                currentUser: this.currentUser
+                            };
 
-                        default: // dashboard, create-project 等面板不需要props
+                        // --- 您已有的 default (保持不变) ---
+                        default:
                             return {};
                     }
+                },
+                extraPanelProps() {
+                    // 只有当 activePanel 是 'review-tasks-panel' 时，
+                    // 我们才返回一个包含 currentUser 的对象
+                    if (this.activePanel === 'review-tasks-panel') {
+                        return {
+                            currentUser: this.currentUser
+                        };
+                    }
+                    // 其他所有情况下，都返回一个空对象
+                    return {};
                 }
             },
 

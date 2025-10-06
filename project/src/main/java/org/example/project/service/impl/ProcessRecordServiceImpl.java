@@ -376,51 +376,67 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     }
 
     @Override
-    @Transactional // 确保操作的原子性
+    @Transactional
     public void reassignTask(Long recordId, Long newAssigneeId) {
-        Long currentUserId = getCurrentUserId();
-        log.info("【SERVICE-REASSIGN】开始处理转交请求, Record ID: {}, 操作用户 ID: {}, 目标用户 ID: {}", recordId, currentUserId, newAssigneeId);
+        // --- 调试点 1: 获取并打印当前用户信息 ---
+        User currentUser = getCurrentUser(); // 确保您有一个返回完整User对象的方法
+        if (currentUser == null) {
+            log.error("【SERVICE-REASSIGN-FAIL】无法获取当前用户信息，操作被拒绝！");
+            throw new AccessDeniedException("无法验证当前用户信息。");
+        }
+        Long currentUserId = currentUser.getId();
+        String currentUserRole = currentUser.getIdentity();
 
-        // 1. --- 验证记录 ---
+        log.info("--- [REASSIGN TASK] ---");
+        log.info("  - Record ID: {}", recordId);
+        log.info("  - Operator: {} (ID: {}, Role: {})", currentUser.getUsername(), currentUserId, currentUserRole);
+        log.info("  - Target Assignee ID: {}", newAssigneeId);
+
+        // --- 步骤 1: 验证记录 ---
         ProcessRecord record = this.getById(recordId);
         if (record == null) {
             throw new RuntimeException("操作失败：找不到ID为 " + recordId + " 的记录。");
         }
+        log.info("  - Record Found. Current Assignee ID: {}", record.getAssigneeId());
 
-        // 2. --- 权限与状态校验 ---
-        if (record.getAssigneeId() == null) {
-            throw new AccessDeniedException("权限不足：该任务当前没有指定的负责人。");
+        // --- 步骤 2: 【【【修正后的权限校验】】】 ---
+        log.info("  - Performing permission check...");
+        
+        boolean isManagerOrAdmin = "MANAGER".equalsIgnoreCase(currentUserRole) || "ADMIN".equalsIgnoreCase(currentUserRole);
+        boolean isCurrentAssignee = record.getAssigneeId() != null && record.getAssigneeId().equals(currentUserId);
+        
+        // 调试日志，清晰地显示判断依据
+        log.info("  - Is Operator the Current Assignee? -> {}", isCurrentAssignee);
+        log.info("  - Is Operator a Manager/Admin? -> {}", isManagerOrAdmin);
+
+        // 只有“当前负责人”或者“管理员”才能执行转交
+        if (!isCurrentAssignee && !isManagerOrAdmin) {
+            log.error("【SERVICE-REASSIGN-FAIL】Permission Denied. Operator is neither the assignee nor an admin.");
+            throw new AccessDeniedException("权限不足：您不是当前任务的负责人，也没有管理员权限。");
         }
-        if (!record.getAssigneeId().equals(currentUserId)) {
-            throw new AccessDeniedException("权限不足：您不是当前任务的负责人。");
-        }
+        log.info("  - Permission Check: PASSED");
+
+        // --- 步骤 3: 状态校验 (保持不变) ---
         if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
             throw new IllegalStateException("操作失败：任务当前状态为 [" + record.getStatus() + "]，而不是[待审核]，无法转交。");
         }
-        log.info("【SERVICE-REASSIGN】权限与状态校验通过。");
 
-        // 3. --- 【核心修正】校验目标用户是否为有效审核员 (包括 manager) ---
+        // --- 步骤 4: 校验目标用户 (保持不变) ---
         User newAssignee = userMapper.selectById(newAssigneeId);
-
         if (newAssignee == null) {
             throw new IllegalArgumentException("操作失败：找不到ID为 " + newAssigneeId + " 的目标用户。");
         }
-
-        String newAssigneeRole = newAssignee.getIdentity(); // 获取目标用户的角色
-        log.info("【SERVICE-REASSIGN】目标负责人 {} 的角色为: {}", newAssignee.getUsername(), newAssigneeRole);
-
-        // 允许 'REVIEWER' 和 'MANAGER' 作为有效的审核员
+        String newAssigneeRole = newAssignee.getIdentity();
         if (!"REVIEWER".equalsIgnoreCase(newAssigneeRole) && !"MANAGER".equalsIgnoreCase(newAssigneeRole)) {
-            throw new IllegalArgumentException("操作失败：目标用户 " + newAssignee.getUsername() + " (" + newAssigneeRole + ") 不是一个有效的审核员。");
+            throw new IllegalArgumentException("操作失败：目标用户 " + newAssignee.getUsername() + " 不是一个有效的审核员。");
         }
-        log.info("【SERVICE-REASSIGN】目标负责人角色校验通过。");
-
-        // 4. --- 执行更新 ---
+        
+        // --- 步骤 5: 执行更新 (保持不变) ---
         record.setAssigneeId(newAssigneeId);
         this.updateById(record);
-        log.info("【SERVICE-REASSIGN】任务已成功转交给用户: {} (ID: {})", newAssignee.getUsername(), newAssigneeId);
+        log.info("  - SUCCESS! Task reassigned to {} (ID: {})", newAssignee.getUsername(), newAssigneeId);
+        log.info("--- [END REASSIGN TASK] ---");
     }
-
 // 在 ProcessRecordServiceImpl.java 中
     @Override
     @Transactional

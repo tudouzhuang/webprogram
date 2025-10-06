@@ -1,8 +1,11 @@
 Vue.component('review-tasks-panel', {
-    // 【Props】: 保持不变
     props: {
         projectId: {
             type: [String, Number],
+            required: true
+        },
+        currentUser: {
+            type: Object,
             required: true
         }
     },
@@ -121,8 +124,17 @@ Vue.component('review-tasks-panel', {
             <el-dialog title="转交审核任务" :visible.sync="reassignDialogVisible" width="400px" append-to-body>
                 <div v-if="currentRecord">
                     <p>确定要将 <strong>{{ currentRecord.partName }}</strong> 的审核任务转交给其他审核员吗？</p>
-                    <el-select v-model="selectedAssigneeId" placeholder="请选择新的审核员" filterable style="width: 100%;">
-                        <el-option v-for="user in reviewerUsers" :key="user.id" :label="user.username" :value="user.id"></el-option>
+                    <el-select 
+                        v-model="selectedAssigneeId" 
+                        placeholder="请选择新的审核员" 
+                        filterable 
+                        style="width: 100%;">
+                        <el-option 
+                            v-for="user in availableReviewersForReassign" 
+                            :key="user.id" 
+                            :label="user.username" 
+                            :value="user.id">
+                        </el-option>
                     </el-select>
                 </div>
                 <span slot="footer" class="dialog-footer">
@@ -165,6 +177,25 @@ Vue.component('review-tasks-panel', {
     computed: {
         totalTasks() {
             return this.reviewList.length;
+        },
+        availableReviewersForReassign() {
+            console.log("--- [Debug Point 5] --- availableReviewersForReassign 计算属性被调用 ---");
+            
+            // 【检查站 D】: 查看计算时 this.reviewerUsers 的状态
+            console.log("[Debug Point 6] 计算时，this.reviewerUsers 的内容:", JSON.parse(JSON.stringify(this.reviewerUsers)));
+            console.log("[Debug Point 7] 计算时，this.currentRecord 的内容:", this.currentRecord ? this.currentRecord.id : 'null');
+
+            if (!this.currentRecord || !this.reviewerUsers || this.reviewerUsers.length === 0) {
+                console.warn("[Debug Info] 因前置条件不满足，返回空数组。");
+                return [];
+            }
+            
+            const filtered = this.reviewerUsers.filter(user => user.id !== this.currentRecord.assigneeId);
+            
+            // 【检查站 E】: 查看最终返回给模板的数组
+            console.log("[Debug Point 8] 最终返回给下拉框的数组:", JSON.parse(JSON.stringify(filtered)));
+            
+            return filtered;
         },
         isAdmin() {
             // =======================================================
@@ -224,18 +255,6 @@ Vue.component('review-tasks-panel', {
                 })
                 .finally(() => {
                     this.isLoading = false;
-                });
-        },
-        
-        // --- 新增方法: 获取所有审核员用户 ---
-        fetchReviewerUsers() {
-            // 这个API需要你后端实现
-            axios.get('/api/users?role=REVIEWER')
-                .then(response => {
-                    this.reviewerUsers = response.data;
-                })
-                .catch(error => {
-                    this.$message.error("获取审核员列表失败！");
                 });
         },
 
@@ -359,26 +378,53 @@ Vue.component('review-tasks-panel', {
             });
         },
         async fetchAllUsers() {
+            console.log("--- [Debug Point 1] --- fetchAllUsers 方法被调用 ---");
             try {
-                // 这个接口返回所有用户列表
                 const response = await axios.get('/api/users');
+                const allUsers = response.data;
+                
+                console.log("[Debug Point 2] 从 /api/users 收到的原始数据:", JSON.parse(JSON.stringify(allUsers)));
+                
+                if (!allUsers || !Array.isArray(allUsers) || allUsers.length === 0) {
+                    console.error("[Debug Error] API返回的数据为空或格式不正确！");
+                    return;
+                }
+
                 const userMap = {};
-                response.data.forEach(user => {
-                    userMap[user.id] = user.username;
-                });
+                allUsers.forEach(user => { userMap[user.id] = user.username; });
                 this.userMap = userMap;
-                console.log("[ReviewPanel] 用户映射表加载成功:", this.userMap);
+                
+                console.log("[Debug Point 3] 生成的 userMap:", JSON.parse(JSON.stringify(this.userMap)));
+                
+                // 【【【核心修正：忽略大小写】】】
+                const filteredReviewers = allUsers.filter(user => {
+                    // 1. 确保 user.identity 存在且是字符串
+                    if (typeof user.identity !== 'string') return false;
+                    // 2. 将其转换为大写再进行比较
+                    const identityUpper = user.identity.toUpperCase();
+                    return identityUpper === 'REVIEWER' || identityUpper === 'MANAGER';
+                });
+
+                console.log("[Debug Point 4] 过滤出的审核员 (filteredReviewers):", JSON.parse(JSON.stringify(filteredReviewers)));
+
+                this.reviewerUsers = filteredReviewers;
+        
             } catch (error) {
                 this.$message.error("加载用户信息失败！");
+                console.error("[Debug Error] fetchAllUsers 请求失败:", error);
             }
         },
     },
 
     mounted() {
+        // 只并行获取所有用户和任务列表
         Promise.all([
-            this.fetchAllUsers(), // 新方法
+            this.fetchAllUsers(),
             this.fetchReviewList()
-        ]);
+        ]).catch(error => {
+            console.error("初始化面板数据时发生错误:", error);
+            this.$message.error("初始化面板数据失败，请刷新重试。");
+        });
     },
 
     watch: {

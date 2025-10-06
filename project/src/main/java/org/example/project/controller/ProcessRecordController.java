@@ -162,12 +162,14 @@ public class ProcessRecordController {
     /**
      * API: 转交任务 路径: POST /api/process-records/{recordId}/reassign
      */
-    @PostMapping("/{recordId}/reassign") // 【优化点】: 路径简化
+    @PostMapping("/{recordId}/reassign")
     public ResponseEntity<?> reassignTask(@PathVariable Long recordId, @RequestBody ReassignTaskRequest dto) {
+        // 【调试点1】在这里添加日志，确认请求是否已经通过了 Spring Security
+        log.info(">>> [CONTROLLER] reassignTask API 被调用, Record ID: {}, New Assignee ID: {}", recordId, dto.getNewAssigneeId());
+        
         processRecordService.reassignTask(recordId, dto.getNewAssigneeId());
         return ResponseEntity.ok().body("任务已成功转交。");
     }
-
     /**
      * API: 打回修改 路径: POST /api/process-records/{recordId}/request-changes
      */
