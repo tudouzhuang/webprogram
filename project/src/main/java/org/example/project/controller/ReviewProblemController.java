@@ -9,6 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import lombok.Data;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -98,5 +100,35 @@ public class ReviewProblemController {
     public ResponseEntity<ReviewProblem> closeProblem(@PathVariable Long problemId) {
         ReviewProblem closedProblem = reviewProblemService.closeProblem(problemId);
         return ResponseEntity.ok(closedProblem);
+    }
+
+        @Data
+    public static class ReopenRequest {
+        private String comment;
+    }
+
+    /**
+     * API - 打回一个待复核的问题
+     * @param problemId 问题ID
+     * @param request 包含打回原因 "comment" 的请求体
+     * @return 更新后的问题详情
+     */
+    @PostMapping("/{problemId}/reopen")
+    public ResponseEntity<ReviewProblem> reopenProblem(
+            @PathVariable Long problemId,
+            @RequestBody ReopenRequest request) {
+        
+        // 权限校验：这里可以添加逻辑，确保只有 REVIEWER 或 MANAGER 才能调用
+        // ...
+
+        ReviewProblem updatedProblem = reviewProblemService.reopenProblem(problemId, request.getComment());
+        
+        // 【重要】: 这里我们应该返回 ReviewProblemVO 而不是 ReviewProblem 实体
+        // 假设你有一个转换方法
+        // ReviewProblemVO resultVO = convertToVO(updatedProblem); 
+        // return ResponseEntity.ok(resultVO);
+
+        // 暂时先直接返回实体，您后续可以优化为返回VO
+        return ResponseEntity.ok(updatedProblem);
     }
 }

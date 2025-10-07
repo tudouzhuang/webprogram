@@ -329,31 +329,30 @@ Vue.component('record-workspace-panel', {
             }
         },
 
-        // loadSheetInIframe 逻辑微调，以适应新的可编辑状态
         loadSheetInIframe(fileInfo) {
             if (!fileInfo || !fileInfo.id) return;
             
-            // 标记此 iframe 已加载
             this.iframesLoaded[fileInfo.id] = true;
             
-            // 【【【 修正点 】】】
-            // ref 的名字是用 file.id 绑定的，所以要用 file.id 来获取
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
-            
-            // 由于 iframe 是 v-for 生成的，iframeRef 会是一个数组，取第一个元素
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
             
             if (targetIframe && targetIframe.contentWindow) {
                 const options = { allowUpdate: this.canEdit, showtoolbar: this.canEdit, showinfobar: false };
-                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
                 
+                // 【【【 核心修改在这里 】】】
+                // 我们在原有的 URL 后面，加上了 &format=json 这个参数。
+                // 注意：因为前面已经有了一个 '?' (用于时间戳)，所以我们用 '&' 来连接新的参数。
+                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}&format=json`;
+                
+                console.log(`[Workspace] 准备向 iframe 发送加载指令, URL: ${fileUrl}`); // 增加一条日志，方便调试
+        
                 const message = {
                     type: 'LOAD_SHEET',
                     payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
                 };
                 targetIframe.contentWindow.postMessage(message, window.location.origin);
             } else {
-                // 添加日志，方便调试
                 console.warn(`[Workspace] 尝试加载 iframe 内容失败，未能找到 ref 为 'iframe-${fileInfo.id}' 的 iframe 实例。`);
             }
         },

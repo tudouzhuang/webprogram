@@ -1,6 +1,8 @@
 package org.example.project.controller;
 
 // --- 基础 Spring 依赖 ---
+import org.example.project.dto.LuckySheetJsonDTO; // 【新增】 导入我们定义好的 Luckysheet 数据传输对象
+import org.example.project.service.ExcelSplitterService; // 【新增】 导入我们处理Excel的核心服务
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource; // 【新增】: 导入 ClassPathResource
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam; // 【修改】 导入 RequestParam
 
 // --- 日志、实体和Mapper依赖 ---
 import org.example.project.entity.ProjectFile;
@@ -28,6 +31,7 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List; // 【新增】 用于接收List类型
 
 /**
  * 文件控制器 (File Controller)
@@ -41,6 +45,9 @@ public class FileController {
 
     @Autowired
     private ProjectFileMapper projectFileMapper;
+
+    @Autowired
+    private ExcelSplitterService excelSplitterService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -82,44 +89,50 @@ public class FileController {
     // =======================================================
 
     @GetMapping("/content/{fileId}")
-    public ResponseEntity<Resource> getFileStreamById(@PathVariable Long fileId) {
-        log.info("接收到获取文件内容的请求，文件ID: {}", fileId);
+    public ResponseEntity<?> getFileContentById(
+            @PathVariable Long fileId,
+            @RequestParam(name = "format", required = false) String format) { // 接收可选的 format 参数
 
-        // 1. 从数据库查找文件记录 (逻辑正确)
-        ProjectFile fileRecord = projectFileMapper.selectById(fileId);
-        if (fileRecord == null) {
-            log.warn("在数据库中找不到文件记录，ID: {}", fileId);
-            return ResponseEntity.notFound().build();
-        }
+        log.info("接收到获取文件内容的请求，文件ID: {}, 请求格式: {}", fileId, format == null ? "默认(文件流)" : format);
 
         try {
-            // 2. 构建并验证物理文件路径 (逻辑正确)
+            // 1. 公共逻辑：查找文件记录并构建物理路径
+            ProjectFile fileRecord = projectFileMapper.selectById(fileId);
+            if (fileRecord == null) {
+                log.warn("在数据库中找不到文件记录，ID: {}", fileId);
+                return ResponseEntity.notFound().build();
+            }
             Path filePath = Paths.get(uploadDir).resolve(fileRecord.getFilePath()).normalize();
-            log.info("准备从物理路径读取文件: {}", filePath);
-
-            Resource resource = new UrlResource(filePath.toUri());
-
-            if (!resource.exists() || !resource.isReadable()) {
-                log.error("数据库记录存在，但物理文件不存在或不可读: {}", filePath);
+            if (!Files.exists(filePath)) {
+                log.error("数据库记录存在，但物理文件不存在: {}", filePath);
                 return ResponseEntity.notFound().build();
             }
 
-            // 3. 确定MIME类型 (逻辑正确)
-            String contentType = determineContentType(filePath, fileRecord.getFileName());
-            log.info("确定文件 {} 的 Content-Type 为: {}", fileRecord.getFileName(), contentType);
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .contentLength(resource.contentLength())
-                    .body(resource);
-
-        } catch (MalformedURLException e) {
-             log.error("创建文件路径URL时出错, fileId: {}", fileId, e);
-             return ResponseEntity.badRequest().build();
+            // 2. 【核心判断】根据 format 参数决定执行哪个逻辑分支
+            if ("json".equalsIgnoreCase(format)) {
+                // --- 分支A: 用户需要JSON数据 ---
+                log.info("【JSON模式】开始将文件转换为JSON: {}", filePath);
+                List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(filePath.toString());
+                return ResponseEntity.ok(sheets); // 直接返回JSON数据
+            } else {
+                // --- 分支B: 用户需要原始文件 (默认行为) ---
+                log.info("【文件流模式】准备提供原始文件下载: {}", filePath);
+                Resource resource = new UrlResource(filePath.toUri());
+                String contentType = determineContentType(filePath, fileRecord.getFileName());
+                return ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType(contentType))
+                        .contentLength(resource.contentLength())
+                        .body(resource);
+            }
         } catch (IOException e) {
-            log.error("读取文件ID {} 时发生IO异常", fileId, e);
-            return ResponseEntity.internalServerError().build();
+            log.error("处理文件ID {} 时发生IO异常", fileId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("文件处理异常");
+        } catch (Exception e) {
+            log.error("处理文件ID {} 时发生未知错误", fileId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("服务器内部错误");
         }
     }
+
     
     // determineContentType 方法保持原样，它已经非常完善
     private String determineContentType(Path path, String fileName) {

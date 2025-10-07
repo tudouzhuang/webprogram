@@ -167,6 +167,33 @@ const ProblemRecordTable = {
                     });
             }).catch(() => { });
         },
+        handleReopen(problem) {
+            // 使用 Element UI 的 $prompt 来获取用户输入的打回原因
+            this.$prompt('请输入打回原因，内容将反馈给设计员。', '确认打回', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                inputPattern: /.+/, // 简单的验证，确保输入不为空
+                inputErrorMessage: '打回原因不能为空！'
+            }).then(({ value }) => { // value 就是用户输入的原因
+                // 用户点击了“确定”，我们向后端发送请求
+                axios.post(`/api/problems/${problem.id}/reopen`, { comment: value }) // 将原因作为请求体发送
+                    .then(response => {
+                        this.$message.success('问题已成功打回！');
+                        // 使用后端返回的最新数据更新表格行，实现局部刷新
+                        const index = this.problems.findIndex(p => p.id === problem.id);
+                        if (index !== -1) {
+                            this.$set(this.problems, index, response.data);
+                        } else {
+                            this.fetchProblems(); // 如果找不到，就全局刷新
+                        }
+                    })
+                    .catch(error => {
+                        this.$message.error('操作失败: ' + (error.response?.data?.message || '未知错误'));
+                    });
+            }).catch(() => {
+                this.$message.info('已取消打回操作');
+            });
+        },
         /**
          * 提交表单（新增或更新）。
          */
@@ -326,12 +353,12 @@ const ProblemRecordTable = {
                 </el-dialog>
 
                 <el-table :data="problems" v-loading="isLoading" stripe style="width: 100%" border>
-                    <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
-                    <el-table-column prop="stage" label="阶段" width="120"></el-table-column>
-                    <el-table-column prop="problemPoint" label="问题点" min-width="200"></el-table-column>
-                    <el-table-column prop="description" label="描述" min-width="250" show-overflow-tooltip></el-table-column>
+                    <el-table-column type="index" label="序号" width="55" align="center"></el-table-column>
+                    <el-table-column prop="stage" label="阶段" min-width="80"></el-table-column>
+                    <el-table-column prop="problemPoint" label="问题点" min-width="120" show-overflow-tooltip></el-table-column>
+                    <el-table-column prop="description" label="描述" min-width="120" show-overflow-tooltip></el-table-column>
                     
-                    <el-table-column label="截图" width="100" align="center">
+                    <el-table-column label="截图" width="80" align="center">
                         <template slot-scope="scope">
                         
                             <!-- 情况一：如果已有截图 (scope.row.screenshotPath 存在) -->
@@ -368,19 +395,18 @@ const ProblemRecordTable = {
                         </template>
                     </el-table-column>
 
-                    <el-table-column prop="status" label="状态" width="150" align="center">
+                    <el-table-column prop="status" label="状态" min-width="90" align="center">
                         <template slot-scope="scope">
-                            <el-tag v-if="scope.row.status === 'OPEN'" type="danger">待解决</el-tag>
-                            <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning">待复核</el-tag>
-                            <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success">已关闭</el-tag>
-                            <el-tag v-else type="info">{{ scope.row.status }}</el-tag>
+                            <el-tag :type="scope.row.status === 'OPEN' ? 'danger' : scope.row.status === 'RESOLVED' ? 'warning' : 'success'" size="small">
+                                {{ scope.row.status === 'OPEN' ? '待解决' : scope.row.status === 'RESOLVED' ? '待复核' : '已关闭' }}
+                            </el-tag>
                         </template>
                     </el-table-column>
 
-                    <el-table-column prop="confirmedByUsername" label="确认人" width="120"></el-table-column>
-                    <el-table-column prop="confirmedAt" label="确认时间" width="160"></el-table-column>
-                    <el-table-column prop="reviewerUsername" label="审核人" width="120"></el-table-column>
-                    <el-table-column prop="reviewedAt" label="审核时间" width="160"></el-table-column>
+                    <el-table-column prop="confirmedByUsername" label="确认人" width="80"></el-table-column>
+                    <el-table-column prop="confirmedAt" label="确认时间" min-width="160"></el-table-column>
+                    <el-table-column prop="reviewerUsername" label="审核人" min-width="90"></el-table-column>
+                    <el-table-column prop="reviewedAt" label="审核时间" min-width="160"></el-table-column>
 
                     <el-table-column label="操作" width="180" align="center" fixed="right">
                         <template slot-scope="scope">
@@ -391,14 +417,16 @@ const ProblemRecordTable = {
                                     <el-button size="mini" @click="handleEdit(scope.row)" icon="el-icon-edit">编辑</el-button>
                                     <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)" icon="el-icon-delete">删除</el-button>
                                 </template>
-                                <el-button 
-                                    v-else-if="scope.row.status === 'RESOLVED'"
-                                    size="mini" 
-                                    type="success" 
-                                    icon="el-icon-circle-check"
-                                    @click="handleClose(scope.row)">
-                                    关闭问题
-                                </el-button>
+                                <template v-else-if="scope.row.status === 'RESOLVED'">
+                                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                                        <div>
+                                            <el-button size="mini" type="warning" icon="el-icon-refresh-left" @click="handleReopen(scope.row)">打回</el-button>
+                                        </div>
+                                        <div>
+                                            <el-button size="mini" type="success" icon="el-icon-circle-check" @click="handleClose(scope.row)">关闭</el-button>
+                                        </div>
+                                    </div>
+                                </template>
                                 <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success" effect="plain">已关闭</el-tag>
                                 <el-tag v-else type="info">状态未知</el-tag>
                             </div>

@@ -177,28 +177,47 @@
         }
 
         function loadSheetFromFile(fileUrl, fileName, options) {
-            container.innerHTML = `<div class="loader">正在下载文件...</div>`;
+            container.innerHTML = `<div class="loader">正在加载数据...</div>`;
+
             fetch(fileUrl)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`网络错误: ${response.statusText}`);
                     }
-                    return response.blob();
-                })
-                .then(fileBlob => {
-                    container.innerHTML = `<div class="loader">文件下载成功，正在解析...</div>`;
-                    LuckyExcel.transformExcelToLucky(fileBlob,
-                        function (exportJson) {
-                            renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
-                        },
-                        function (error) {
-                            console.error("LuckyExcel 解析失败:", error);
-                            container.innerHTML = `<div class="loader">文件解析失败。请确认文件是有效的.xlsx格式。</div>`;
-                        }
-                    );
+                    
+                    // 【【【 核心修改：智能嗅探响应类型 】】】
+                    // 克隆响应流，因为 response.body 只能被读取一次
+                    const clonedResponse = response.clone();
+
+                    // --- 尝试分支 1: 按 JSON 解析 ---
+                    return response.json()
+                        .then(jsonData => {
+                            console.log("[Iframe] ✅ 成功将响应解析为JSON！将直接渲染。");
+                            // 如果成功，jsonData 就是我们需要的 sheets 数组
+                            renderSheet(jsonData, fileName, options);
+                        })
+                        .catch(jsonError => {
+                            // --- 回退分支 2: 按 Blob (二进制文件) 处理 ---
+                            console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到 LuckyExcel 二进制文件处理模式。", jsonError);
+                            container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
+                            
+                            // 使用之前克隆的响应流来读取 Blob
+                            return clonedResponse.blob().then(fileBlob => {
+                                LuckyExcel.transformExcelToLucky(fileBlob,
+                                    function (exportJson) {
+                                        console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
+                                        renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
+                                    },
+                                    function (excelError) {
+                                        console.error("[Iframe] ❌ LuckyExcel 解析失败:", excelError);
+                                        container.innerHTML = `<div class="loader">文件解析失败。请确认文件是有效的.xlsx格式。</div>`;
+                                    }
+                                );
+                            });
+                        });
                 })
                 .catch(error => {
-                    console.error("加载文件失败:", error);
+                    console.error("[Iframe] ❌ 加载文件失败:", error);
                     container.innerHTML = `<div class="loader">文件加载失败。</div>`;
                 });
         }

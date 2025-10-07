@@ -217,27 +217,38 @@ Vue.component('record-review-panel', {
         
             if (targetIframe && targetIframe.contentWindow) {
         
-                // ===== 新增：锁定 window.scrollY =====
+                // ===== 您的滚动锁定逻辑 (保持不变) =====
                 let lastScrollY = window.scrollY;
-        
-                // 阻止 window 在 iframe 渲染期间滚动
                 const preventScroll = e => e.preventDefault();
                 window.addEventListener('scroll', preventScroll, { passive: false });
-        
-                // 渲染完成后恢复滚动（这里用 1.5s 假设 Luckysheet 完成初始化）
                 setTimeout(() => {
                     window.removeEventListener('scroll', preventScroll);
                     window.scrollTo(0, lastScrollY);
-                    console.log('[FIX] window.scrollY 恢复到', lastScrollY);
                 }, 1500);
         
-                // ===== 原有 Luckysheet 加载逻辑 =====
                 const options = { allowUpdate: true, showtoolbar: true };
-                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+
+                // 【关键修改】在原始 URL 后面强制追加 `&format=json` (或 `?format=json`)
+                // 这样 iframe 内部的加载器就会收到JSON，而不是二进制文件
+                let fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+                if (fileUrl.includes('?')) {
+                    fileUrl += '&format=json';
+                } else {
+                    fileUrl += '?format=json';
+                }
+
+                console.log(`[Parent Panel] 准备向 iframe 发送加载指令, 强制使用 JSON 格式, URL: ${fileUrl}`);
+
                 const message = {
                     type: 'LOAD_SHEET',
-                    payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
+                    payload: { 
+                        fileUrl: fileUrl, // 使用我们修改过的 URL
+                        fileName: fileInfo.fileName, 
+                        options: { lang: 'zh', ...options } 
+                    }
                 };
+
+                // 发送消息给 iframe
                 this.sendMessageToIframe(targetIframe, message);
             }
         },

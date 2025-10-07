@@ -175,6 +175,58 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
         return problem;
     }
 
+       /**
+     * 【【【 新增功能：打回问题 】】】
+     * 审核员在复核时，如果认为问题未解决，则调用此方法将其打回。
+     *
+     * @param problemId 要打回的问题的ID
+     * @param comment   打回的原因，将记录在问题描述中
+     * @return 更新后的问题对象
+     */
+    @Override
+    @Transactional
+    public ReviewProblem reopenProblem(Long problemId, String comment) {
+        // 1. 获取问题实体
+        ReviewProblem problem = this.getById(problemId);
+        if (problem == null) {
+            throw new RuntimeException("未找到ID为 " + problemId + " 的问题记录");
+        }
+
+        // 2. 状态校验：只有“待复核”(RESOLVED)状态的问题才能被打回
+        if (problem.getStatus() != ReviewProblemStatus.RESOLVED) {
+            throw new IllegalStateException("该问题当前不是'待复核'状态，无法打回。");
+        }
+
+        // 3. 获取当前操作的审核员信息（用于日志记录）
+        User currentUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        // 4. 【核心操作】更新问题状态和信息
+        problem.setStatus(ReviewProblemStatus.OPEN); // 状态改回“待解决”
+
+        // 将打回原因追加到问题描述的末尾，方便设计员查看历史记录
+        String originalDescription = problem.getDescription() == null ? "" : problem.getDescription();
+        String rejectionLog = String.format("\n\n--- [打回于 %s by %s] ---\n%s",
+                LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+                currentUser.getUsername(),
+                comment
+        );
+        problem.setDescription(originalDescription + rejectionLog);
+
+        // 清空上一次的“解决”信息，因为这次解决被驳回了
+        problem.setConfirmedByUserId(null);
+        problem.setConfirmedAt(null);
+
+        // 更新时间戳
+        problem.setUpdatedAt(LocalDateTime.now());
+
+        // 5. 保存到数据库
+        this.updateById(problem);
+        log.info("审核员 {} 已成功打回问题 #{}, 原因: {}", currentUser.getUsername(), problemId, comment);
+
+        // 6. 返回更新后的问题对象给前端
+        return problem;
+    }
+
     @Override
     @Transactional
     public ReviewProblem closeProblem(Long problemId) {

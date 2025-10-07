@@ -1,11 +1,14 @@
 package org.example.project.service.impl;
 
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataValidation;
+import org.apache.poi.ss.usermodel.DataValidationConstraint;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.*;
+import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.service.ExcelSplitterService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -188,5 +191,127 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
             default:
                 break;
         }
+    }
+
+    // ==============================================================================
+    //  ↓↓↓ 【【【  把 新 方 法 完 整 地 粘 贴 在 这 里  】】】 ↓↓↓
+    // ==============================================================================
+    /**
+     * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。
+     * @param filePath 文件的绝对物理路径
+     * @return 包含所有 Sheet 数据的 List 集合
+     * @throws IOException 如果文件读取失败
+     */
+    public List<LuckySheetJsonDTO.SheetData> convertExcelToLuckysheetJson(String filePath) throws IOException {
+        log.info("【Excel->JSON】开始转换文件: {}", filePath);
+        List<LuckySheetJsonDTO.SheetData> sheetsData = new ArrayList<>();
+
+        ZipSecureFile.setMinInflateRatio(0.001); // 防范 Zip bomb 攻击
+
+        try (FileInputStream fis = new FileInputStream(filePath);
+             XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
+
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                XSSFSheet sheet = workbook.getSheetAt(i);
+                LuckySheetJsonDTO.SheetData sheetData = new LuckySheetJsonDTO.SheetData();
+
+                // 1. 读取 Sheet 的基本信息
+                sheetData.setName(sheet.getSheetName());
+                sheetData.setIndex(i);
+                sheetData.setOrder(i);
+                sheetData.setStatus(sheet.isSelected() ? 1 : 0);
+
+                // 2. 读取所有单元格数据 (celldata)
+                List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
+                for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
+                    Row row = sheet.getRow(r);
+                    if (row == null) continue;
+                    for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
+                        XSSFCell cell = (XSSFCell) row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                        if (cell == null) continue;
+
+                        LuckySheetJsonDTO.CellData cellData = new LuckySheetJsonDTO.CellData();
+                        cellData.setR(r);
+                        cellData.setC(c);
+                        
+                        LuckySheetJsonDTO.CellValue cellValue = new LuckySheetJsonDTO.CellValue();
+                        // 这里可以根据需要添加更复杂的样式、富文本等解析逻辑
+                        switch (cell.getCellType()) {
+                            case STRING:
+                                cellValue.setV(cell.getStringCellValue());
+                                cellValue.setM(cell.getStringCellValue());
+                                break;
+                            case NUMERIC:
+                                cellValue.setV(String.valueOf(cell.getNumericCellValue()));
+                                cellValue.setM(String.valueOf(cell.getNumericCellValue()));
+                                break;
+                            case BOOLEAN:
+                                cellValue.setV(String.valueOf(cell.getBooleanCellValue()));
+                                cellValue.setM(String.valueOf(cell.getBooleanCellValue()));
+                                break;
+                            case FORMULA:
+                                cellValue.setF("=" + cell.getCellFormula());
+                                try {
+                                    cellValue.setV(String.valueOf(cell.getNumericCellValue()));
+                                } catch (Exception e) {
+                                    cellValue.setV(cell.getStringCellValue());
+                                }
+                                break;
+                            default: break;
+                        }
+                        cellData.setV(cellValue);
+                        celldataList.add(cellData);
+                    }
+                }
+                sheetData.setCelldata(celldataList);
+
+                // 3. 读取配置信息 (config), 如合并单元格
+                Map<String, Object> config = new HashMap<>();
+                Map<String, Object> merge = new HashMap<>();
+                for (CellRangeAddress region : sheet.getMergedRegions()) {
+                    String key = region.getFirstRow() + "_" + region.getFirstColumn();
+                    Map<String, Integer> mergeValue = new HashMap<>();
+                    mergeValue.put("r", region.getFirstRow());
+                    mergeValue.put("c", region.getFirstColumn());
+                    mergeValue.put("rs", region.getLastRow() - region.getFirstRow() + 1);
+                    mergeValue.put("cs", region.getLastColumn() - region.getFirstColumn() + 1);
+                    merge.put(key, mergeValue);
+                }
+                if(!merge.isEmpty()) config.put("merge", merge);
+                sheetData.setConfig(config);
+
+                // 4. 【【【 核心：读取数据验证规则 】】】
+                Map<String, Object> dataVerificationMap = new HashMap<>();
+                for (DataValidation validation : sheet.getDataValidations()) {
+                    DataValidationConstraint constraint = validation.getValidationConstraint();
+                    if (constraint.getValidationType() == DataValidationConstraint.ValidationType.LIST) {
+                        CellRangeAddressList regions = validation.getRegions();
+                        for (CellRangeAddress region : regions.getCellRangeAddresses()) {
+                            for (int r = region.getFirstRow(); r <= region.getLastRow(); r++) {
+                                for (int c = region.getFirstColumn(); c <= region.getLastColumn(); c++) {
+                                    String luckysheetRangeKey = r + "_" + c;
+                                    Map<String, Object> rule = new HashMap<>();
+                                    rule.put("type", "dropdown");
+                                    String formula = constraint.getFormula1();
+                                    if (formula != null && formula.startsWith("\"") && formula.endsWith("\"")) {
+                                        formula = formula.substring(1, formula.length() - 1);
+                                    }
+                                    rule.put("value1", formula);
+                                    rule.put("prohibitInput", !validation.getEmptyCellAllowed());
+                                    dataVerificationMap.put(luckysheetRangeKey, rule);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!dataVerificationMap.isEmpty()) {
+                    sheetData.setDataVerification(dataVerificationMap);
+                }
+
+                sheetsData.add(sheetData);
+            }
+        }
+        log.info("【Excel->JSON】文件转换成功，共处理 {} 个Sheet。", sheetsData.size());
+        return sheetsData;
     }
 }
