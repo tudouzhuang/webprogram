@@ -193,11 +193,9 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
         }
     }
 
-    // ==============================================================================
-    //  ↓↓↓ 【【【  把 新 方 法 完 整 地 粘 贴 在 这 里  】】】 ↓↓↓
-    // ==============================================================================
-    /**
+/**
      * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。
+     * 【已修正】: 增强了对单元格类型的处理，并增加了对列宽(columnlen)和行高(rowlen)的读取。
      * @param filePath 文件的绝对物理路径
      * @return 包含所有 Sheet 数据的 List 集合
      * @throws IOException 如果文件读取失败
@@ -235,15 +233,24 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                         cellData.setC(c);
                         
                         LuckySheetJsonDTO.CellValue cellValue = new LuckySheetJsonDTO.CellValue();
-                        // 这里可以根据需要添加更复杂的样式、富文本等解析逻辑
+                        
                         switch (cell.getCellType()) {
                             case STRING:
                                 cellValue.setV(cell.getStringCellValue());
                                 cellValue.setM(cell.getStringCellValue());
                                 break;
                             case NUMERIC:
-                                cellValue.setV(String.valueOf(cell.getNumericCellValue()));
-                                cellValue.setM(String.valueOf(cell.getNumericCellValue()));
+                                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                                    java.util.Date date = cell.getDateCellValue();
+                                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                                    String formattedDate = sdf.format(date);
+                                    cellValue.setV(formattedDate);
+                                    cellValue.setM(formattedDate);
+                                } else {
+                                    String plainNumber = new java.math.BigDecimal(cell.getNumericCellValue()).toPlainString();
+                                    cellValue.setV(plainNumber);
+                                    cellValue.setM(plainNumber);
+                                }
                                 break;
                             case BOOLEAN:
                                 cellValue.setV(String.valueOf(cell.getBooleanCellValue()));
@@ -251,10 +258,22 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 break;
                             case FORMULA:
                                 cellValue.setF("=" + cell.getCellFormula());
-                                try {
-                                    cellValue.setV(String.valueOf(cell.getNumericCellValue()));
-                                } catch (Exception e) {
-                                    cellValue.setV(cell.getStringCellValue());
+                                switch (cell.getCachedFormulaResultType()) {
+                                    case NUMERIC:
+                                        cellValue.setV(String.valueOf(cell.getNumericCellValue()));
+                                        break;
+                                    case STRING:
+                                        cellValue.setV(cell.getStringCellValue());
+                                        break;
+                                    case BOOLEAN:
+                                        cellValue.setV(String.valueOf(cell.getBooleanCellValue()));
+                                        break;
+                                    case ERROR:
+                                        cellValue.setV(org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString());
+                                        break;
+                                    default:
+                                        cellValue.setV("");
+                                        break;
                                 }
                                 break;
                             default: break;
@@ -265,8 +284,10 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 }
                 sheetData.setCelldata(celldataList);
 
-                // 3. 读取配置信息 (config), 如合并单元格
+                // 3. 读取配置信息 (config)
                 Map<String, Object> config = new HashMap<>();
+                
+                // 3.1 读取合并单元格
                 Map<String, Object> merge = new HashMap<>();
                 for (CellRangeAddress region : sheet.getMergedRegions()) {
                     String key = region.getFirstRow() + "_" + region.getFirstColumn();
@@ -278,9 +299,52 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                     merge.put(key, mergeValue);
                 }
                 if(!merge.isEmpty()) config.put("merge", merge);
+
+                // 【【【 核心修正：在这里增加读取列宽和行高的逻辑 】】】
+                // 3.2 读取列宽 (columnlen)
+                Map<String, Integer> columnlenMap = new HashMap<>();
+                int maxColumn = 0;
+                for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
+                    Row row = sheet.getRow(r);
+                    if (row != null && row.getLastCellNum() > maxColumn) {
+                        maxColumn = row.getLastCellNum();
+                    }
+                }
+                for (int c = 0; c < maxColumn; c++) {
+                    int poiWidth = sheet.getColumnWidth(c);
+                    // 只有当宽度不是默认值时才记录，以减小JSON体积
+                    if (poiWidth != sheet.getDefaultColumnWidth() * 256) {
+                        // Luckysheet 的宽度是像素，POI是 1/256 字符宽度，需要近似转换
+                        int pixelWidth = (int) Math.round(poiWidth / 256.0 * 8);
+                        columnlenMap.put(String.valueOf(c), pixelWidth);
+                    }
+                }
+                if (!columnlenMap.isEmpty()) {
+                    config.put("columnlen", columnlenMap);
+                }
+                
+                // 3.3 读取行高 (rowlen)
+                Map<String, Integer> rowlenMap = new HashMap<>();
+                for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
+                     Row row = sheet.getRow(r);
+                     if (row != null) {
+                        short poiHeight = row.getHeight();
+                        // 只有当高度不是默认值时才记录
+                        if (poiHeight != sheet.getDefaultRowHeight()) {
+                            // Luckysheet 的高度是像素，POI是 1/20 磅（point），1磅约等于1.333像素
+                            int pixelHeight = (int) Math.round(poiHeight / 20.0 * 1.333);
+                             rowlenMap.put(String.valueOf(r), pixelHeight);
+                        }
+                     }
+                }
+                if (!rowlenMap.isEmpty()) {
+                    config.put("rowlen", rowlenMap);
+                }
+                // --- 修正逻辑结束 ---
+
                 sheetData.setConfig(config);
 
-                // 4. 【【【 核心：读取数据验证规则 】】】
+                // 4. 读取数据验证规则
                 Map<String, Object> dataVerificationMap = new HashMap<>();
                 for (DataValidation validation : sheet.getDataValidations()) {
                     DataValidationConstraint constraint = validation.getValidationConstraint();

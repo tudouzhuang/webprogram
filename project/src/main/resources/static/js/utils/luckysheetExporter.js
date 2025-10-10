@@ -53,13 +53,16 @@ export async function exportWithExcelJS(dataSource) {
             const luckysheetCell = cellData.v;
             if (luckysheetCell) {
                 if (luckysheetCell.f) { // 公式
-                    cell.formula = luckysheetCell.f.startsWith('=') ? luckysheetCell.f.substring(1) : luckysheetCell.f;
+                    const formulaText = luckysheetCell.f.startsWith('=') 
+                        ? luckysheetCell.f.substring(1) 
+                        : luckysheetCell.f;
+                    cell.value = { formula: formulaText };
                 } else if (luckysheetCell.ct && luckysheetCell.ct.v !== undefined && luckysheetCell.ct.v !== null) {
                     cell.value = luckysheetCell.ct.v;
                 } else {
                     cell.value = luckysheetCell.m !== undefined ? luckysheetCell.m : luckysheetCell.v;
                 }
-                cell.style = mapLuckysheetStyleToExcelJS(luckysheetCell);
+                Object.assign(cell, mapLuckysheetStyleToExcelJS(luckysheetCell));
             } else {
                 cell.value = null;
                 cell.style = {};
