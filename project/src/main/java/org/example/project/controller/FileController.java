@@ -2,7 +2,9 @@ package org.example.project.controller;
 
 // --- 基础 Spring 依赖 ---
 import org.example.project.dto.LuckySheetJsonDTO; // 【新增】 导入我们定义好的 Luckysheet 数据传输对象
+import org.example.project.dto.StatisticsResultDTO;
 import org.example.project.service.ExcelSplitterService; // 【新增】 导入我们处理Excel的核心服务
+import org.example.project.service.StatisticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource; // 【新增】: 导入 ClassPathResource
@@ -198,5 +200,16 @@ public class FileController {
             log.error("删除文件ID {} 时发生未知错误", fileId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除文件时发生服务器内部错误。");
         }
+    }
+
+        // 注入 StatisticsService
+    @Autowired
+    private StatisticsService statisticsService;
+
+    // 新增 API
+    @GetMapping("/{fileId}/statistics")
+    public ResponseEntity<StatisticsResultDTO> getFileStatistics(@PathVariable Long fileId) {
+        StatisticsResultDTO stats = statisticsService.getSavedStats(fileId);
+        return ResponseEntity.ok(stats);
     }
 }

@@ -12,6 +12,7 @@ import org.example.project.service.ProcessRecordService;
 import org.example.project.service.ProjectService;
 import org.example.project.service.ReviewProblemService;
 import org.example.project.service.DesignWorkSessionService;
+import org.example.project.service.StatisticsService;   
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,8 @@ public class ProcessRecordController {
     @Autowired
     private ProcessRecordService processRecordService;
 
+    @Autowired
+    private StatisticsService statisticsService;
     // 注入ProjectService，因为它有 getFilesByRecordId 的实现
     @Autowired
     private ProjectService projectService;

@@ -9,7 +9,8 @@ Vue.component('record-workspace-panel', {
         }
     },
     components: {
-        'problem-record-table': ProblemRecordTable
+        'problem-record-table': ProblemRecordTable,
+        'workspace-status-bar': WorkspaceStatusBar,
     },
     // 【第2步】: 大幅修改模板，增加在线编辑相关的按钮和状态
     template: `
@@ -23,24 +24,37 @@ Vue.component('record-workspace-panel', {
                             <el-progress :percentage="100" status="success" :indeterminate="true" :duration="1"></el-progress>
                         </div>
                         <div v-else-if="loadError" class="alert alert-danger">{{ loadError }}</div>
-                        <div v-else-if="recordInfo">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <el-descriptions :title="'工作区: ' + recordInfo.partName" :column="2" border>
-                                        <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
-                                        <el-descriptions-item label="状态">
-                                            <el-tag :type="getStatusTagType(recordInfo.status)">{{ formatStatus(recordInfo.status) }}</el-tag>
-                                        </el-descriptions-item>
-                                        <el-descriptions-item label="累计设计时长" :span="2">
-                                            {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
-                                        </el-descriptions-item>
-                                        <el-descriptions-item label="本次设计时长">
-                                            <!-- 绑定到新的 data 属性，并实时格式化 -->
-                                            <span style="color: #409EFF; font-weight: bold;">
-                                                {{ formatDuration(currentSessionSeconds) }}
-                                            </span>
-                                        </el-descriptions-item>
-                                    </el-descriptions>
+                                <div v-else-if="recordInfo">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                    <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                    <!-- 左侧模块：占用大约 55% 的宽度 -->
+                                    <div style="width: 55%;">
+                                        <el-descriptions :title="'工作区: ' + recordInfo.partName" :column="2" border>
+                                            <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
+                                            <el-descriptions-item label="状态">
+                                                <el-tag :type="getStatusTagType(recordInfo.status)">{{ formatStatus(recordInfo.status) }}</el-tag>
+                                            </el-descriptions-item>
+                                            <el-descriptions-item label="累计设计时长" :span="2">
+                                                {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
+                                            </el-descriptions-item>
+                                            <el-descriptions-item label="本次设计时长">
+                                                <span style="color: #409EFF; font-weight: bold;">
+                                                    {{ formatDuration(currentSessionSeconds) }}
+                                                </span>
+                                            </el-descriptions-item>
+                                        </el-descriptions>
+                                    </div>
+                                
+                                    <!-- 右侧模块：占用大约 45% 的宽度 -->
+                                    <div style="width: 45%;">
+                                        <workspace-status-bar
+                                            v-if="activeFile"
+                                            ref="statusBarRef"
+                                            :file-id="activeFile.id"
+                                            :record-info="recordInfo"
+                                            :live-stats="currentLiveStats">
+                                        </workspace-status-bar>
+                                    </div>
                                 </div>
                                 <div class="d-flex align-items-center">
                                 <el-button @click="goBack" icon="el-icon-back" plain>返回列表</el-button>
@@ -249,11 +263,12 @@ Vue.component('record-workspace-panel', {
             iframesLoaded: {},
             metaDataContent: null,
             isMetaDataLoading: false,
-            workSessionId: null,      
-            heartbeatInterval: null,  
+            workSessionId: null,
+            heartbeatInterval: null,
             isPaused: false,
             currentSessionSeconds: 0, // 用于存储本次会话已经过的秒数
-            sessionTimer: null        // 用于存储驱动UI更新的秒级定时器 
+            sessionTimer: null,        // 用于存储驱动UI更新的秒级定时器
+            currentLiveStats: null // 用于存储来自 iframe 的实时统计 
         }
     },
 
@@ -272,6 +287,12 @@ Vue.component('record-workspace-panel', {
         },
         metaFile() {
             return this.associatedFiles.find(file => file.documentType === 'recordMeta');
+        },
+        activeFile() {
+            if (this.activeTab === 'recordMeta') {
+                return this.metaFile;
+            }
+            return this.excelFiles.find(f => f.documentType === this.activeTab);
         }
     },
 
@@ -331,22 +352,22 @@ Vue.component('record-workspace-panel', {
 
         loadSheetInIframe(fileInfo) {
             if (!fileInfo || !fileInfo.id) return;
-            
+
             this.iframesLoaded[fileInfo.id] = true;
-            
+
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
-            
+
             if (targetIframe && targetIframe.contentWindow) {
                 const options = { allowUpdate: this.canEdit, showtoolbar: this.canEdit, showinfobar: false };
-                
+
                 // 【【【 核心修改在这里 】】】
                 // 我们在原有的 URL 后面，加上了 &format=json 这个参数。
                 // 注意：因为前面已经有了一个 '?' (用于时间戳)，所以我们用 '&' 来连接新的参数。
                 const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}&format=json`;
-                
+
                 console.log(`[Workspace] 准备向 iframe 发送加载指令, URL: ${fileUrl}`); // 增加一条日志，方便调试
-        
+
                 const message = {
                     type: 'LOAD_SHEET',
                     payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
@@ -378,13 +399,13 @@ Vue.component('record-workspace-panel', {
         // 1. "保存在线修改" 按钮的处理器
         handleSaveDraft() {
             if (this.isSaving) return;
-            
+
             const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
             if (!activeFile) {
                 this.$message.error('当前没有可保存的Excel文件！');
                 return;
             }
-            
+
             // 【【【 修正点 】】】
             // 同样，用 activeFile.id 来获取 ref
             const iframeRef = this.$refs['iframe-' + activeFile.id];
@@ -393,18 +414,34 @@ Vue.component('record-workspace-panel', {
                 this.$message.error('无法找到对应的编辑器实例！');
                 return;
             }
-    
+
             this.isSaving = true;
             this.$message.info(`正在为 "${this.activeTab}" 生成并保存文件...`);
-            
+            console.log('【父组件】准备发送 GET_DATA_AND_IMAGES 指令给 iframe...'); // <-- 新增日志
+
             targetIframe.contentWindow.postMessage({ 
                 type: 'GET_DATA_AND_IMAGES', 
-                payload: { 
+                payload: { /* ... */ } 
+            }, window.location.origin);
+        
+            console.log('【父组件】GET_DATA_AND_IMAGES 指令已发送！'); // <-- 新增日志
+            targetIframe.contentWindow.postMessage({
+                type: 'GET_DATA_AND_IMAGES',
+                payload: {
                     purpose: 'save-draft',
                     fileId: activeFile.id,
                     documentType: activeFile.documentType
-                } 
+                }
             }, window.location.origin);
+            this.$message.success('保存在线修改成功！');
+            this.isSaving = false;
+            this.currentLiveStats = null; // 清空临时数据
+
+            // 通知状态栏重新从后端加载最新的、已保存的统计
+            const statusBar = this.$refs.statusBarRef; // 需要给 <workspace-status-bar> 添加 ref="statusBarRef"
+            if (statusBar) {
+                statusBar.fetchSavedStats();
+            }
         },
 
         // 2. "提交审核" 按钮的处理器
@@ -430,69 +467,91 @@ Vue.component('record-workspace-panel', {
             }
         },
 
-        // 3. 消息监听器，处理来自 iframe 的数据响应
+
         async messageEventListener(event) {
-            // 【第一层调试】: 打印所有收到的消息
-            console.log('[Parent] 接收到 message 事件:', event.data);
-
-            if (event.origin !== window.location.origin || !event.data) {
+            // 安全检查，确保消息来自同源且有数据
+            if (event.origin !== window.location.origin || !event.data || !event.data.type) {
                 return;
             }
 
-            // 只处理我们关心的数据响应类型
-            if (event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
-                // console.log('[Parent] 消息类型不匹配，已忽略。');
-                return;
-            }
+            console.log('[Parent] 接收到 message 事件:', event.data); // 打印所有收到的消息
 
-            console.log('[Parent] 消息类型匹配！正在处理 SHEET_DATA_WITH_IMAGES_RESPONSE...');
+            const { type, payload } = event.data;
 
-            const { payload } = event.data;
+            // =================================================================
+            //  ↓↓↓ 分支 1: 处理“保存”操作的回调数据 ↓↓↓
+            // =================================================================
+            if (type === 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
 
-            // 【第二层调试】: 打印解构后的 payload
-            console.log('[Parent] 解构后的 payload:', payload);
+                console.log('[Parent] 消息类型匹配！正在处理 SHEET_DATA_WITH_IMAGES_RESPONSE...');
+                console.log('[Parent] 解构后的 payload:', payload);
 
-            if (!payload || payload.purpose !== 'save-draft') {
-                console.warn(`[Parent] payload.purpose 不匹配 'save-draft'，已忽略。实际 purpose: ${payload ? payload.purpose : 'undefined'}`);
-                return;
-            }
+                if (!payload || payload.purpose !== 'save-draft') {
+                    console.warn(`[Parent] payload.purpose 不匹配 'save-draft'，已忽略。`);
+                    return;
+                }
 
-            // 如果能执行到这里，说明判断通过了
-            console.log('[Parent] ✅ Purpose 检查通过，开始执行保存逻辑...');
+                console.log('[Parent] ✅ Purpose 检查通过，开始执行保存逻辑...');
+                try {
+                    const exportBlob = await exportWithExcelJS(payload);
+                    const formData = new FormData();
+                    const newFileName = `${payload.documentType}_${this.recordInfo.partName}_${this.recordId}.xlsx`;
+                    formData.append('file', exportBlob, newFileName);
 
-            try {
-                const exportBlob = await exportWithExcelJS(payload);
-                const formData = new FormData();
-                // 使用 payload 中透传回来的 documentType 来构建新文件名
-                const newFileName = `${payload.documentType}_${this.recordInfo.partName}_${this.recordId}.xlsx`;
-                formData.append('file', exportBlob, newFileName);
+                    await axios.post(`/api/process-records/${this.recordId}/save-draft?fileId=${payload.fileId}`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                    });
 
-                // 【核心修改】: 调用一个新的API，用于更新单个文件
-                // 我们可以复用 save-draft，但需要传递 fileId 来告诉后端要更新哪个文件
-                // 这里我们选择复用 save-draft，但后端需要改造
-                await axios.post(`/api/process-records/${this.recordId}/save-draft?fileId=${payload.fileId}`, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
+                    this.$message.success(`"${payload.documentType}" 已成功保存！`);
 
-                this.$message.success(`"${payload.documentType}" 已成功保存！`);
+                    // 【【【 新增逻辑：保存成功后，触发状态栏刷新 】】】
+                    // 清空实时统计数据，让状态栏显示已保存的数据
+                    this.currentLiveStats = null;
 
-                // 刷新当前Tab的内容
-                const fileToReload = this.associatedFiles.find(f => f.documentType === payload.documentType);
-                this.loadSheetInIframe(fileToReload);
+                    // 通过 ref 调用子组件的方法，让它重新从后端拉取最新的持久化统计数据
+                    if (this.$refs.statusBarRef) {
+                        this.$refs.statusBarRef.fetchSavedStats();
+                    }
 
-            } catch (error) {
-                this.$message.error("保存失败: " + (error.message || '未知错误'));
-                console.error("在线保存文件时出错:", error);
-            } finally {
-                this.isSaving = false;
+                    // 刷新当前Tab的内容 (您的原有逻辑)
+                    // 注意：为了避免竞争条件，最好在统计刷新后再重新加载iframe，或者接受短暂的数据不一致
+                    const fileToReload = this.associatedFiles.find(f => f.documentType === payload.documentType);
+                    if (fileToReload) {
+                        this.loadSheetInIframe(fileToReload);
+                    }
+
+                } catch (error) {
+                    this.$message.error("保存失败: " + (error.message || '未知错误'));
+                    console.error("在线保存文件时出错:", error);
+                } finally {
+                    this.isSaving = false;
+                }
+
+                // =================================================================
+                //  ↓↓↓ 分支 2: 【【【 新增 】】】 处理实时统计更新的消息 ↓↓↓
+                // =================================================================
+            } else if (type === 'STATS_UPDATE') {
+
+                console.log('[Parent] 消息类型匹配！正在处理 STATS_UPDATE...');
+                console.log('[Parent] 接收到实时统计更新:', payload);
+
+                // 将从 iframe 接收到的实时统计数据，存入父组件的 data 属性中
+                // 这个属性通过 prop 绑定到了 <workspace-status-bar> 组件
+                this.currentLiveStats = payload;
+
+                // =================================================================
+                //  ↓↓↓ 分支 3: 处理 iframe 内点击事件（您的原有逻辑，保持不变） ↓↓↓
+                // =================================================================
+            } else if (type === 'IFRAME_CLICKED') {
+                // 可以在这里处理 iframe 点击事件，如果需要的话
             }
         },
 
         // --- 其他辅助方法保持不变 ---
-        goBack() { 
+        goBack() {
             console.log("[Action] 用户点击返回列表。");
             this.stopWorkSession(); // 在发出事件前，先停止会话
-            this.$emit('back-to-list'); 
+            this.$emit('back-to-list');
         },
         formatStatus(status) {
             const statusMap = { 'DRAFT': '草稿', 'PENDING_REVIEW': '审核中', 'APPROVED': '已通过', 'REJECTED': '已驳回', 'CHANGES_REQUESTED': '待修改' };
@@ -505,24 +564,24 @@ Vue.component('record-workspace-panel', {
         handleExport() {
             // 1. 找到当前激活的 Tab 对应的文件信息
             const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
-            
+
             if (!activeFile) {
                 this.$message.warning('当前没有可导出的 Excel 文件！');
                 return;
             }
-    
+
             // 2. 找到对应的 iframe 引用
             const iframeRef = this.$refs['iframe-' + activeFile.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
-            
+
             if (!targetIframe) {
                 this.$message.error('无法找到对应的编辑器实例！');
                 return;
             }
-    
+
             // 3. 构造一个有意义的文件名
             const fileName = `${activeFile.fileName || activeFile.documentType}.xlsx`;
-    
+
             // 4. 向该 iframe 发送导出指令
             targetIframe.contentWindow.postMessage({
                 type: 'EXPORT_SHEET',
@@ -530,7 +589,7 @@ Vue.component('record-workspace-panel', {
                     fileName: fileName
                 }
             }, window.location.origin);
-    
+
             this.$message.info(`已发送导出指令给: ${fileName}`);
         },
         async startWorkSession() {
@@ -539,11 +598,11 @@ Vue.component('record-workspace-panel', {
                 const response = await axios.post(`/api/process-records/${this.recordId}/work-sessions/start`);
                 this.workSessionId = response.data.id;
                 console.log(`[WorkTimer] 工作会话已开始，Session ID: ${this.workSessionId}`);
-                
+
                 // --- 【【【 新增调用 】】】 ---
                 this.startSessionTimer(); // 启动 UI 计时器
                 this.startHeartbeat();    // 启动心跳
-                
+
             } catch (error) {
                 console.error("[WorkTimer] 启动工作会话失败:", error);
             }
@@ -557,7 +616,7 @@ Vue.component('record-workspace-panel', {
                     console.log(`[WorkTimer] 已发送停止会话信标, Session ID: ${this.workSessionId}`);
                 } catch (error) {
                     // 如果 sendBeacon 失败，尝试用 axios
-                    axios.post(`/api/work-sessions/${this.workSessionId}/stop`).catch(e => {});
+                    axios.post(`/api/work-sessions/${this.workSessionId}/stop`).catch(e => { });
                 }
                 this.stopSessionTimer(); // 停止 UI 计时器
                 this.stopHeartbeat();    // 停止心跳
@@ -569,7 +628,7 @@ Vue.component('record-workspace-panel', {
             this.heartbeatInterval = setInterval(() => {
                 if (this.workSessionId && !this.isPaused) {
                     axios.post(`/api/work-sessions/${this.workSessionId}/heartbeat`)
-                         .catch(err => console.warn("[WorkTimer] 心跳发送失败", err));
+                        .catch(err => console.warn("[WorkTimer] 心跳发送失败", err));
                 }
             }, 60 * 1000); // 每分钟一次
         },
@@ -591,7 +650,7 @@ Vue.component('record-workspace-panel', {
         startSessionTimer() {
             this.stopSessionTimer(); // 先清除旧的，确保只有一个计时器在运行
             this.currentSessionSeconds = 0; // 每次开始都从0计时
-    
+
             this.sessionTimer = setInterval(() => {
                 // 如果会话ID存在且没有被暂停，则秒数+1
                 if (this.workSessionId && !this.isPaused) {
@@ -599,7 +658,7 @@ Vue.component('record-workspace-panel', {
                 }
             }, 1000); // 每1000毫秒 (1秒) 执行一次
         },
-    
+
         /**
          * 停止 UI 计时器
          */
@@ -616,7 +675,7 @@ Vue.component('record-workspace-panel', {
         // --- 您已有的 message 监听器逻辑 (保持不变) ---
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
-    
+
         // --- 您已有的 beforeunload 监听器逻辑 (保持不变) ---
         window.addEventListener('beforeunload', this.stopWorkSession);
 
@@ -627,11 +686,11 @@ Vue.component('record-workspace-panel', {
 
         this._scrollLock = {
             lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
-            isUserScrolling: false, 
+            isUserScrolling: false,
             timeoutId: null,
             animationFrameId: null
         };
-        
+
         const scrollLockLoop = () => {
             if (this && this._scrollLock) {
                 if (!this._scrollLock.isUserScrolling && window.scrollY !== this._scrollLock.lastKnownScrollY) {
@@ -643,7 +702,7 @@ Vue.component('record-workspace-panel', {
             }
         };
         scrollLockLoop();
-        
+
         this.handleWheel = () => {
             this._scrollLock.isUserScrolling = true;
             clearTimeout(this._scrollLock.timeoutId);
@@ -655,11 +714,11 @@ Vue.component('record-workspace-panel', {
         window.addEventListener('wheel', this.handleWheel, { passive: true });
         // =======================================================
     },
-    
+
     // 【【【 修改 beforeDestroy 】】】
     beforeDestroy() {
         console.log("[LifeCycle] beforeDestroy: 组件即将销毁，执行清理操作。");
-        
+
         // --- 您已有的清理逻辑 (保持不变) ---
         this.stopWorkSession();
         window.removeEventListener('message', this.boundMessageListener);
@@ -676,35 +735,35 @@ Vue.component('record-workspace-panel', {
         window.removeEventListener('wheel', this.handleWheel);
         // =======================================================
     },
-watch: {
-    recordId: {
-        immediate: true,
-        handler(newId, oldId) {
-            // 当 recordId 发生有效变化时，执行清理和重新加载
-            if (newId) {
-                // 如果是从一个有效的旧ID切换过来的，先停止上一个会话
-                if (oldId && this.workSessionId) {
-                    console.log(`[WorkTimer] Record ID 从 ${oldId} 切换到 ${newId}，停止旧会话。`);
+    watch: {
+        recordId: {
+            immediate: true,
+            handler(newId, oldId) {
+                // 当 recordId 发生有效变化时，执行清理和重新加载
+                if (newId) {
+                    // 如果是从一个有效的旧ID切换过来的，先停止上一个会话
+                    if (oldId && this.workSessionId) {
+                        console.log(`[WorkTimer] Record ID 从 ${oldId} 切换到 ${newId}，停止旧会话。`);
+                        this.stopWorkSession();
+                    }
+
+
+                    // 【【【 核心修改 】】】
+                    // fetchData 是一个 async 函数，所以它返回一个 Promise。
+                    // 我们使用 .then() 来确保在数据获取成功之后再执行后续操作。
+                    this.fetchData().then(() => {
+                        console.log("[WorkTimer] fetchData 完成，准备启动工作会话。");
+                        // 在这里调用 startWorkSession，可以确保 this.recordInfo 和 this.canEdit 都是最新的
+                        this.startWorkSession();
+                    }).catch(error => {
+                        console.error("[WorkTimer] fetchData 失败，无法启动工作会话。", error);
+                    });
+
+                } else {
+                    // 如果 recordId 变为 null 或 undefined (例如返回列表页)，也停止会话
                     this.stopWorkSession();
                 }
-
-
-                // 【【【 核心修改 】】】
-                // fetchData 是一个 async 函数，所以它返回一个 Promise。
-                // 我们使用 .then() 来确保在数据获取成功之后再执行后续操作。
-                this.fetchData().then(() => {
-                    console.log("[WorkTimer] fetchData 完成，准备启动工作会话。");
-                    // 在这里调用 startWorkSession，可以确保 this.recordInfo 和 this.canEdit 都是最新的
-                    this.startWorkSession();
-                }).catch(error => {
-                    console.error("[WorkTimer] fetchData 失败，无法启动工作会话。", error);
-                });
-
-            } else {
-                // 如果 recordId 变为 null 或 undefined (例如返回列表页)，也停止会话
-                this.stopWorkSession();
             }
         }
     }
-}
 });

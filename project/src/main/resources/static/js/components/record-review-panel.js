@@ -276,7 +276,7 @@ Vue.component('record-review-panel', {
 
         async messageEventListener(event) {
             if (event.origin !== window.location.origin || event.data.type !== 'SHEET_DATA_WITH_IMAGES_RESPONSE') return;
-            
+            console.log('【父组件】messageEventListener 被触发！收到的消息类型是:', event.data.type);
             const { payload } = event.data;
             const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
             if (!payload || !currentFile || payload.purpose !== `update-file-${currentFile.id}`) return;

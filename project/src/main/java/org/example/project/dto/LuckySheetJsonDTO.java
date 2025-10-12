@@ -46,16 +46,34 @@ public class LuckySheetJsonDTO {
         private CellValue v; // 单元格的值对象
     }
 
-    /**
+/**
      * 代表单元格的值 (Value) 对象
-     * 这才是真正存储单元格内容的地方
+     * 这才是真正存储单元格内容和样式的地方
      */
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CellValue {
+        // 值和公式
         private String m; // 原始显示值 (如 "123" 或 "文本")
         private String v; // 格式化后的显示值
         private String f; // 公式 (formula), 例如 "=SUM(A1:A2)"
+
+        // 字体样式
+        private Integer bl; // Bold (1 for true)
+        private Integer it; // Italic (1 for true)
+        private Integer cl; // Strikethrough (1 for true)
+        private Integer ul; // Underline (1 for true)
+        private String ff;  // Font Family (e.g., "Arial")
+        private short fs;   // Font Size
+        private String fc;  // Font Color (e.g., "#FF0000")
+
+        // 背景颜色
+        private String bg;  // Background Color (e.g., "#00FF00")
+
+        // 对齐方式
+        private Integer ht; // Horizontal Type (0: center, 1: left, 2: right)
+        private Integer vt; // Vertical Type (0: middle, 1: top, 2: bottom)
+        private Integer tb; // Text Break (2 for wrap text)
     }
 
     /**

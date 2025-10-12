@@ -10,26 +10,13 @@
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
     <link rel='stylesheet' href='/luckysheet/assets/iconfont/iconfont.css' />
     <style>
-        html,
-        body,
-        #luckysheet-container {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
+        html, body, #luckysheet-container {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
         }
-
         .loader {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
+            display: flex; justify-content: center; align-items: center; height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            font-size: 1.1em;
-            color: #888;
-            text-align: center;
-            padding: 10px;
+            font-size: 1.1em; color: #888; text-align: center; padding: 10px;
         }
     </style>
 </head>
@@ -45,105 +32,86 @@
     <script src="/luckysheet/luckyexcel.umd.js"></script>
     <script src="/js/libs/exceljs.min.js"></script>
 
-    <!-- 【【【 核心修改：将 script 标签类型改为 module 以支持 import 】】】 -->
     <script type="module">
-        // --- [NEW] 导入外部的、可复用的导出函数 ---
+        // --- [1. 导入外部模块] ---
         import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
 
+        // --- [2. 全局变量与状态] ---
         const container = document.getElementById('luckysheet-container');
         let originalDataValidation = {}; 
-        let lastLoadedData = null;
+        
+        // --- [3. 辅助函数定义] ---
 
-        // 监听来自父窗口的消息
-        window.addEventListener('message', function (event) {
-            // 安全检查: 确保消息来自同源
-            if (event.origin !== window.location.origin) return;
-
-            const { type, payload } = event.data;
-            console.log(`[Iframe] 收到消息: type=${type}`, payload);
-
-            if (type === 'LOAD_SHEET') {
-                if (payload.luckysheetData) {
-                    renderSheet(payload.luckysheetData, payload.fileName, payload.options);
-                } else {
-                    loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
-                }
-            }
-            else if (type === 'GET_DATA_AND_IMAGES') {
-                if (window.luckysheet) {
-                    const liveSheets = luckysheet.getAllSheets();
-                    const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
-                    
-                    console.log(`[Iframe] ✅ 成功融合实时数据与数据验证规则。准备回发...`);
-
-                    window.parent.postMessage({
-                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
-                        payload: {
-                            sheets: mergedSheets,
-                            purpose: event.data.payload.purpose,
-                            fileId: event.data.payload.fileId,
-                            documentType: event.data.payload.documentType
-                        }
-                    }, window.location.origin);
-
-                } else {
-                    console.error('[Iframe] 错误: 尝试获取数据时，Luckysheet实例不存在。');
-                }
-            }
-            // --- [MODIFIED] 修改处理 EXPORT_SHEET 指令的逻辑 ---
-            else if (type === 'EXPORT_SHEET') {
-                if (window.luckysheet) {
-                    const fileName = payload.fileName || '导出文件.xlsx';
-                    // 直接调用新的、独立的 handleExport 函数
-                    handleExport(fileName);
-                } else {
-                    console.error('[Iframe] 错误: 尝试导出时，Luckysheet实例不存在。');
-                }
-            }
-        });
-
-        // --- [NEW] 专门用于处理“一键导出”的函数 ---
-        async function handleExport(fileName) {
-            console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
-            
-            // 临时显示加载状态
-            const loaderDiv = document.createElement('div');
-            loaderDiv.className = 'loader';
-            loaderDiv.style.position = 'absolute';
-            loaderDiv.style.top = '0';
-            loaderDiv.style.left = '0';
-            loaderDiv.style.width = '100%';
-            loaderDiv.style.height = '100%';
-            loaderDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
-            loaderDiv.style.zIndex = '10000';
-            loaderDiv.textContent = '正在生成Excel文件，请稍候...';
-            container.appendChild(loaderDiv);
-
-            try {
-                // 1. 直接从 Luckysheet 实例获取实时、完整的数据
-                const allSheetsData = luckysheet.getAllSheets();
-                
-                // 2. 调用从外部模块导入的通用导出函数
-                const blob = await exportWithExcelJS(allSheetsData);
-                
-                // 3. 触发下载
-                downloadBlob(blob, fileName);
-                
-                console.log("[Iframe] 通过复用模块，成功导出文件！");
-
-            } catch (error) {
-                console.error("[Iframe] 复用导出模块时出错:", error);
-                alert("导出文件时发生错误，详情请查看控制台。");
-            } finally {
-                // 移除加载提示
-                container.removeChild(loaderDiv);
-            }
+        /**
+         * Debounce 防抖函数: 防止函数在短时间内被高频触发。
+         */
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
         }
 
-        // --- 以下函数保持不变 ---
+        /**
+         * 核心统计与汇报函数: 计算表格数据并发送回父窗口。
+         */
+        function calculateAndReportStats() {
+            if (!window.luckysheet) return; // 安全检查
+            console.log('[Iframe] 变更已触发，准备执行统计...');
 
+            const rules = [
+                { category: '内审自检', range: 'G10:G50', ok: '√', ng: '×', na: '无' },
+                { category: 'FMC自检', range: 'H10:H50', ok: '√', ng: '×', na: '无' }
+            ];
+            const statsResult = {};
+
+            rules.forEach(rule => {
+                try {
+                    const rangeData = luckysheet.getRangeArray(rule.range);
+                    let okCount = 0, ngCount = 0, naCount = 0;
+                    
+                    rangeData.forEach(row => {
+                        row.forEach(cellValue => {
+                            if (cellValue) {
+                                if (cellValue === rule.ok) okCount++;
+                                else if (cellValue === rule.ng) ngCount++;
+                                else if (cellValue === rule.na) naCount++;
+                            }
+                        });
+                    });
+
+                    const totalCount = okCount + ngCount + naCount;
+                    const okPercentage = totalCount > 0 ? Math.round((okCount / totalCount) * 10000) / 100 : 0;
+                    
+                    statsResult[rule.category] = {
+                        category: rule.category, okCount, ngCount, naCount, totalCount, okPercentage
+                    };
+                } catch (e) {
+                    console.error(`[Iframe] 统计规则 "${rule.category}" 执行失败:`, e);
+                }
+            });
+            
+            console.log('[Iframe] 统计计算完成，结果:', statsResult);
+
+            window.parent.postMessage({
+                type: 'STATS_UPDATE',
+                payload: statsResult
+            }, window.location.origin);
+        }
+
+        /**
+         * 创建防抖函数的实例，延迟500ms执行。
+         */
+        const debouncedCalculate = debounce(calculateAndReportStats, 500);
+
+        // --- [4. 核心功能函数] ---
+
+        /**
+         * 渲染 Luckysheet 实例。
+         */
         function renderSheet(luckysheetData, fileName, options) {
-            lastLoadedData = { luckysheetData, fileName, options };
             if (window.luckysheet) {
                 luckysheet.destroy();
             }
@@ -162,55 +130,54 @@
                 container: 'luckysheet-container',
                 data: luckysheetData,
                 title: fileName,
-                ...options
+                ...options,
+                // 【【【 核心修正：在这里绑定钩子 】】】
+                hooks: {
+                    cellValueChange: (r, c, v) => debouncedCalculate(),
+                    rangePaste: (range, data) => debouncedCalculate()
+                }
             };
             
             setTimeout(() => {
                 try {
-                    console.log(`[Iframe] 准备使用传入的JSON创建实例...`, finalOptions);
+                    console.log(`[Iframe] 准备创建实例...`, finalOptions);
                     luckysheet.create(finalOptions);
-                    console.log(`[Iframe] 使用传入的JSON创建实例成功！`);
+                    console.log(`[Iframe] 创建实例成功！`);
                 } catch (e) {
-                    console.error(`[Iframe] 使用JSON创建实例失败:`, e);
+                    console.error(`[Iframe] 创建实例失败:`, e);
                 }
             }, 50);
         }
 
+        /**
+         * 从文件URL加载数据，并智能判断是JSON还是二进制文件。
+         */
         function loadSheetFromFile(fileUrl, fileName, options) {
             container.innerHTML = `<div class="loader">正在加载数据...</div>`;
 
             fetch(fileUrl)
                 .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`网络错误: ${response.statusText}`);
-                    }
-                    
-                    // 【【【 核心修改：智能嗅探响应类型 】】】
-                    // 克隆响应流，因为 response.body 只能被读取一次
+                    if (!response.ok) throw new Error(`网络错误: ${response.statusText}`);
                     const clonedResponse = response.clone();
 
-                    // --- 尝试分支 1: 按 JSON 解析 ---
                     return response.json()
                         .then(jsonData => {
-                            console.log("[Iframe] ✅ 成功将响应解析为JSON！将直接渲染。");
-                            // 如果成功，jsonData 就是我们需要的 sheets 数组
+                            console.log("[Iframe] ✅ 成功将响应解析为JSON！");
                             renderSheet(jsonData, fileName, options);
                         })
                         .catch(jsonError => {
-                            // --- 回退分支 2: 按 Blob (二进制文件) 处理 ---
-                            console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到 LuckyExcel 二进制文件处理模式。", jsonError);
+                            console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
                             container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
                             
-                            // 使用之前克隆的响应流来读取 Blob
                             return clonedResponse.blob().then(fileBlob => {
                                 LuckyExcel.transformExcelToLucky(fileBlob,
-                                    function (exportJson) {
+                                    exportJson => {
                                         console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
                                         renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
                                     },
-                                    function (excelError) {
+                                    excelError => {
                                         console.error("[Iframe] ❌ LuckyExcel 解析失败:", excelError);
-                                        container.innerHTML = `<div class="loader">文件解析失败。请确认文件是有效的.xlsx格式。</div>`;
+                                        container.innerHTML = `<div class="loader">文件解析失败。</div>`;
                                     }
                                 );
                             });
@@ -222,6 +189,9 @@
                 });
         }
         
+        /**
+         * 将实时获取的 sheet 数据与初始加载的数据验证规则融合。
+         */
         function mergeDataWithValidation(liveSheets, validationRules) {
             return liveSheets.map(liveSheet => {
                 if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
@@ -233,6 +203,9 @@
             });
         }
         
+        /**
+         * 触发文件下载。
+         */
         function downloadBlob(blob, fileName) {
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -244,17 +217,80 @@
             URL.revokeObjectURL(url);
         }
 
-        document.body.addEventListener('mousedown', () => {
-            // 步骤2：一旦发生点击，就立即向父页面发送一个“我被点了”的消息
-            console.log('[Iframe] 检测到点击，通知父页面准备恢复滚动位置。');
-            window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
-        }, true); // 使用捕获阶段，确保能最早监听到点击
+        /**
+         * 处理“一键导出”的函数。
+         */
+        async function handleExport(fileName) {
+            console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
+            const loaderDiv = document.createElement('div');
+            loaderDiv.className = 'loader';
+            loaderDiv.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); z-index: 10000;';
+            loaderDiv.textContent = '正在生成Excel文件，请稍候...';
+            container.appendChild(loaderDiv);
 
-        // 步骤3：您已有的 message 监听器保持不变
+            try {
+                const allSheetsData = luckysheet.getAllSheets();
+                const blob = await exportWithExcelJS(allSheetsData);
+                downloadBlob(blob, fileName);
+                console.log("[Iframe] 通过复用模块，成功导出文件！");
+            } catch (error) {
+                console.error("[Iframe] 复用导出模块时出错:", error);
+                alert("导出文件时发生错误，详情请查看控制台。");
+            } finally {
+                container.removeChild(loaderDiv);
+            }
+        }
+
+        // --- [5. 事件监听器] ---
+
+        /**
+         * 统一的消息监听器，处理所有来自父窗口的指令。
+         */
         window.addEventListener('message', function (event) {
-            // ... (您已有的处理 LOAD_SHEET, GET_DATA_AND_IMAGES, EXPORT_SHEET 的逻辑)
+            if (event.origin !== window.location.origin) return;
+            console.log('【iframe】收到了来自父窗口的消息！类型是:', event.data.type);
+            const { type, payload } = event.data;
+            console.log(`[Iframe] 收到消息: type=${type}`, payload);
+
+            if (type === 'LOAD_SHEET') {
+                if (payload.luckysheetData) {
+                    renderSheet(payload.luckysheetData, payload.fileName, payload.options);
+                } else {
+                    loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
+                }
+            } else if (type === 'GET_DATA_AND_IMAGES') {
+                if (window.luckysheet) {
+                    const liveSheets = luckysheet.getAllSheets();
+                    const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
+                    
+                    console.log(`[Iframe] ✅ 成功融合实时数据。准备回发...`);
+                    console.log('【iframe】准备将 SHEET_DATA_WITH_IMAGES_RESPONSE 消息回发给父窗口！'); // <-- 新增日志
+                    window.parent.postMessage({
+                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
+                        payload: {
+                            sheets: mergedSheets,
+                            purpose: payload.purpose,
+                            fileId: payload.fileId,
+                            documentType: payload.documentType
+                        }
+                    }, window.location.origin);
+                }
+            } else if (type === 'EXPORT_SHEET') {
+                if (window.luckysheet) {
+                    handleExport(payload.fileName || '导出文件.xlsx');
+                }
+            }
         });
+
+        /**
+         * 监听 iframe 内的点击事件，通知父窗口。
+         */
+        document.body.addEventListener('mousedown', () => {
+            window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
+        }, true);
+        
         console.log('[Iframe] 加载器已就绪，等待消息...');
+
     </script>
 </body>
 

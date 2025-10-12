@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.Project;
@@ -51,6 +53,9 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     private ProjectService projectService;
     @Autowired
     private UserService userService;
+    
+    @Autowired
+    private StatisticsService statisticsService;
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
 
@@ -300,6 +305,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             log.error("【Debug 3.4 - 失败】保存新物理文件时发生严重IO异常！", e);
             throw e; // 抛出异常，触发事务回滚
         }
+        
 
         // =======================================================
         //  ↓↓↓ 阶段 4: 数据库记录更新/插入 ↓↓↓
@@ -330,6 +336,31 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             projectFileMapper.updateById(fileRecordToUpdate);
             log.info("【Debug 4.3】已有的审核表文件信息已成功更新。");
         }
+
+        // =======================================================
+    //  ↓↓↓ 新增：在文件保存和数据库记录更新后，执行统计计算 ↓↓↓
+    // =======================================================
+    if (fileRecordToUpdate.getId() != null) {
+        log.info("--- [统计] 准备触发对 fileId: {} 的统计计算...", fileRecordToUpdate.getId());
+        try {
+            // 1. 使用 ExcelSplitterService 将刚刚保存的文件，反向解析回 Luckysheet JSON 数据
+            List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(physicalFilePath.toString());
+            LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
+            luckysheetData.setSheets(sheets);
+
+            // 2. 正式调用统计服务
+            statisticsService.calculateAndSaveStats(fileRecordToUpdate.getId(), luckysheetData);
+            log.info("--- [统计] 统计计算成功完成。 ---");
+        } catch (Exception e) {
+            // 即使统计失败，也不应该影响主流程的成功返回，只记录错误日志。
+            log.error("--- [统计] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
+        }
+    } else {
+         log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
+    }
+    // --- 统计逻辑结束 ---
+
+
 
         // =======================================================
         //  ↓↓↓ 阶段 5: 更新主记录状态 ↓↓↓
@@ -679,7 +710,30 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         Files.createDirectories(newAbsolutePath.getParent());
         Files.copy(file.getInputStream(), newAbsolutePath, StandardCopyOption.REPLACE_EXISTING);
         log.info("【SERVICE-UPDATE_FILE】新物理文件已保存: {}", newAbsolutePath);
-        
+        // =======================================================
+        //  ↓↓↓ 新增：在文件更新成功后，执行统计计算 ↓↓↓
+        // =======================================================
+        if (fileId != null) {
+            log.info("--- [统计] 准备触发对 fileId: {} 的统计计算...", fileId);
+            try {
+                // 1. 使用 ExcelSplitterService 将刚刚保存的文件，反向解析回 Luckysheet JSON 数据
+                // 注意：这里我们使用 newAbsolutePath，它是文件的完整物理路径
+                List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(newAbsolutePath.toString());
+                LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
+                luckysheetData.setSheets(sheets);
+
+                // 2. 正式调用统计服务
+                statisticsService.calculateAndSaveStats(fileId, luckysheetData);
+                log.info("--- [统计] 统计计算成功完成。 ---");
+            } catch (Exception e) {
+                // 即使统计失败，也不应该影响主流程的成功返回，只记录错误日志。
+                // 异常已经在Controller层被捕获，这里只记录即可。
+                log.error("--- [统计] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
+            }
+        } else {
+             log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
+        }
+        // --- 统计逻辑结束 ---
         // 5. 更新数据库中的文件记录 (ProjectFile)
         fileRecord.setFileName(originalFilename); // 存储原始文件名
         fileRecord.setFilePath(newRelativePath.toString().replace("\\", "/")); // 更新为新的相对路径
@@ -687,6 +741,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         // fileRecord.setUpdatedAt(LocalDateTime.now()); // 可选：更新时间戳
         projectFileMapper.updateById(fileRecord);
         log.info("【SERVICE-UPDATE_FILE】数据库中的文件记录 (ID: {}) 已成功更新。", fileId);
+    
     }
 
 

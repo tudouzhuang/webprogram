@@ -3,6 +3,7 @@ package org.example.project.service.impl;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataValidation;
 import org.apache.poi.ss.usermodel.DataValidationConstraint;
+import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellRangeAddressList;
@@ -195,7 +196,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
 /**
      * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。
-     * 【已修正】: 增强了对单元格类型的处理，并增加了对列宽(columnlen)和行高(rowlen)的读取。
+     * 【最终完整版】: 全面支持单元格值、样式、合并、列宽、行高、数据验证等。
      * @param filePath 文件的绝对物理路径
      * @return 包含所有 Sheet 数据的 List 集合
      * @throws IOException 如果文件读取失败
@@ -204,7 +205,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
         log.info("【Excel->JSON】开始转换文件: {}", filePath);
         List<LuckySheetJsonDTO.SheetData> sheetsData = new ArrayList<>();
 
-        ZipSecureFile.setMinInflateRatio(0.001); // 防范 Zip bomb 攻击
+        ZipSecureFile.setMinInflateRatio(0.001);
 
         try (FileInputStream fis = new FileInputStream(filePath);
              XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
@@ -213,13 +214,11 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 XSSFSheet sheet = workbook.getSheetAt(i);
                 LuckySheetJsonDTO.SheetData sheetData = new LuckySheetJsonDTO.SheetData();
 
-                // 1. 读取 Sheet 的基本信息
                 sheetData.setName(sheet.getSheetName());
                 sheetData.setIndex(i);
                 sheetData.setOrder(i);
                 sheetData.setStatus(sheet.isSelected() ? 1 : 0);
 
-                // 2. 读取所有单元格数据 (celldata)
                 List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                     Row row = sheet.getRow(r);
@@ -234,6 +233,48 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                         
                         LuckySheetJsonDTO.CellValue cellValue = new LuckySheetJsonDTO.CellValue();
                         
+                        // 1. 【【【 核心修正：全面解析单元格样式 】】】
+                        // =================================================================
+                        XSSFCellStyle style = cell.getCellStyle();
+                        if (style != null) {
+                            // 1.1 字体 (Font)
+                            XSSFFont font = style.getFont();
+                            if (font != null) {
+                                if (font.getBold()) cellValue.setBl(1); // Bold
+                                if (font.getItalic()) cellValue.setIt(1); // Italic
+                                if (font.getStrikeout()) cellValue.setCl(1); // Strikethrough
+                                if (font.getUnderline() != XSSFFont.U_NONE) cellValue.setUl(1); // Underline
+                                if (font.getFontName() != null) cellValue.setFf(font.getFontName()); // Font Family
+                                cellValue.setFs(font.getFontHeightInPoints()); // Font Size
+                                XSSFColor fontColor = font.getXSSFColor();
+                                if (fontColor != null && fontColor.getARGBHex() != null) {
+                                    cellValue.setFc("#" + fontColor.getARGBHex().substring(2)); // Font Color
+                                }
+                            }
+
+                            // 1.2 背景填充 (Fill)
+                            XSSFColor bgColor = style.getFillForegroundXSSFColor();
+                            if (bgColor != null && style.getFillPattern() == FillPatternType.SOLID_FOREGROUND && bgColor.getARGBHex() != null) {
+                                cellValue.setBg("#" + bgColor.getARGBHex().substring(2)); // Background Color
+                            }
+                            
+                            // 1.3 对齐 (Alignment)
+                            switch (style.getAlignment()) {
+                                case LEFT: cellValue.setHt(1); break;
+                                case CENTER: cellValue.setHt(0); break;
+                                case RIGHT: cellValue.setHt(2); break;
+                            }
+                            switch (style.getVerticalAlignment()) {
+                                case TOP: cellValue.setVt(1); break;
+                                case CENTER: cellValue.setVt(0); break;
+                                case BOTTOM: cellValue.setVt(2); break;
+                            }
+                            if (style.getWrapText()) cellValue.setTb(2); // Wrap Text
+                        }
+                        // --- 样式解析结束 ---
+                        // =================================================================
+
+                        // 2. 解析单元格的值 (与之前相同)
                         switch (cell.getCellType()) {
                             case STRING:
                                 cellValue.setV(cell.getStringCellValue());
@@ -259,21 +300,11 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                             case FORMULA:
                                 cellValue.setF("=" + cell.getCellFormula());
                                 switch (cell.getCachedFormulaResultType()) {
-                                    case NUMERIC:
-                                        cellValue.setV(String.valueOf(cell.getNumericCellValue()));
-                                        break;
-                                    case STRING:
-                                        cellValue.setV(cell.getStringCellValue());
-                                        break;
-                                    case BOOLEAN:
-                                        cellValue.setV(String.valueOf(cell.getBooleanCellValue()));
-                                        break;
-                                    case ERROR:
-                                        cellValue.setV(org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString());
-                                        break;
-                                    default:
-                                        cellValue.setV("");
-                                        break;
+                                    case NUMERIC: cellValue.setV(String.valueOf(cell.getNumericCellValue())); break;
+                                    case STRING: cellValue.setV(cell.getStringCellValue()); break;
+                                    case BOOLEAN: cellValue.setV(String.valueOf(cell.getBooleanCellValue())); break;
+                                    case ERROR: cellValue.setV(org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString()); break;
+                                    default: cellValue.setV(""); break;
                                 }
                                 break;
                             default: break;
@@ -286,8 +317,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
                 // 3. 读取配置信息 (config)
                 Map<String, Object> config = new HashMap<>();
-                
-                // 3.1 读取合并单元格
                 Map<String, Object> merge = new HashMap<>();
                 for (CellRangeAddress region : sheet.getMergedRegions()) {
                     String key = region.getFirstRow() + "_" + region.getFirstColumn();
@@ -300,8 +329,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 }
                 if(!merge.isEmpty()) config.put("merge", merge);
 
-                // 【【【 核心修正：在这里增加读取列宽和行高的逻辑 】】】
-                // 3.2 读取列宽 (columnlen)
                 Map<String, Integer> columnlenMap = new HashMap<>();
                 int maxColumn = 0;
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
@@ -312,9 +339,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 }
                 for (int c = 0; c < maxColumn; c++) {
                     int poiWidth = sheet.getColumnWidth(c);
-                    // 只有当宽度不是默认值时才记录，以减小JSON体积
                     if (poiWidth != sheet.getDefaultColumnWidth() * 256) {
-                        // Luckysheet 的宽度是像素，POI是 1/256 字符宽度，需要近似转换
                         int pixelWidth = (int) Math.round(poiWidth / 256.0 * 8);
                         columnlenMap.put(String.valueOf(c), pixelWidth);
                     }
@@ -323,15 +348,12 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                     config.put("columnlen", columnlenMap);
                 }
                 
-                // 3.3 读取行高 (rowlen)
                 Map<String, Integer> rowlenMap = new HashMap<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                      Row row = sheet.getRow(r);
                      if (row != null) {
                         short poiHeight = row.getHeight();
-                        // 只有当高度不是默认值时才记录
                         if (poiHeight != sheet.getDefaultRowHeight()) {
-                            // Luckysheet 的高度是像素，POI是 1/20 磅（point），1磅约等于1.333像素
                             int pixelHeight = (int) Math.round(poiHeight / 20.0 * 1.333);
                              rowlenMap.put(String.valueOf(r), pixelHeight);
                         }
@@ -340,13 +362,12 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 if (!rowlenMap.isEmpty()) {
                     config.put("rowlen", rowlenMap);
                 }
-                // --- 修正逻辑结束 ---
-
                 sheetData.setConfig(config);
 
                 // 4. 读取数据验证规则
                 Map<String, Object> dataVerificationMap = new HashMap<>();
                 for (DataValidation validation : sheet.getDataValidations()) {
+                    // ... (数据验证的逻辑保持不变) ...
                     DataValidationConstraint constraint = validation.getValidationConstraint();
                     if (constraint.getValidationType() == DataValidationConstraint.ValidationType.LIST) {
                         CellRangeAddressList regions = validation.getRegions();
