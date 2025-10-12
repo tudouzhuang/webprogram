@@ -16,7 +16,7 @@ Vue.component('record-workspace-panel', {
     template: `
         <div class="main-panel" style="width:100%;height:100%">
             <div class="content-wrapper">
-                <!-- 1. 顶部信息与动态操作区 -->
+                <!-- 1. 顶部信息与操作区 -->
                 <div class="card mb-4">
                     <div class="card-body">
                         <div v-if="isLoading" class="text-center p-3">
@@ -24,60 +24,51 @@ Vue.component('record-workspace-panel', {
                             <el-progress :percentage="100" status="success" :indeterminate="true" :duration="1"></el-progress>
                         </div>
                         <div v-else-if="loadError" class="alert alert-danger">{{ loadError }}</div>
-                                <div v-else-if="recordInfo">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                    <div style="display: flex; gap: 20px; align-items: flex-start;">
-                                    <!-- 左侧模块：占用大约 55% 的宽度 -->
-                                    <div style="width: 55%;">
-                                        <el-descriptions :title="'工作区: ' + recordInfo.partName" :column="2" border>
-                                            <el-descriptions-item label="工序名称">{{ recordInfo.processName }}</el-descriptions-item>
-                                            <el-descriptions-item label="状态">
-                                                <el-tag :type="getStatusTagType(recordInfo.status)">{{ formatStatus(recordInfo.status) }}</el-tag>
-                                            </el-descriptions-item>
-                                            <el-descriptions-item label="累计设计时长" :span="2">
-                                                {{ formatDuration(recordInfo.totalDesignDurationSeconds) }}
-                                            </el-descriptions-item>
-                                            <el-descriptions-item label="本次设计时长">
-                                                <span style="color: #409EFF; font-weight: bold;">
-                                                    {{ formatDuration(currentSessionSeconds) }}
-                                                </span>
-                                            </el-descriptions-item>
-                                        </el-descriptions>
-                                    </div>
+                        
+                        <!-- 【【【 优化后的布局 】】】 -->
+                        <div v-else-if="recordInfo">
+                            <!-- 最外层 Flexbox 容器 -->
+                            <div class="d-flex justify-content-between align-items-center">
                                 
-                                    <!-- 右侧模块：占用大约 45% 的宽度 -->
-                                    <div style="width: 45%;">
-                                        <workspace-status-bar
-                                            v-if="activeFile"
-                                            ref="statusBarRef"
-                                            :file-id="activeFile.id"
-                                            :record-info="recordInfo"
-                                            :live-stats="currentLiveStats">
-                                        </workspace-status-bar>
-                                    </div>
+                                <!-- 左侧：统一的信息中心 (宽度自适应) -->
+                                <div style="flex-grow: 1; margin-right: 20px;">
+                                    <workspace-status-bar
+                                        v-if="activeFile && recordInfo"
+                                        ref="statusBarRef"
+                                        :file-id="activeFile.id"
+                                        :record-info="recordInfo"
+                                        :live-stats="currentLiveStats"
+                                        :status="recordInfo.status"
+                                        :total-duration="recordInfo.totalDesignDurationSeconds"
+                                        :session-duration="currentSessionSeconds">
+                                    </workspace-status-bar>
                                 </div>
-                                <div class="d-flex align-items-center">
-                                <el-button @click="goBack" icon="el-icon-back" plain>返回列表</el-button>
-                                <!-- 【核心修正】: 只有在可编辑状态且当前Tab不是'recordMeta'时，才显示编辑按钮 -->
-                                <!-- 只要当前 Tab 不是元数据，就显示导出按钮 -->
-                                <el-button 
-                                    v-if="activeTab !== 'recordMeta'"
-                                    type="success" 
-                                    plain
-                                    icon="el-icon-download"
-                                    @click="handleExport"
-                                    style="margin-left: 10px;">
-                                    导出当前文件
-                                </el-button>
-                                <template v-if="canEdit">
-                                    <el-button type="primary" plain icon="el-icon-document" @click="handleSaveDraft" :loading="isSaving" style="margin-left: 10px;">
+
+                                <div class="d-flex flex-column" style="flex-shrink: 0; gap: 10px; min-width: 150px;">
+    
+                                    <el-button @click="goBack" icon="el-icon-back" plain style="width: 100%; margin-left: 10px">返回列表</el-button>
+                                    
+                                    <el-button 
+                                        v-if="activeTab !== 'recordMeta'"
+                                        type="info" 
+                                        plain
+                                        icon="el-icon-download"
+                                        @click="handleExport"
+                                        style="width: 100%;">
+                                        导出文件
+                                    </el-button>
+                                    
+                                    <!-- 【【【 核心修正：移除 <template>，将 v-if 直接应用到每个按钮上 】】】 -->
+                                    <el-button v-if="canEdit" type="primary" plain icon="el-icon-document" @click="handleSaveDraft" :loading="isSaving" style="width: 100%;">
                                         保存在线修改
                                     </el-button>
-                                    <el-button type="success" icon="el-icon-s-promotion" @click="handleTriggerReview" :loading="isSubmitting" style="margin-left: 10px;">
+                                    
+                                    <el-button v-if="canEdit" type="success" icon="el-icon-s-promotion" @click="handleTriggerReview" :loading="isSubmitting" style="width: 100%;">
                                         提交审核
                                     </el-button>
-                                </template>
-                            </div>
+                                    
+                                </div>
+                                
                             </div>
                         </div>
                     </div>
@@ -553,14 +544,6 @@ Vue.component('record-workspace-panel', {
             this.stopWorkSession(); // 在发出事件前，先停止会话
             this.$emit('back-to-list');
         },
-        formatStatus(status) {
-            const statusMap = { 'DRAFT': '草稿', 'PENDING_REVIEW': '审核中', 'APPROVED': '已通过', 'REJECTED': '已驳回', 'CHANGES_REQUESTED': '待修改' };
-            return statusMap[status] || status;
-        },
-        getStatusTagType(status) {
-            const typeMap = { 'DRAFT': 'info', 'PENDING_REVIEW': 'warning', 'APPROVED': 'success', 'REJECTED': 'danger', 'CHANGES_REQUESTED': 'primary' };
-            return typeMap[status] || 'primary';
-        },
         handleExport() {
             // 1. 找到当前激活的 Tab 对应的文件信息
             const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
@@ -638,15 +621,6 @@ Vue.component('record-workspace-panel', {
                 this.heartbeatInterval = null;
             }
         },
-        formatDuration(totalSeconds) {
-            if (totalSeconds == null || totalSeconds < 0) {
-                return '暂无记录';
-            }
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-            return `${hours} 小时 ${minutes} 分钟 ${seconds} 秒`;
-        },
         startSessionTimer() {
             this.stopSessionTimer(); // 先清除旧的，确保只有一个计时器在运行
             this.currentSessionSeconds = 0; // 每次开始都从0计时
@@ -658,7 +632,6 @@ Vue.component('record-workspace-panel', {
                 }
             }, 1000); // 每1000毫秒 (1秒) 执行一次
         },
-
         /**
          * 停止 UI 计时器
          */

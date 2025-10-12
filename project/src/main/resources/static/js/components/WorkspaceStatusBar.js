@@ -4,7 +4,10 @@ const WorkspaceStatusBar = {
     props: {
         fileId: { type: Number, required: true },
         recordInfo: { type: Object, required: true },
-        liveStats: { type: Object, default: null }
+        liveStats: { type: Object, default: null },
+        status: { type: String, required: true },
+        totalDuration: { type: Number, default: 0 },
+        sessionDuration: { type: Number, default: 0 }
     },
     data() {
         return {
@@ -22,12 +25,13 @@ const WorkspaceStatusBar = {
         },
         // 【调试】新增一个用于模板展示的 personnelInfo 计算属性
         personnelInfo() {
-            if (!this.recordInfo) return {};
+            // displayData 是我们的 "真理之源"，它要么是 savedStats，要么是 liveStats
+            if (!this.displayData) return {};
             return {
-                number: this.recordInfo.projectNumber || 'N/A',
-                designer: this.recordInfo.designerName || 'N/A',
-                proofreader: this.recordInfo.proofreaderName || 'N/A',
-                auditor: this.recordInfo.auditorName || 'N/A'
+                number: this.displayData.fileNumber || 'N/A',
+                designer: this.displayData.designerName || 'N/A',
+                proofreader: this.displayData.proofreaderName || 'N/A',
+                auditor: this.displayData.auditorName || 'N/A'
             };
         }
     },
@@ -81,7 +85,24 @@ const WorkspaceStatusBar = {
                     console.log('[StatusBar - Method] fetchSavedStats finished.');
                     this.isLoading = false;
                 });
-        }
+        },
+        formatDuration(totalSeconds) {
+            if (totalSeconds == null || totalSeconds < 0) {
+                return '暂无记录';
+            }
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return `${hours} 小时 ${minutes} 分钟 ${seconds} 秒`;
+        },
+        formatStatus(status) {
+            const statusMap = { 'DRAFT': '草稿', 'PENDING_REVIEW': '审核中', 'APPROVED': '已通过', 'REJECTED': '已驳回', 'CHANGES_REQUESTED': '待修改' };
+            return statusMap[status] || status;
+        },
+        getStatusTagType(status) {
+            const typeMap = { 'DRAFT': 'info', 'PENDING_REVIEW': 'warning', 'APPROVED': 'success', 'REJECTED': 'danger', 'CHANGES_REQUESTED': 'primary' };
+            return typeMap[status] || 'primary';
+        },
     },
     // 【【【 核心调试：在 mounted 钩子中打印初始 props 】】】
     mounted() {
@@ -92,73 +113,72 @@ const WorkspaceStatusBar = {
             liveStats: this.liveStats
         });
     },
-    template: `
-        <div class="card mb-3" style="border: 2px dashed red;">
-            <!-- 【调试】在组件顶部添加一个清晰的视觉标记 -->
-            <div style="position: absolute; top: -10px; left: 5px; background: red; color: white; padding: 2px 5px; font-size: 10px; z-index: 10;">
-                DEBUG: WorkspaceStatusBar Component
-            </div>
-
+template: `
+        <div class="card"> <!-- 移除 mb-3，间距由父组件控制 -->
             <div class="card-body p-3">
-                <!-- 状态一：正在加载 -->
-                <div v-if="isLoading" class="text-center">
-                    <p>正在加载统计信息...</p>
-                    <el-progress :percentage="100" status="success" :indeterminate="true" :duration="1"></el-progress>
-                </div>
-                
-                <!-- 状态二：加载出错 -->
-                <div v-else-if="error" class="alert alert-danger">
-                    <strong>组件内部错误:</strong> {{ error }}
-                </div>
-                
-                <!-- 状态三：没有可显示的数据 -->
-                <div v-else-if="!displayData" class="text-center text-muted">
-                    <p>暂无统计数据 (displayData is null or undefined)</p>
-                    <el-button size="mini" @click="fetchSavedStats">手动刷新</el-button>
-                </div>
-                
-                <!-- 状态四：成功渲染 -->
+                <div v-if="isLoading" class="text-center py-5">正在加载统计信息...</div>
                 <div v-else>
-                    <el-row :gutter="20">
-                        <!-- 人员信息表格 -->
-                        <el-col :span="8">
-                             <table class="table table-bordered table-sm" style="font-size: 0.9em;">
+                    <el-row :gutter="20" type="flex" align="middle">
+                        
+                        <!-- ======================= 区域一：项目人员 ======================= -->
+                        <el-col :span="6">
+                            <h6 class="text-muted small font-weight-bold mb-2">项目人员</h6>
+                            <table class="table table-bordered table-sm m-0" style="font-size: 0.85em;">
                                 <tbody>
-                                    <tr><td style="width: 30%;">编号：</td><td>{{ personnelInfo.number }}</td></tr>
-                                    <tr><td>设计人员：</td><td>{{ personnelInfo.designer }}</td></tr>
-                                    <tr><td>校对人员：</td><td>{{ personnelInfo.proofreader }}</td></tr>
-                                    <tr><td>审核人员：</td><td>{{ personnelInfo.auditor }}</td></tr>
+                                    <tr><td style="width: 35%;" class="font-weight-bold bg-light">编号</td><td>{{ personnelInfo.number }}</td></tr>
+                                    <tr><td class="font-weight-bold bg-light">设计人员</td><td>{{ personnelInfo.designer }}</td></tr>
+                                    <tr><td class="font-weight-bold bg-light">校对人员</td><td>{{ personnelInfo.proofreader }}</td></tr>
+                                    <tr><td class="font-weight-bold bg-light">审核人员</td><td>{{ personnelInfo.auditor }}</td></tr>
                                 </tbody>
                             </table>
                         </el-col>
-                        
-                        <!-- 统计表格 -->
-                        <el-col :span="16">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <h6 class="mb-0">统计信息</h6>
-                                <span v-if="isDirty" class="text-warning small font-italic">*实时数据，未保存</span>
-                            </div>
-                            
-                            <!-- 【调试】检查 displayData.stats 是否存在且为数组 -->
-                            <div v-if="!displayData.stats || !Array.isArray(displayData.stats)" class="alert alert-warning small p-2">
-                                <strong>数据结构警告:</strong> displayData.stats 不存在或不是一个数组。
-                                <pre style="font-size: 10px;">{{ JSON.stringify(displayData, null, 2) }}</pre>
-                            </div>
-                            <el-table v-else :data="displayData.stats" border size="mini">
-                                <el-table-column prop="category" label="分类" min-width="90"></el-table-column>
-                                <el-table-column label="结果" align="center">
-                                    <el-table-column prop="okCount" label="√ (OK)" min-width="60" align="center"></el-table-column>
-                                    <el-table-column prop="ngCount" label="× (NG)" min-width="60" align="center"></el-table-column>
-                                    <el-table-column prop="naCount" label="无 (N/A)" min-width="60" align="center"></el-table-column>
-                                </el-table-column>
-                                <el-table-column prop="totalCount" label="项数" min-width="60" align="center"></el-table-column>
-                                <el-table-column prop="okPercentage" label="OK比例" min-width="80" align="center">
-                                    <template slot-scope="scope">
-                                        <span>{{ scope.row.okPercentage }}%</span>
-                                    </template>
-                                </el-table-column>
-                            </el-table>
+
+                        <!-- 分隔线 -->
+                        <el-col :span="1" class="text-center"><el-divider direction="vertical" style="height: 7em;"></el-divider></el-col>
+
+                        <!-- ======================= 区域二：状态与时长 (KPI卡片化) ======================= -->
+                        <el-col :span="6">
+                             <h6 class="text-muted small font-weight-bold mb-2">状态与时长</h6>
+                             <div class="d-flex flex-column" style="gap: 8px;">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted">当前状态:</span>
+                                    <el-tag :type="getStatusTagType(status)" size="medium">{{ formatStatus(status) }}</el-tag>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted">累计时长:</span>
+                                    <span class="font-weight-bold h6 mb-0">{{ formatDuration(totalDuration) }}</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted">本次时长:</span>
+                                    <span class="font-weight-bold h6 mb-0 text-primary">{{ formatDuration(sessionDuration) }}</span>
+                                </div>
+                             </div>
                         </el-col>
+
+                        <!-- 分隔线 -->
+                        <el-col :span="1" class="text-center"><el-divider direction="vertical" style="height: 7em;"></el-divider></el-col>
+                        
+                        <!-- ======================= 区域三：数据统计 ======================= -->
+                        <el-col :span="10">
+                            <div v-if="!displayData" class="text-center text-muted">暂无统计数据</div>
+                            <div v-else>
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <h6 class="text-muted small font-weight-bold">数据统计</h6>
+                                    <span v-if="isDirty" class="text-warning small font-italic">*实时，未保存</span>
+                                </div>
+                                <el-table :data="displayData.stats" border size="mini" style="font-size: 0.8em;">
+                                    <el-table-column prop="category" label="分类" min-width="80"></el-table-column>
+                                    <el-table-column prop="okCount" label="√" min-width="45" align="center"></el-table-column>
+                                    <el-table-column prop="ngCount" label="×" min-width="45" align="center"></el-table-column>
+                                    <el-table-column prop="naCount" label="无" min-width="45" align="center"></el-table-column>
+                                    <el-table-column prop="totalCount" label="项数" min-width="50" align="center"></el-table-column>
+                                    <el-table-column prop="okPercentage" label="OK%" min-width="65" align="center">
+                                        <template slot-scope="scope">{{ scope.row.okPercentage }}%</template>
+                                    </el-table-column>
+                                </el-table>
+                            </div>
+                        </el-col>
+
                     </el-row>
                 </div>
             </div>
