@@ -33,6 +33,20 @@ const WorkspaceStatusBar = {
                 proofreader: this.displayData.proofreaderName || 'N/A',
                 auditor: this.displayData.auditorName || 'N/A'
             };
+        },
+        // 【【【 新增这个计算属性 】】】
+        overallTotalCount() {
+            if (this.displayData && this.displayData.stats && this.displayData.stats.length > 0) {
+                // 查找第一个 totalCount 大于 0 的记录，并返回它的 totalCount
+                const statWithTotal = this.displayData.stats.find(s => s.totalCount > 0);
+                if (statWithTotal) {
+                    return statWithTotal.totalCount;
+                }
+                // 如果所有记录的 totalCount 都是0，则返回0
+                return 0;
+            }
+            // 如果没有数据，也返回0
+            return 0;
         }
     },
     watch: {
@@ -114,74 +128,92 @@ const WorkspaceStatusBar = {
         });
     },
 template: `
-        <div class="card"> <!-- 移除 mb-3，间距由父组件控制 -->
-            <div class="card-body p-3">
-                <div v-if="isLoading" class="text-center py-5">正在加载统计信息...</div>
-                <div v-else>
-                    <el-row :gutter="20" type="flex" align="middle">
-                        
-                        <!-- ======================= 区域一：项目人员 ======================= -->
-                        <el-col :span="6">
-                            <h6 class="text-muted small font-weight-bold mb-2">项目人员</h6>
-                            <table class="table table-bordered table-sm m-0" style="font-size: 0.85em;">
-                                <tbody>
-                                    <tr><td style="width: 35%;" class="font-weight-bold bg-light">编号</td><td>{{ personnelInfo.number }}</td></tr>
-                                    <tr><td class="font-weight-bold bg-light">设计人员</td><td>{{ personnelInfo.designer }}</td></tr>
-                                    <tr><td class="font-weight-bold bg-light">校对人员</td><td>{{ personnelInfo.proofreader }}</td></tr>
-                                    <tr><td class="font-weight-bold bg-light">审核人员</td><td>{{ personnelInfo.auditor }}</td></tr>
-                                </tbody>
-                            </table>
-                        </el-col>
+    <div class="card">
+        <div class="card-body p-3">
+            <div v-if="isLoading" class="text-center py-5">正在加载统计信息...</div>
+            <div v-else>
+                <!-- ======================= 区域一：顶部KPI指标卡 ======================= -->
+                <el-row :gutter="20" class="mb-3">
+                    <!-- KPI 1: 当前状态 -->
+                    <el-col :span="8">
+                        <div class="kpi-card">
+                            <div class="kpi-label text-muted">当前状态</div>
+                            <div class="kpi-value">
+                                <el-tag :type="getStatusTagType(status)" size="medium" effect="dark">{{ formatStatus(status) }}</el-tag>
+                            </div>
+                        </div>
+                    </el-col>
+                    <!-- KPI 2: 累计时长 -->
+                    <el-col :span="8">
+                        <div class="kpi-card">
+                            <div class="kpi-label text-muted">累计设计时长</div>
+                            <div class="kpi-value h5 mb-0 font-weight-bold">{{ formatDuration(totalDuration) }}</div>
+                        </div>
+                    </el-col>
+                    <!-- KPI 3: 本次时长 -->
+                    <el-col :span="8">
+                        <div class="kpi-card">
+                            <div class="kpi-label text-muted">本次设计时长</div>
+                            <div class="kpi-value h5 mb-0 font-weight-bold text-primary">{{ formatDuration(sessionDuration) }}</div>
+                        </div>
+                    </el-col>
+                </el-row>
 
-                        <!-- 分隔线 -->
-                        <el-col :span="1" class="text-center"><el-divider direction="vertical" style="height: 7em;"></el-divider></el-col>
+                <el-divider></el-divider>
 
-                        <!-- ======================= 区域二：状态与时长 (KPI卡片化) ======================= -->
-                        <el-col :span="6">
-                             <h6 class="text-muted small font-weight-bold mb-2">状态与时长</h6>
-                             <div class="d-flex flex-column" style="gap: 8px;">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="text-muted">当前状态:</span>
-                                    <el-tag :type="getStatusTagType(status)" size="medium">{{ formatStatus(status) }}</el-tag>
-                                </div>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="text-muted">累计时长:</span>
-                                    <span class="font-weight-bold h6 mb-0">{{ formatDuration(totalDuration) }}</span>
-                                </div>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="text-muted">本次时长:</span>
-                                    <span class="font-weight-bold h6 mb-0 text-primary">{{ formatDuration(sessionDuration) }}</span>
-                                </div>
-                             </div>
-                        </el-col>
-
-                        <!-- 分隔线 -->
-                        <el-col :span="1" class="text-center"><el-divider direction="vertical" style="height: 7em;"></el-divider></el-col>
-                        
-                        <!-- ======================= 区域三：数据统计 ======================= -->
-                        <el-col :span="10">
-                            <div v-if="!displayData" class="text-center text-muted">暂无统计数据</div>
-                            <div v-else>
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <h6 class="text-muted small font-weight-bold">数据统计</h6>
+                <!-- ======================= 区域二：底部详细信息 ======================= -->
+                <el-row :gutter="20">
+                    <!-- 左侧：项目人员 -->
+                    <el-col :span="9">
+                        <h6 class="text-muted small font-weight-bold mb-2">项目人员</h6>
+                        <table class="table table-bordered table-sm m-0" style="font-size: 0.85em;">
+                            <tbody>
+                                <tr><td style="width: 35%;" class="font-weight-bold bg-light">编号</td><td>{{ personnelInfo.number }}</td></tr>
+                                <tr><td class="font-weight-bold bg-light">设计人员</td><td>{{ personnelInfo.designer }}</td></tr>
+                                <tr><td class="font-weight-bold bg-light">校对人员</td><td>{{ personnelInfo.proofreader }}</td></tr>
+                                <tr><td class="font-weight-bold bg-light">审核人员</td><td>{{ personnelInfo.auditor }}</td></tr>
+                            </tbody>
+                        </table>
+                    </el-col>
+                    
+                    <!-- 右侧：数据统计 -->
+                    <el-col :span="15">
+                        <div v-if="!displayData || !displayData.stats || displayData.stats.length === 0" class="text-center text-muted" style="padding-top: 20px;">暂无统计数据</div>
+                        <div v-else>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <h6 class="text-muted small font-weight-bold">数据统计</h6>
+                                <div>
+                                    <span class="text-muted small mr-2"><strong>总项数: {{ overallTotalCount }}</strong></span>
                                     <span v-if="isDirty" class="text-warning small font-italic">*实时，未保存</span>
                                 </div>
-                                <el-table :data="displayData.stats" border size="mini" style="font-size: 0.8em;">
-                                    <el-table-column prop="category" label="分类" min-width="80"></el-table-column>
-                                    <el-table-column prop="okCount" label="√" min-width="45" align="center"></el-table-column>
-                                    <el-table-column prop="ngCount" label="×" min-width="45" align="center"></el-table-column>
-                                    <el-table-column prop="naCount" label="无" min-width="45" align="center"></el-table-column>
-                                    <el-table-column prop="totalCount" label="项数" min-width="50" align="center"></el-table-column>
-                                    <el-table-column prop="okPercentage" label="OK%" min-width="65" align="center">
-                                        <template slot-scope="scope">{{ scope.row.okPercentage }}%</template>
-                                    </el-table-column>
-                                </el-table>
                             </div>
-                        </el-col>
-
-                    </el-row>
-                </div>
+                            <el-table :data="displayData.stats" border size="mini" style="font-size: 0.8em;">
+                                <el-table-column prop="category" label="分类" min-width="100"></el-table-column>
+                                <el-table-column prop="okCount" label="√" min-width="45" align="center"></el-table-column>
+                                <el-table-column prop="ngCount" label="×" min-width="45" align="center"></el-table-column>
+                                <el-table-column prop="naCount" label="无" min-width="45" align="center"></el-table-column>
+                                <el-table-column prop="okPercentage" label="OK%" min-width="65" align="center">
+                                    <template slot-scope="scope">{{ scope.row.okPercentage }}%</template>
+                                </el-table-column>
+                            </el-table>
+                        </div>
+                    </el-col>
+                </el-row>
             </div>
         </div>
+
+        <!-- 【【【 新增：为KPI卡片添加样式 】】】 -->
+        <style>
+            .kpi-card {
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-radius: 4px;
+                text-align: center;
+            }
+            .kpi-label {
+                font-size: 0.8em;
+                margin-bottom: 5px;
+            }
+        </style>
     `
 };

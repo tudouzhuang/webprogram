@@ -19,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -274,18 +276,42 @@ public class ProjectServiceImpl implements ProjectService {
         throw new UnsupportedOperationException("Unimplemented method 'getRecordsByProjectId'");
     }
 
-    @Override
+@Override
     @Transactional
     public ProcessRecord createRecordWithMultipleFiles(Long projectId, ProcessRecordCreateDTO recordMeta, Map<String, MultipartFile> files) throws IOException {
+        
+        // 【【【 核心修正 1：从 Spring Security 上下文中获取当前用户 】】】
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        String username;
+        if (principal instanceof UserDetails) {
+            username = ((UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            username = (String) principal;
+        } else {
+            // 在无法获取用户信息时，抛出异常，而不是静默失败
+            throw new IllegalStateException("无法识别当前用户身份信息，请确保用户已登录。");
+        }
+    
+        // 根据用户名从数据库查询完整的 User 对象
+        // 确保 userMapper 已在类顶部 @Autowired 注入
+        User currentUser = userMapper.selectByUsername(username); 
+        if (currentUser == null) {
+            throw new IllegalStateException("安全校验失败：无法在数据库中找到用户 '" + username + "'");
+        }
+        log.info("当前操作用户: {}, ID: {}", currentUser.getUsername(), currentUser.getId());
+
         // 1. 创建并保存 ProcessRecord 主记录
         ProcessRecord record = new ProcessRecord();
         BeanUtils.copyProperties(recordMeta, record); // 复制元数据
         record.setProjectId(projectId);
         record.setStatus(ProcessRecordStatus.DRAFT);
-        // 假设创建者ID从SecurityContext获取
-        // record.setCreatedByUserId(currentUserId); 
-        // record.setAssigneeId(currentUserId);
+        
+        // 【【【 核心修正 2：设置创建者ID和初始负责人ID 】】】
+        record.setCreatedByUserId(currentUser.getId()); 
+        record.setAssigneeId(currentUser.getId()); // 将初始任务负责人设置为创建者自己
+        
         processRecordMapper.insert(record);
+        log.info("新设计记录已创建, ID: {}", record.getId());
 
         // 2. 遍历上传的文件Map，为每个文件创建一条 project_files 记录
         for (Map.Entry<String, MultipartFile> entry : files.entrySet()) {
@@ -302,6 +328,7 @@ public class ProjectServiceImpl implements ProjectService {
             Path destinationPath = Paths.get(this.uploadDir, String.valueOf(projectId), String.valueOf(record.getId()), newFileName).normalize();
             Files.createDirectories(destinationPath.getParent());
             Files.copy(file.getInputStream(), destinationPath, StandardCopyOption.REPLACE_EXISTING);
+            log.info("文件已保存至: {}", destinationPath);
 
             // 2.2 创建 ProjectFile 实体并保存
             ProjectFile projectFile = new ProjectFile();
@@ -309,8 +336,8 @@ public class ProjectServiceImpl implements ProjectService {
             projectFile.setRecordId(record.getId());
             projectFile.setFileName(originalFilename);
             // 使用文件的相对路径进行存储
-            projectFile.setFilePath(Paths.get(String.valueOf(projectId), String.valueOf(record.getId()), newFileName).toString());
-            projectFile.setDocumentType(sheetKey); // 【关键】用检查项的key作为文档类型
+            projectFile.setFilePath(Paths.get(String.valueOf(projectId), String.valueOf(record.getId()), newFileName).toString().replace("\\", "/"));
+            projectFile.setDocumentType(sheetKey); // 【关键】用文件的 key 作为文档类型
             projectFile.setFileType(file.getContentType());
             projectFile.setCreatedAt(LocalDateTime.now());
 

@@ -387,35 +387,40 @@ Vue.component('record-workspace-panel', {
 
         // --- 【第4步】: 新增在线保存和提交的核心逻辑 ---
 
-        // 1. "保存在线修改" 按钮的处理器
+        /**
+                 * 【【最终修正版】】 "保存在线修改" 按钮的处理器。
+                 * 此方法只负责向 iframe 发送获取数据的指令，真正的保存逻辑在 messageEventListener 中处理。
+                 */
         handleSaveDraft() {
-            if (this.isSaving) return;
-
-            const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
-            if (!activeFile) {
-                this.$message.error('当前没有可保存的Excel文件！');
+            // 1. 前置状态检查
+            if (this.isSaving) {
+                this.$message.warning('正在保存中，请稍候...');
                 return;
             }
 
-            // 【【【 修正点 】】】
-            // 同样，用 activeFile.id 来获取 ref
+            // 2. 查找当前激活的文件和对应的 iframe 实例
+            const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
+            if (!activeFile) {
+                this.$message.error('错误：当前没有可保存的Excel文件！');
+                return;
+            }
+
+            // 【语法修正】修复了字符串拼接中的额外单引号
             const iframeRef = this.$refs['iframe-' + activeFile.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
             if (!targetIframe) {
-                this.$message.error('无法找到对应的编辑器实例！');
+                this.$message.error('错误：无法找到对应的编辑器实例！');
                 return;
             }
 
+            // 3. 更新UI状态，并向用户显示提示
             this.isSaving = true;
-            this.$message.info(`正在为 "${this.activeTab}" 生成并保存文件...`);
-            console.log('【父组件】准备发送 GET_DATA_AND_IMAGES 指令给 iframe...'); // <-- 新增日志
+            this.$message.info(`正在从编辑器获取 "${activeFile.documentType}" 的最新数据...`);
 
-            targetIframe.contentWindow.postMessage({ 
-                type: 'GET_DATA_AND_IMAGES', 
-                payload: { /* ... */ } 
-            }, window.location.origin);
-        
-            console.log('【父组件】GET_DATA_AND_IMAGES 指令已发送！'); // <-- 新增日志
+            console.log('【父组件】准备发送 GET_DATA_AND_IMAGES 指令给 iframe...');
+
+            // 4. 【核心】只发送一次指令给 iframe，然后函数结束。
+            // 后续的数据处理和文件上传，将由 messageEventListener 异步接管。
             targetIframe.contentWindow.postMessage({
                 type: 'GET_DATA_AND_IMAGES',
                 payload: {
@@ -424,15 +429,8 @@ Vue.component('record-workspace-panel', {
                     documentType: activeFile.documentType
                 }
             }, window.location.origin);
-            this.$message.success('保存在线修改成功！');
-            this.isSaving = false;
-            this.currentLiveStats = null; // 清空临时数据
 
-            // 通知状态栏重新从后端加载最新的、已保存的统计
-            const statusBar = this.$refs.statusBarRef; // 需要给 <workspace-status-bar> 添加 ref="statusBarRef"
-            if (statusBar) {
-                statusBar.fetchSavedStats();
-            }
+            console.log('【父组件】GET_DATA_AND_IMAGES 指令已发送！等待 iframe 响应...');
         },
 
         // 2. "提交审核" 按钮的处理器

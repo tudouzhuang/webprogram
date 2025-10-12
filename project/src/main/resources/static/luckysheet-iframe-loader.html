@@ -10,13 +10,26 @@
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
     <link rel='stylesheet' href='/luckysheet/assets/iconfont/iconfont.css' />
     <style>
-        html, body, #luckysheet-container {
-            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+        html,
+        body,
+        #luckysheet-container {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
         }
+
         .loader {
-            display: flex; justify-content: center; align-items: center; height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            font-size: 1.1em; color: #888; text-align: center; padding: 10px;
+            font-size: 1.1em;
+            color: #888;
+            text-align: center;
+            padding: 10px;
         }
     </style>
 </head>
@@ -38,8 +51,8 @@
 
         // --- [2. 全局变量与状态] ---
         const container = document.getElementById('luckysheet-container');
-        let originalDataValidation = {}; 
-        
+        let originalDataValidation = {};
+
         // --- [3. 辅助函数定义] ---
 
         /**
@@ -47,7 +60,7 @@
          */
         function debounce(func, wait) {
             let timeout;
-            return function(...args) {
+            return function (...args) {
                 const context = this;
                 clearTimeout(timeout);
                 timeout = setTimeout(() => func.apply(context, args), wait);
@@ -71,7 +84,7 @@
                 try {
                     const rangeData = luckysheet.getRangeArray(rule.range);
                     let okCount = 0, ngCount = 0, naCount = 0;
-                    
+
                     rangeData.forEach(row => {
                         row.forEach(cellValue => {
                             if (cellValue) {
@@ -84,7 +97,7 @@
 
                     const totalCount = okCount + ngCount + naCount;
                     const okPercentage = totalCount > 0 ? Math.round((okCount / totalCount) * 10000) / 100 : 0;
-                    
+
                     statsResult[rule.category] = {
                         category: rule.category, okCount, ngCount, naCount, totalCount, okPercentage
                     };
@@ -92,13 +105,58 @@
                     console.error(`[Iframe] 统计规则 "${rule.category}" 执行失败:`, e);
                 }
             });
-            
+
             console.log('[Iframe] 统计计算完成，结果:', statsResult);
 
             window.parent.postMessage({
                 type: 'STATS_UPDATE',
                 payload: statsResult
             }, window.location.origin);
+        }
+
+        /**
+         * 【【【 新增：自动标红函数 】】】
+         * 当单元格的值变为 "×" 时，自动将其背景设置为红色。
+         * 当值变为其他时，清除背景色。
+         * @param {number} r - 单元格的行索引
+         * @param {number} c - 单元格的列索引
+         * @param {object} cell - 单元格的完整数据对象
+         */
+        function autoHighlightCell(r, c, cell) {
+            // 【探头 A】: 确认函数是否被调用
+            console.log(`[Highlight-Debug] autoHighlightCell 被调用！坐标: (r=${r}, c=${c})`);
+
+            if (!window.luckysheet || !cell) {
+                console.log('[Highlight-Debug] Luckysheet 实例或 cell 对象为空，已终止。');
+                return;
+            }
+
+            const cellValue = cell.v ? String(cell.v).trim() : '';
+            // 【探头 B】: 确认获取到的值是什么
+            console.log(`[Highlight-Debug] 获取到的单元格值: "${cellValue}"`);
+
+            const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E=4, F=5, ..., K=10
+
+            // 【探头 C】: 确认列坐标是否在目标范围内
+            if (targetColumns.includes(c)) {
+                console.log(`[Highlight-Debug] ✅ 列 ${c} 在目标范围 [${targetColumns.join(',')}] 内，继续判断...`);
+
+                if (cellValue === '×') {
+                    // 【探头 D-1】: 确认是否匹配 "×"
+                    console.log('[Highlight-Debug] 匹配到 "×"！准备设置红色背景...');
+                    luckysheet.setCellFormat(r, c, 'bg', '#ffdddd');
+                    luckysheet.setCellFormat(r, c, 'fc', '#9c0006');
+                } else {
+                    // 【探头 D-2】: 确认是否进入“清除颜色”的逻辑
+                    if (cell.bg === '#ffdddd') {
+                        console.log('[Highlight-Debug] 值不再是 "×"，且检测到旧的红色背景。准备清除颜色...');
+                        luckysheet.setCellFormat(r, c, 'bg', null);
+                        luckysheet.setCellFormat(r, c, 'fc', null);
+                    }
+                }
+            } else {
+                console.log(`[Highlight-Debug] ❌ 列 ${c} 不在目标范围内，已忽略。`);
+            }
         }
 
         /**
@@ -111,40 +169,67 @@
         /**
          * 渲染 Luckysheet 实例。
          */
+        /**
+         * 渲染 Luckysheet 实例。
+         * 【最终修正版】：在保留所有原有功能的基础上，增加了 cellUpdated 钩子来实现自动标红和实时统计。
+         */
+/**
+         * 渲染 Luckysheet 实例。
+         * 【最终修正版】：改用 luckysheet.setHook() 手动设置钩子，以确保注册成功。
+         */
         function renderSheet(luckysheetData, fileName, options) {
             if (window.luckysheet) {
                 luckysheet.destroy();
             }
             container.innerHTML = '';
-            
+
             originalDataValidation = {};
             if (Array.isArray(luckysheetData)) {
-                 luckysheetData.forEach(sheet => {
+                luckysheetData.forEach(sheet => {
                     if (sheet && sheet.order != null && sheet.dataVerification) {
                         originalDataValidation[sheet.order] = sheet.dataVerification;
                     }
                 });
             }
 
+            // 【【【 核心修改 1：从 finalOptions 中移除 hooks 】】】
             const finalOptions = {
                 container: 'luckysheet-container',
                 data: luckysheetData,
                 title: fileName,
-                ...options,
-                // 【【【 核心修正：在这里绑定钩子 】】】
-                hooks: {
-                    cellValueChange: (r, c, v) => debouncedCalculate(),
-                    rangePaste: (range, data) => debouncedCalculate()
-                }
+                ...options
             };
-            
+
             setTimeout(() => {
                 try {
                     console.log(`[Iframe] 准备创建实例...`, finalOptions);
                     luckysheet.create(finalOptions);
                     console.log(`[Iframe] 创建实例成功！`);
+
+                    // 【【【 核心修改 2：在 create 成功后，手动设置全局钩子 】】】
+                    console.log('%c[Hooks-Debug] 准备手动设置 cellUpdated 钩子...', 'color: green; font-weight: bold;');
+                    
+                    luckysheet.setHook({
+                        cellUpdated: function (r, c, r_len, c_len) {
+                            console.log(`%c[Hooks-Debug] 手动设置的 cellUpdated 钩子已触发！范围: (r=${r}, c=${c}, rows=${r_len}, cols=${c_len})`, 'color: blue; font-weight: bold;');
+                            
+                            for (let i = 0; i < r_len; i++) {
+                                for (let j = 0; j < c_len; j++) {
+                                    const currentRow = r + i;
+                                    const currentCol = c + j;
+                                    const cell = luckysheet.getCellValue(currentRow, currentCol);
+                                    autoHighlightCell(currentRow, currentCol, cell);
+                                }
+                            }
+                            
+                            debouncedCalculate();
+                        }
+                    });
+
+                    console.log('%c[Hooks-Debug] cellUpdated 钩子已手动设置成功！', 'color: green; font-weight: bold;');
+
                 } catch (e) {
-                    console.error(`[Iframe] 创建实例失败:`, e);
+                    console.error(`[Iframe] 创建实例或设置钩子时失败:`, e);
                 }
             }, 50);
         }
@@ -168,7 +253,7 @@
                         .catch(jsonError => {
                             console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
                             container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
-                            
+
                             return clonedResponse.blob().then(fileBlob => {
                                 LuckyExcel.transformExcelToLucky(fileBlob,
                                     exportJson => {
@@ -188,7 +273,7 @@
                     container.innerHTML = `<div class="loader">文件加载失败。</div>`;
                 });
         }
-        
+
         /**
          * 将实时获取的 sheet 数据与初始加载的数据验证规则融合。
          */
@@ -202,7 +287,7 @@
                 return liveSheet;
             });
         }
-        
+
         /**
          * 触发文件下载。
          */
@@ -262,7 +347,7 @@
                 if (window.luckysheet) {
                     const liveSheets = luckysheet.getAllSheets();
                     const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
-                    
+
                     console.log(`[Iframe] ✅ 成功融合实时数据。准备回发...`);
                     console.log('【iframe】准备将 SHEET_DATA_WITH_IMAGES_RESPONSE 消息回发给父窗口！'); // <-- 新增日志
                     window.parent.postMessage({
@@ -288,7 +373,7 @@
         document.body.addEventListener('mousedown', () => {
             window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
         }, true);
-        
+
         console.log('[Iframe] 加载器已就绪，等待消息...');
 
     </script>

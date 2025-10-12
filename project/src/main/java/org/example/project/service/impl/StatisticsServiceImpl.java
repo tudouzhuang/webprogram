@@ -46,16 +46,14 @@ private ProcessRecordMapper processRecordMapper;
     public void calculateAndSaveStats(Long fileId, LuckySheetJsonDTO luckysheetData) {
         log.info("开始为 fileId: {} 计算统计数据...", fileId);
 
-        // 1. 获取所有激活的统计规则
         List<StatisticRule> rules = statisticRuleMapper.selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
         if (rules.isEmpty()) {
             log.warn("系统中没有配置任何有效的统计规则，跳过计算。");
             return;
         }
         
-        // 2. 找到第一个 sheet (假设我们只统计第一个)
         if (luckysheetData == null || luckysheetData.getSheets() == null || luckysheetData.getSheets().isEmpty()) {
-            log.warn("传入的 Luckysheet 数据为空或不包含任何 sheet，跳过计算。");
+            log.warn("传入的 Luckysheet 数据为空，跳过计算。");
             return;
         }
         LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
@@ -65,45 +63,70 @@ private ProcessRecordMapper processRecordMapper;
             return;
         }
 
-        // 3. 为每个规则执行计算
         for (StatisticRule rule : rules) {
-            log.debug("正在应用规则: '{}', 范围: {}", rule.getRuleName(), rule.getRangeToScan());
+            log.info(">>> 正在应用规则: '{}', 范围: {}", rule.getRuleName(), rule.getRangeToScan());
             
-            // a. 解析范围
-            Range parsedRange = parseRange(rule.getRangeToScan());
-            if (parsedRange == null) {
-                log.error("规则 '{}' 的范围 '{}' 格式不正确，已跳过。", rule.getRuleName(), rule.getRangeToScan());
+            // 1. 解析 "√, ×, 无" 的扫描范围
+            Range valueRange = parseRange(rule.getRangeToScan());
+            if (valueRange == null) {
+                log.error("规则 '{}' 的扫描范围 '{}' 格式不正确，已跳过。", rule.getRuleName(), rule.getRangeToScan());
                 continue;
             }
 
-            // b. 遍历 celldata 进行统计
+            // 2. 统计 OK, NG, NA 的数量
             int okCount = 0;
             int ngCount = 0;
             int naCount = 0;
-
             for (LuckySheetJsonDTO.CellData cell : celldata) {
-                // 检查单元格是否在规则定义的列范围内
-                if (cell.getC() >= parsedRange.startCol && cell.getC() <= parsedRange.endCol &&
-                    cell.getR() >= parsedRange.startRow && cell.getR() <= parsedRange.endRow) {
+                if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol &&
+                    cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
                     
                     if (cell.getV() != null && cell.getV().getV() != null) {
                         String cellValue = cell.getV().getV().trim();
-                        if (Objects.equals(cellValue, rule.getOkSymbol())) {
-                            okCount++;
-                        } else if (Objects.equals(cellValue, rule.getNgSymbol())) {
-                            ngCount++;
-                        } else if (Objects.equals(cellValue, rule.getNaSymbol())) {
-                            naCount++;
-                        }
+                        if (Objects.equals(cellValue, rule.getOkSymbol())) okCount++;
+                        else if (Objects.equals(cellValue, rule.getNgSymbol())) ngCount++;
+                        else if (Objects.equals(cellValue, rule.getNaSymbol())) naCount++;
                     }
                 }
             }
             
-            int totalCount = okCount + ngCount + naCount;
+            // 3. 【【【 核心升级：计算总项数 】】】
+            int totalCount;
+            if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
+                // --- 分支A：如果定义了独立的总数范围 (如 A10:A100) ---
+                log.debug("  -> 使用独立范围 '{}' 计算总项数。", rule.getTotalCountRange());
+                Range totalRange = parseRange(rule.getTotalCountRange());
+                if (totalRange == null) {
+                    log.error("规则 '{}' 的总数范围 '{}' 格式不正确，总数将计为0。", rule.getRuleName(), rule.getTotalCountRange());
+                    totalCount = 0;
+                } else {
+                    int count = 0;
+                    for (LuckySheetJsonDTO.CellData cell : celldata) {
+                        if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol &&
+                            cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
+                            
+                            // 检查单元格是否不为空，且值为数字
+                            if (cell.getV() != null && cell.getV().getV() != null && !cell.getV().getV().trim().isEmpty()) {
+                                try {
+                                    Double.parseDouble(cell.getV().getV().trim());
+                                    count++; // 如果能成功解析为数字，计数器+1
+                                } catch (NumberFormatException e) {
+                                    // 值不是数字，忽略
+                                }
+                            }
+                        }
+                    }
+                    totalCount = count;
+                }
+            } else {
+                // --- 分支B：如果没有定义，则使用传统方式 ---
+                log.debug("  -> 未定义独立总数范围，总项数 = OK + NG + NA。");
+                totalCount = okCount + ngCount + naCount;
+            }
+            
             log.info("规则 '{}' 计算结果: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
 
-            // 4. 将结果存入或更新到 sheet_statistics 表
-            // 先尝试更新，如果更新影响的行数为0，则插入新记录
+            // 4. 将结果存入或更新到 sheet_statistics 表 (这部分逻辑不变)
             SheetStatistic statisticRecord = new SheetStatistic();
             statisticRecord.setFileId(fileId);
             statisticRecord.setCategory(rule.getCategory());
@@ -117,10 +140,7 @@ private ProcessRecordMapper processRecordMapper;
             
             int updatedRows = sheetStatisticMapper.update(statisticRecord, updateWrapper);
             if (updatedRows == 0) {
-                log.debug("未找到 fileId: {}, category: '{}' 的旧记录，将插入新记录。", fileId, rule.getCategory());
                 sheetStatisticMapper.insert(statisticRecord);
-            } else {
-                log.debug("已更新 fileId: {}, category: '{}' 的统计记录。", fileId, rule.getCategory());
             }
         }
         log.info("fileId: {} 的统计数据计算并保存完毕。", fileId);

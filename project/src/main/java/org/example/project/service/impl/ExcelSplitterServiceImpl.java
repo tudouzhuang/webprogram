@@ -196,7 +196,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
 /**
      * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。
-     * 【最终完整版】: 全面支持单元格值、样式、合并、列宽、行高、数据验证等。
+     * 【最终完整版 + 后端标红】: 全面支持样式、合并、列宽等，并增加了后端自动标红逻辑。
      * @param filePath 文件的绝对物理路径
      * @return 包含所有 Sheet 数据的 List 集合
      * @throws IOException 如果文件读取失败
@@ -233,32 +233,26 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                         
                         LuckySheetJsonDTO.CellValue cellValue = new LuckySheetJsonDTO.CellValue();
                         
-                        // 1. 【【【 核心修正：全面解析单元格样式 】】】
-                        // =================================================================
+                        // 1. 解析单元格已有的样式
                         XSSFCellStyle style = cell.getCellStyle();
                         if (style != null) {
-                            // 1.1 字体 (Font)
                             XSSFFont font = style.getFont();
                             if (font != null) {
-                                if (font.getBold()) cellValue.setBl(1); // Bold
-                                if (font.getItalic()) cellValue.setIt(1); // Italic
-                                if (font.getStrikeout()) cellValue.setCl(1); // Strikethrough
-                                if (font.getUnderline() != XSSFFont.U_NONE) cellValue.setUl(1); // Underline
-                                if (font.getFontName() != null) cellValue.setFf(font.getFontName()); // Font Family
-                                cellValue.setFs(font.getFontHeightInPoints()); // Font Size
+                                if (font.getBold()) cellValue.setBl(1);
+                                if (font.getItalic()) cellValue.setIt(1);
+                                if (font.getStrikeout()) cellValue.setCl(1);
+                                if (font.getUnderline() != XSSFFont.U_NONE) cellValue.setUl(1);
+                                if (font.getFontName() != null) cellValue.setFf(font.getFontName());
+                                cellValue.setFs(font.getFontHeightInPoints());
                                 XSSFColor fontColor = font.getXSSFColor();
                                 if (fontColor != null && fontColor.getARGBHex() != null) {
-                                    cellValue.setFc("#" + fontColor.getARGBHex().substring(2)); // Font Color
+                                    cellValue.setFc("#" + fontColor.getARGBHex().substring(2));
                                 }
                             }
-
-                            // 1.2 背景填充 (Fill)
                             XSSFColor bgColor = style.getFillForegroundXSSFColor();
                             if (bgColor != null && style.getFillPattern() == FillPatternType.SOLID_FOREGROUND && bgColor.getARGBHex() != null) {
-                                cellValue.setBg("#" + bgColor.getARGBHex().substring(2)); // Background Color
+                                cellValue.setBg("#" + bgColor.getARGBHex().substring(2));
                             }
-                            
-                            // 1.3 对齐 (Alignment)
                             switch (style.getAlignment()) {
                                 case LEFT: cellValue.setHt(1); break;
                                 case CENTER: cellValue.setHt(0); break;
@@ -269,46 +263,70 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 case CENTER: cellValue.setVt(0); break;
                                 case BOTTOM: cellValue.setVt(2); break;
                             }
-                            if (style.getWrapText()) cellValue.setTb(2); // Wrap Text
+                            if (style.getWrapText()) cellValue.setTb(2);
                         }
-                        // --- 样式解析结束 ---
-                        // =================================================================
 
-                        // 2. 解析单元格的值 (与之前相同)
+                        // 2. 解析单元格的值
+                        String finalValue = ""; // 用于存储最终的文本值，方便后面判断
                         switch (cell.getCellType()) {
                             case STRING:
-                                cellValue.setV(cell.getStringCellValue());
-                                cellValue.setM(cell.getStringCellValue());
+                                finalValue = cell.getStringCellValue();
+                                cellValue.setV(finalValue);
+                                cellValue.setM(finalValue);
                                 break;
                             case NUMERIC:
                                 if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
                                     java.util.Date date = cell.getDateCellValue();
                                     java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-                                    String formattedDate = sdf.format(date);
-                                    cellValue.setV(formattedDate);
-                                    cellValue.setM(formattedDate);
+                                    finalValue = sdf.format(date);
+                                    cellValue.setV(finalValue);
+                                    cellValue.setM(finalValue);
                                 } else {
-                                    String plainNumber = new java.math.BigDecimal(cell.getNumericCellValue()).toPlainString();
-                                    cellValue.setV(plainNumber);
-                                    cellValue.setM(plainNumber);
+                                    finalValue = new java.math.BigDecimal(cell.getNumericCellValue()).toPlainString();
+                                    cellValue.setV(finalValue);
+                                    cellValue.setM(finalValue);
                                 }
                                 break;
                             case BOOLEAN:
-                                cellValue.setV(String.valueOf(cell.getBooleanCellValue()));
-                                cellValue.setM(String.valueOf(cell.getBooleanCellValue()));
+                                finalValue = String.valueOf(cell.getBooleanCellValue());
+                                cellValue.setV(finalValue);
+                                cellValue.setM(finalValue);
                                 break;
                             case FORMULA:
                                 cellValue.setF("=" + cell.getCellFormula());
                                 switch (cell.getCachedFormulaResultType()) {
-                                    case NUMERIC: cellValue.setV(String.valueOf(cell.getNumericCellValue())); break;
-                                    case STRING: cellValue.setV(cell.getStringCellValue()); break;
-                                    case BOOLEAN: cellValue.setV(String.valueOf(cell.getBooleanCellValue())); break;
-                                    case ERROR: cellValue.setV(org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString()); break;
-                                    default: cellValue.setV(""); break;
+                                    case NUMERIC: finalValue = String.valueOf(cell.getNumericCellValue()); break;
+                                    case STRING: finalValue = cell.getStringCellValue(); break;
+                                    case BOOLEAN: finalValue = String.valueOf(cell.getBooleanCellValue()); break;
+                                    case ERROR: finalValue = org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString(); break;
+                                    default: finalValue = ""; break;
                                 }
+                                cellValue.setV(finalValue);
                                 break;
                             default: break;
                         }
+
+                        // 【【【 核心修正：在这里注入后端自动标红逻辑 】】】
+                        // =================================================================
+                        // 定义需要应用此规则的列 (E=4, F=5, ..., K=10)
+                        List<Integer> targetColumns = java.util.Arrays.asList(4, 5, 6, 7, 8, 9, 10);
+                        if (targetColumns.contains(c)) {
+                            if ("×".equals(finalValue.trim())) {
+                                // 分支 A：值是 "×"，强制标红
+                                log.trace("后端标红: 单元格 (r={}, c={}) 值为'×'，设置红色背景。", r, c);
+                                cellValue.setBg("#ffdddd"); // 设置淡红色背景
+                                cellValue.setFc("#9c0006"); // 设置深红色字体
+                            } else {
+                                // 分支 B：值不是 "×"，检查并清除之前可能存在的标红
+                                if (cellValue.getBg() != null && "#ffdddd".equalsIgnoreCase(cellValue.getBg())) {
+                                    log.trace("后端清除标红: 单元格 (r={}, c={}) 值不再是'×'，清除红色背景。", r, c);
+                                    cellValue.setBg(null); // 将背景色设置回 null (无背景)
+                                    cellValue.setFc(null); // 将字体色设置回 null (默认颜色)
+                                }
+                            }
+                        }
+                        // =================================================================
+
                         cellData.setV(cellValue);
                         celldataList.add(cellData);
                     }
@@ -367,7 +385,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 // 4. 读取数据验证规则
                 Map<String, Object> dataVerificationMap = new HashMap<>();
                 for (DataValidation validation : sheet.getDataValidations()) {
-                    // ... (数据验证的逻辑保持不变) ...
                     DataValidationConstraint constraint = validation.getValidationConstraint();
                     if (constraint.getValidationType() == DataValidationConstraint.ValidationType.LIST) {
                         CellRangeAddressList regions = validation.getRegions();

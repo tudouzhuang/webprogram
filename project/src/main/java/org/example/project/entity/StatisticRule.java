@@ -20,4 +20,5 @@ public class StatisticRule {
     private String naSymbol;
     private Boolean isActive;
     private LocalDateTime createdAt;
+    private String totalCountRange;
 }
