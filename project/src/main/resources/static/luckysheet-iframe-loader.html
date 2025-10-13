@@ -177,12 +177,11 @@
          * 渲染 Luckysheet 实例。
          * 【最终修正版】：改用 luckysheet.setHook() 手动设置钩子，以确保注册成功。
          */
-        function renderSheet(luckysheetData, fileName, options) {
+         function renderSheet(luckysheetData, fileName, options) {
             if (window.luckysheet) {
                 luckysheet.destroy();
             }
             container.innerHTML = '';
-
             originalDataValidation = {};
             if (Array.isArray(luckysheetData)) {
                 luckysheetData.forEach(sheet => {
@@ -192,7 +191,6 @@
                 });
             }
 
-            // 【【【 核心修改 1：从 finalOptions 中移除 hooks 】】】
             const finalOptions = {
                 container: 'luckysheet-container',
                 data: luckysheetData,
@@ -206,27 +204,25 @@
                     luckysheet.create(finalOptions);
                     console.log(`[Iframe] 创建实例成功！`);
 
-                    // 【【【 核心修改 2：在 create 成功后，手动设置全局钩子 】】】
-                    console.log('%c[Hooks-Debug] 准备手动设置 cellUpdated 钩子...', 'color: green; font-weight: bold;');
+                    // 【【【 最终兼容版解决方案：直接覆盖全局钩子 】】】
+                    // 这种方法不依赖任何 API，只要实例创建成功就能挂载
+                    console.log('%c[Hooks-Debug] 准备通过全局覆盖方式设置钩子...', 'color: orange; font-weight: bold;');
+                    if (window.luckysheet && !window.luckysheet.hooks) {
+                        window.luckysheet.hooks = {}; // 如果连 hooks 对象都不存在，创建一个
+                    }
                     
-                    luckysheet.setHook({
-                        cellUpdated: function (r, c, r_len, c_len) {
-                            console.log(`%c[Hooks-Debug] 手动设置的 cellUpdated 钩子已触发！范围: (r=${r}, c=${c}, rows=${r_len}, cols=${c_len})`, 'color: blue; font-weight: bold;');
-                            
-                            for (let i = 0; i < r_len; i++) {
-                                for (let j = 0; j < c_len; j++) {
-                                    const currentRow = r + i;
-                                    const currentCol = c + j;
-                                    const cell = luckysheet.getCellValue(currentRow, currentCol);
-                                    autoHighlightCell(currentRow, currentCol, cell);
-                                }
+                    window.luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
+                        console.log(`%c[Hooks-Debug] 全局覆盖的 cellUpdated 钩子已触发！`, 'color: blue; font-weight: bold;');
+                        for (let i = 0; i < r_len; i++) {
+                            for (let j = 0; j < c_len; j++) {
+                                const cell = luckysheet.getCellValue(r + i, c + j);
+                                autoHighlightCell(r + i, c + j, cell);
                             }
-                            
-                            debouncedCalculate();
                         }
-                    });
+                        debouncedCalculate();
+                    };
 
-                    console.log('%c[Hooks-Debug] cellUpdated 钩子已手动设置成功！', 'color: green; font-weight: bold;');
+                    console.log('%c[Hooks-Debug] 已成功通过全局覆盖方式设置钩子！', 'color: green; font-weight: bold;');
 
                 } catch (e) {
                     console.error(`[Iframe] 创建实例或设置钩子时失败:`, e);

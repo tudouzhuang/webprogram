@@ -25,8 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Excel 文件拆分服务的实现类。
- * 实现了将一个多Sheet的 .xlsx 文件拆分为多个单Sheet文件的功能。
+ * Excel 文件拆分服务的实现类。 实现了将一个多Sheet的 .xlsx 文件拆分为多个单Sheet文件的功能。
  */
 @Service
 public class ExcelSplitterServiceImpl implements ExcelSplitterService {
@@ -44,8 +43,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
         ZipSecureFile.setMinInflateRatio(0.001);
         log.info("【ExcelSplitter】开始拆分文件: {}", sourceFile.getName());
-        try (FileInputStream fis = new FileInputStream(sourceFile);
-             XSSFWorkbook sourceWorkbook = new XSSFWorkbook(fis)) {
+        try (FileInputStream fis = new FileInputStream(sourceFile); XSSFWorkbook sourceWorkbook = new XSSFWorkbook(fis)) {
 
             for (int i = 0; i < sourceWorkbook.getNumberOfSheets(); i++) {
                 XSSFSheet sourceSheet = sourceWorkbook.getSheetAt(i);
@@ -78,7 +76,8 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
     /**
      * 复制整个Sheet，包括内容、样式、合并单元格和图片。
-     * @param source      源Sheet
+     *
+     * @param source 源Sheet
      * @param destination 目标Sheet
      */
     private void copySheet(XSSFSheet source, XSSFSheet destination) {
@@ -92,7 +91,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
         // 2. 复制列宽
         if (source.getPhysicalNumberOfRows() > 0) {
             XSSFRow firstRow = source.getRow(source.getFirstRowNum());
-            if(firstRow != null){
+            if (firstRow != null) {
                 for (int i = 0; i < firstRow.getLastCellNum(); i++) {
                     destination.setColumnWidth(i, source.getColumnWidth(i));
                 }
@@ -142,9 +141,10 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
     /**
      * 复制单个单元格，包括样式、评论、超链接和值。
-     * @param source      源单元格
+     *
+     * @param source 源单元格
      * @param destination 目标单元格
-     * @param styleMap    用于缓存和复用样式的Map
+     * @param styleMap 用于缓存和复用样式的Map
      */
     private void copyCell(XSSFCell source, XSSFCell destination, Map<Integer, XSSFCellStyle> styleMap) {
         // 复制样式
@@ -194,9 +194,10 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
         }
     }
 
-/**
-     * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。
-     * 【最终完整版 + 后端标红】: 全面支持样式、合并、列宽等，并增加了后端自动标红逻辑。
+    /**
+     * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。 【最终完整版 + 后端标红】:
+     * 全面支持样式、合并、列宽等，并增加了后端自动标红逻辑。
+     *
      * @param filePath 文件的绝对物理路径
      * @return 包含所有 Sheet 数据的 List 集合
      * @throws IOException 如果文件读取失败
@@ -207,8 +208,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
 
         ZipSecureFile.setMinInflateRatio(0.001);
 
-        try (FileInputStream fis = new FileInputStream(filePath);
-             XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
+        try (FileInputStream fis = new FileInputStream(filePath); XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
 
             for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
                 XSSFSheet sheet = workbook.getSheetAt(i);
@@ -222,27 +222,41 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                     Row row = sheet.getRow(r);
-                    if (row == null) continue;
+                    if (row == null) {
+                        continue;
+                    }
                     for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
                         XSSFCell cell = (XSSFCell) row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                        if (cell == null) continue;
+                        if (cell == null) {
+                            continue;
+                        }
 
                         LuckySheetJsonDTO.CellData cellData = new LuckySheetJsonDTO.CellData();
                         cellData.setR(r);
                         cellData.setC(c);
-                        
+
                         LuckySheetJsonDTO.CellValue cellValue = new LuckySheetJsonDTO.CellValue();
-                        
+
                         // 1. 解析单元格已有的样式
                         XSSFCellStyle style = cell.getCellStyle();
                         if (style != null) {
                             XSSFFont font = style.getFont();
                             if (font != null) {
-                                if (font.getBold()) cellValue.setBl(1);
-                                if (font.getItalic()) cellValue.setIt(1);
-                                if (font.getStrikeout()) cellValue.setCl(1);
-                                if (font.getUnderline() != XSSFFont.U_NONE) cellValue.setUl(1);
-                                if (font.getFontName() != null) cellValue.setFf(font.getFontName());
+                                if (font.getBold()) {
+                                    cellValue.setBl(1);
+                                }
+                                if (font.getItalic()) {
+                                    cellValue.setIt(1);
+                                }
+                                if (font.getStrikeout()) {
+                                    cellValue.setCl(1);
+                                }
+                                if (font.getUnderline() != XSSFFont.U_NONE) {
+                                    cellValue.setUl(1);
+                                }
+                                if (font.getFontName() != null) {
+                                    cellValue.setFf(font.getFontName());
+                                }
                                 cellValue.setFs(font.getFontHeightInPoints());
                                 XSSFColor fontColor = font.getXSSFColor();
                                 if (fontColor != null && fontColor.getARGBHex() != null) {
@@ -254,16 +268,30 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 cellValue.setBg("#" + bgColor.getARGBHex().substring(2));
                             }
                             switch (style.getAlignment()) {
-                                case LEFT: cellValue.setHt(1); break;
-                                case CENTER: cellValue.setHt(0); break;
-                                case RIGHT: cellValue.setHt(2); break;
+                                case LEFT:
+                                    cellValue.setHt(1);
+                                    break;
+                                case CENTER:
+                                    cellValue.setHt(0);
+                                    break;
+                                case RIGHT:
+                                    cellValue.setHt(2);
+                                    break;
                             }
                             switch (style.getVerticalAlignment()) {
-                                case TOP: cellValue.setVt(1); break;
-                                case CENTER: cellValue.setVt(0); break;
-                                case BOTTOM: cellValue.setVt(2); break;
+                                case TOP:
+                                    cellValue.setVt(1);
+                                    break;
+                                case CENTER:
+                                    cellValue.setVt(0);
+                                    break;
+                                case BOTTOM:
+                                    cellValue.setVt(2);
+                                    break;
                             }
-                            if (style.getWrapText()) cellValue.setTb(2);
+                            if (style.getWrapText()) {
+                                cellValue.setTb(2);
+                            }
                         }
 
                         // 2. 解析单元格的值
@@ -295,15 +323,26 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                             case FORMULA:
                                 cellValue.setF("=" + cell.getCellFormula());
                                 switch (cell.getCachedFormulaResultType()) {
-                                    case NUMERIC: finalValue = String.valueOf(cell.getNumericCellValue()); break;
-                                    case STRING: finalValue = cell.getStringCellValue(); break;
-                                    case BOOLEAN: finalValue = String.valueOf(cell.getBooleanCellValue()); break;
-                                    case ERROR: finalValue = org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString(); break;
-                                    default: finalValue = ""; break;
+                                    case NUMERIC:
+                                        finalValue = String.valueOf(cell.getNumericCellValue());
+                                        break;
+                                    case STRING:
+                                        finalValue = cell.getStringCellValue();
+                                        break;
+                                    case BOOLEAN:
+                                        finalValue = String.valueOf(cell.getBooleanCellValue());
+                                        break;
+                                    case ERROR:
+                                        finalValue = org.apache.poi.ss.usermodel.FormulaError.forInt(cell.getErrorCellValue()).getString();
+                                        break;
+                                    default:
+                                        finalValue = "";
+                                        break;
                                 }
                                 cellValue.setV(finalValue);
                                 break;
-                            default: break;
+                            default:
+                                break;
                         }
 
                         // 【【【 核心修正：在这里注入后端自动标红逻辑 】】】
@@ -337,15 +376,27 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 Map<String, Object> config = new HashMap<>();
                 Map<String, Object> merge = new HashMap<>();
                 for (CellRangeAddress region : sheet.getMergedRegions()) {
-                    String key = region.getFirstRow() + "_" + region.getFirstColumn();
-                    Map<String, Integer> mergeValue = new HashMap<>();
-                    mergeValue.put("r", region.getFirstRow());
-                    mergeValue.put("c", region.getFirstColumn());
-                    mergeValue.put("rs", region.getLastRow() - region.getFirstRow() + 1);
-                    mergeValue.put("cs", region.getLastColumn() - region.getFirstColumn() + 1);
-                    merge.put(key, mergeValue);
+                    // 【【【 核心修正：增加安全检查 】】】
+                    // 只有当合并区域的行数(rs)和列数(cs)都大于1时，才是一个有效的合并单元格。
+                    // 单行或单列的“合并”是没有意义的，且可能导致 Luckysheet 内部 bug。
+                    int rowSpan = region.getLastRow() - region.getFirstRow() + 1;
+                    int colSpan = region.getLastColumn() - region.getFirstColumn() + 1;
+
+                    if (rowSpan > 1 || colSpan > 1) {
+                        String key = region.getFirstRow() + "_" + region.getFirstColumn();
+                        Map<String, Integer> mergeValue = new HashMap<>();
+                        mergeValue.put("r", region.getFirstRow());
+                        mergeValue.put("c", region.getFirstColumn());
+                        mergeValue.put("rs", rowSpan);
+                        mergeValue.put("cs", colSpan);
+                        merge.put(key, mergeValue);
+                    } else {
+                        log.warn("发现一个无效的单格合并区域 (r={}, c={})，已自动忽略。", region.getFirstRow(), region.getFirstColumn());
+                    }
                 }
-                if(!merge.isEmpty()) config.put("merge", merge);
+                if (!merge.isEmpty()) {
+                    config.put("merge", merge);
+                }
 
                 Map<String, Integer> columnlenMap = new HashMap<>();
                 int maxColumn = 0;
@@ -365,17 +416,17 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 if (!columnlenMap.isEmpty()) {
                     config.put("columnlen", columnlenMap);
                 }
-                
+
                 Map<String, Integer> rowlenMap = new HashMap<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
-                     Row row = sheet.getRow(r);
-                     if (row != null) {
+                    Row row = sheet.getRow(r);
+                    if (row != null) {
                         short poiHeight = row.getHeight();
                         if (poiHeight != sheet.getDefaultRowHeight()) {
                             int pixelHeight = (int) Math.round(poiHeight / 20.0 * 1.333);
-                             rowlenMap.put(String.valueOf(r), pixelHeight);
+                            rowlenMap.put(String.valueOf(r), pixelHeight);
                         }
-                     }
+                    }
                 }
                 if (!rowlenMap.isEmpty()) {
                     config.put("rowlen", rowlenMap);
