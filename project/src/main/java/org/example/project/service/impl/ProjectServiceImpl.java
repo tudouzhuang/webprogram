@@ -25,16 +25,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.io.File;
+import org.example.project.entity.User;
+import org.example.project.mapper.UserMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
+
+import java.io.File;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 @Service
@@ -44,6 +46,9 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Autowired
     private ProjectMapper projectMapper;
+
+    @Autowired
+    private UserMapper userMapper;
 
     @Autowired
     private ProjectFileMapper projectFileMapper;
@@ -255,11 +260,6 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("【Service】文件信息 (类型: {}) 已存入数据库。", documentType);
     }
 
-    @Override
-    public void createProjectWithFile(ProjectCreateDTO createDTO, MultipartFile file) throws IOException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'createProjectWithFile'");
-    }
 
     @Override
     public List<ProjectFile> getFilesByRecordId(Long recordId) {
@@ -268,12 +268,6 @@ public class ProjectServiceImpl implements ProjectService {
         // 查询条件是 record_id，完全正确
         queryWrapper.eq("record_id", recordId);
         return projectFileMapper.selectList(queryWrapper);
-    }
-
-    @Override
-    public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getRecordsByProjectId'");
     }
 
 @Override
