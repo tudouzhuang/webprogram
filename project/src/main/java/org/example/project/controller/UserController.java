@@ -66,4 +66,25 @@ public class UserController {
         }
         return ResponseEntity.ok(users);
     }
+    
+    @GetMapping("/me")
+    public ResponseEntity<User> getMyProfile(Principal principal) {
+        // 1. 安全检查：principal 由 Spring Security 注入，如果用户未登录，它会是 null。
+        if (principal == null) {
+            // 如果未登录，返回 401 Unauthorized，前端可以根据这个状态码决定是否跳转到登录页。
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // 2. 从数据库中获取完整的用户信息
+        // principal.getName() 返回的是当前登录的用户名 (username)
+        User currentUser = userService.findByUsername(principal.getName());
+
+        // 3. 再次检查，防止数据库中用户被删除但 session 仍有效的情况
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build(); // 或者也可以返回 401
+        }
+        
+        // 4. 返回 200 OK 和完整的用户信息对象
+        return ResponseEntity.ok(currentUser);
+    }
 }

@@ -1,5 +1,3 @@
-// public/components/top-navbar.js
-
 const TopNavbar = {
     // 1. 注册子组件
     components: {
@@ -45,7 +43,7 @@ const TopNavbar = {
             <div class="navbar-menu-wrapper d-flex align-items-top">
             <ul class="navbar-nav">
                 <li class="nav-item font-weight-semibold d-none d-lg-block ms-0">
-                    <h1 class="welcome-text">早上好, <span class="text-black fw-bold">尊敬的用户</span></h1>
+                    <h1 class="welcome-text">早上好, <span class="text-black fw-bold">{{ welcomeUserName }}</span></h1>
                     <h3 class="welcome-sub-text">Your performance summary this week </h3>
                 </li>
             </ul>
@@ -189,7 +187,7 @@ const TopNavbar = {
                         </a>
                     </div>
                 </li>
-                <user-dropdown></user-dropdown>
+                <user-dropdown v-if="currentUser" :user="currentUser" @logout="onRequestLogout"></user-dropdown>
             </ul>
             <button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button"
                 data-bs-toggle="offcanvas">
