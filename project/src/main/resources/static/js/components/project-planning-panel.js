@@ -72,14 +72,27 @@ Vue.component('project-planning-panel', {
                  <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <h4 class="card-title mb-0">文件预览: {{ previewingFileName }}</h4>
-                        <el-button type="info" icon="el-icon-close" @click="closePreview" circle></el-button>
+                        <div>
+                             <el-button type="success" size="mini" icon="el-icon-download" @click="exportCurrentSheet">导出文件</el-button>
+                             <el-button type="info" icon="el-icon-close" @click="closePreview" circle style="margin-left:10px;"></el-button>
+                        </div>
                     </div>
                     <hr>
+                    
+                    <!-- 【【【核心修改：用 iframe 替换掉旧的 div】】】 -->
                     <div v-if="isLoadingSheet" class="text-center p-5">
-                        <p>正在加载和转换预览文件...</p>
-                        <el-progress :percentage="100" status="success" :indeterminate="true" :duration="2"></el-progress>
+                        <p>正在加载预览文件...</p>
+                        <i class="el-icon-loading" style="font-size: 24px;"></i>
                     </div>
-                    <div id="luckysheet-planning-container" v-show="!isLoadingSheet" style="width: 100%; height: 80vh;"></div>
+
+                    <iframe 
+                        v-show="!isLoadingSheet"
+                        ref="previewIframe"
+                        src="/luckysheet-iframe-loader.html"
+                        @load="onIframeLoad"
+                        style="width: 100%; height: 80vh; border: none;">
+                    </iframe>
+
                     <div v-if="loadSheetError" class="alert alert-warning mt-3">
                         <strong>预览失败：</strong> {{ loadSheetError }}
                     </div>
@@ -162,6 +175,50 @@ Vue.component('project-planning-panel', {
                 this.$message.error(errorMessage);
             });
         },
+        /**
+ * 【新增】当 iframe 加载完成时调用
+ */
+onIframeLoad() {
+    console.log("【PlanningPanel】预览 iframe 已加载。");
+    // iframe 加载完成后，如果正在预览某个文件，就立即向它发送加载指令
+    if (this.isPreviewing && this.planningDocument) {
+        this.loadSheetIntoIframe(this.planningDocument);
+    }
+},
+
+/**
+ * 【新增】向 iframe 发送加载表格数据的消息
+ */
+loadSheetIntoIframe(fileInfo) {
+    this.isLoadingSheet = false; // iframe 已加载，可以停止 loading 状态了
+    const targetIframe = this.$refs.previewIframe;
+    if (targetIframe && targetIframe.contentWindow) {
+        const options = { allowUpdate: false, showtoolbar: false }; // 策划书始终是只读的
+        const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+        
+        targetIframe.contentWindow.postMessage({
+            type: 'LOAD_SHEET',
+            payload: { fileUrl, fileName: fileInfo.fileName, options }
+        }, window.location.origin);
+
+        console.log("【PlanningPanel】已向 iframe 发送 LOAD_SHEET 指令。");
+    } else {
+        this.loadSheetError = "无法与预览窗口建立通信。";
+    }
+},
+
+/**
+ * 【新增】导出当前预览的表格
+ */
+exportCurrentSheet() {
+    const targetIframe = this.$refs.previewIframe;
+    if (targetIframe && targetIframe.contentWindow) {
+        targetIframe.contentWindow.postMessage({
+            type: 'EXPORT_SHEET',
+            payload: { fileName: this.previewingFileName }
+        }, window.location.origin);
+    }
+},
         
         // --- 只刷新文件列表 ---
         fetchProjectFiles() {
@@ -171,17 +228,19 @@ Vue.component('project-planning-panel', {
             });
         },
 
-        // --- 文件预览逻辑 ---
         previewFile(file) {
             if (!file || !file.id) return;
             this.isPreviewing = true;
-            this.isLoadingSheet = true;
+            this.isLoadingSheet = true; // 开始加载
             this.loadSheetError = null;
             this.previewingFileName = file.fileName;
-            
-            this.$nextTick(() => {
-                this.renderSheetFromFileId(file.id);
-            });
+        
+            // 【核心修改】我们不再在这里调用渲染逻辑
+            // 而是等待 iframe 的 @load 事件触发 onIframeLoad 方法
+            // 如果 iframe 已经加载过了，我们可以手动调用一次
+            if (this.$refs.previewIframe) {
+                this.loadSheetIntoIframe(file);
+            }
         },
         renderSheetFromFileId(fileId) {
             if (!window.LuckyExcel || !window.luckysheet) {
@@ -226,11 +285,8 @@ Vue.component('project-planning-panel', {
         
         closePreview() {
             this.isPreviewing = false;
-            if (window.luckysheet) {
-                try {
-                    window.luckysheet.destroy();
-                } catch(e) {}
-            }
+            this.previewingFileName = '';
+            // 我们不再需要手动销毁 Luckysheet 实例，因为它在 iframe 内部
         },
 
         // --- 文件删除逻辑 ---
@@ -264,10 +320,57 @@ Vue.component('project-planning-panel', {
     mounted() {
         console.log("【PlanningPanel】已挂载，初始 projectId:", this.projectId);
         this.fetchData();
+
+        // =======================================================
+        // ↓↓↓ 【【【新增：智能滚动锁的全部启动逻辑】】】 ↓↓↓
+        // =======================================================
+        console.log('[INIT] [PlanningPanel] 启动智能滚动拦截器...');
+
+        this._scrollLock = {
+            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
+            isUserScrolling: false, 
+            timeoutId: null,
+            animationFrameId: null
+        };
+        
+        const scrollLockLoop = () => {
+            if (this && this._scrollLock) {
+                if (!this._scrollLock.isUserScrolling && window.scrollY !== this._scrollLock.lastKnownScrollY) {
+                    window.scrollTo(0, this._scrollLock.lastKnownScrollY);
+                } else {
+                    this._scrollLock.lastKnownScrollY = window.scrollY;
+                }
+                this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
+            }
+        };
+        scrollLockLoop();
+        
+        this.handleWheel = () => {
+            this._scrollLock.isUserScrolling = true;
+            clearTimeout(this._scrollLock.timeoutId);
+            this._scrollLock.timeoutId = setTimeout(() => {
+                this._scrollLock.isUserScrolling = false;
+            }, 200);
+        };
+
+        window.addEventListener('wheel', this.handleWheel, { passive: true });
+        // =======================================================
     },
     beforeDestroy() {
         console.log("【PlanningPanel】将被销毁，清理资源...");
         this.resetState();
+
+        // =======================================================
+        // ↓↓↓ 【【【新增：智能滚动锁的清理逻辑】】】 ↓↓↓
+        // =======================================================
+        console.log('[CLEANUP] [PlanningPanel] 停止智能滚动拦截器...');
+        
+        if (this._scrollLock) {
+            cancelAnimationFrame(this._scrollLock.animationFrameId);
+            clearTimeout(this._scrollLock.timeoutId);
+        }
+        window.removeEventListener('wheel', this.handleWheel);
+        // =======================================================
     },
     // 【核心修正5】: 监听 projectId 的变化
     watch: {
