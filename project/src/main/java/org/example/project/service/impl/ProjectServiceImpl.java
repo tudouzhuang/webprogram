@@ -13,12 +13,14 @@ import org.example.project.entity.ProjectFile;
 import org.example.project.mapper.ProjectFileMapper;
 import org.example.project.mapper.ProjectMapper;
 import org.example.project.service.ExcelSplitterService;
+import org.example.project.service.ProcessRecordService;
 import org.example.project.service.ProjectService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -52,7 +54,11 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Autowired
     private ProjectFileMapper projectFileMapper;
-
+    
+    @Lazy
+    @Autowired
+    private ProcessRecordService processRecordService;
+    
     @Autowired
     private ProcessRecordMapper processRecordMapper; 
 
@@ -339,5 +345,12 @@ public class ProjectServiceImpl implements ProjectService {
         }
 
         return record;
+    }
+
+    @Override
+    public List<ProcessRecord> getRecordsByProjectId(Long projectId) {
+        log.info("【Service-Proxy】ProjectService.getRecordsByProjectId 被调用，将委托给 ProcessRecordService...");
+        // 直接调用 ProcessRecordService 的同名方法，并返回其结果
+        return processRecordService.getRecordsByProjectId(projectId);
     }
 }

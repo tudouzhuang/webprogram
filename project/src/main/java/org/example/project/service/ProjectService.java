@@ -24,7 +24,7 @@ public interface ProjectService {
      * @param file      用户上传的Excel文件，可以为null。
      * @throws IOException 当文件I/O操作失败时。
      */
-    void createProjectWithFile(ProjectCreateDTO createDTO, MultipartFile file) throws IOException;
+    void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException;
 
     /**
      * 获取所有项目的列表。
