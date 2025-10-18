@@ -130,7 +130,8 @@ Vue.component('dashboard-panel', {
   data() {
     return {
       isLoading: true,
-      dashboardData: null 
+      dashboardData: null,
+      performanceChart: null // 用于存储图表实例，方便销毁
     };
   },
   methods: {
@@ -146,10 +147,7 @@ Vue.component('dashboard-panel', {
         const response = await axios.get('/api/stats/dashboard');
         this.dashboardData = response.data;
         console.log("仪表盘数据一次性加载成功！", this.dashboardData);
-
-        this.$nextTick(() => {
-          this.initLineChart();
-        });
+        // 【核心修正】：不再在这里调用 initLineChart
       } catch (error) {
         this.$message.error("加载仪表盘数据失败！");
         this.dashboardData = null;
@@ -158,16 +156,24 @@ Vue.component('dashboard-panel', {
       }
     },
     initLineChart() {
-      if (typeof Chart === 'undefined' || !$("#performaneLine").length || !this.dashboardData || !this.dashboardData.reviewWorkload) {
-        console.warn("Chart.js 或图表容器/数据未就绪，跳过图表初始化。");
+      // 1. 检查 DOM 和数据是否就绪
+      const canvasElement = document.getElementById("performaneLine");
+      if (!canvasElement || !this.dashboardData || !this.dashboardData.reviewWorkload) {
+        return; // 如果还没准备好，就直接返回，等待下一次 updated 钩子触发
+      }
+      
+      // 2. 如果图表已经存在，也直接返回，避免重复初始化
+      if (this.performanceChart) {
         return;
       }
       
+      console.log("✅ Chart.js、容器和数据均已就绪，开始初始化折线图...");
+
       const workload = this.dashboardData.reviewWorkload;
       const labels = workload.map(d => d.date);
       const data = workload.map(d => d.count);
-      
-      const ctx = document.getElementById("performaneLine").getContext("2d");
+
+      const ctx = canvasElement.getContext("2d");
       const saleGradientBg = ctx.createLinearGradient(5, 0, 5, 100);
       saleGradientBg.addColorStop(0, "rgba(26, 115, 232, 0.18)");
       saleGradientBg.addColorStop(1, "rgba(26, 115, 232, 0.02)");
@@ -200,18 +206,46 @@ Vue.component('dashboard-panel', {
                 ticks: { fontColor: "#6B778C" }
             }]
           },
-          legend: {
-            display: false
-          },
+          legend: { display: false },
           elements: { line: { tension: 0.4 } },
           tooltips: { backgroundColor: "rgba(31, 59, 179, 1)" },
       };
-      
-      new Chart(ctx, { type: "line", data: salesTopData, options: salesTopOptions });
-      console.log("审批工作量折线图已初始化。");
+
+      // 3. 创建新实例，并将其保存在 data 属性中
+      this.performanceChart = new Chart(ctx, { type: "line", data: salesTopData, options: salesTopOptions });
+      console.log("审批工作量折线图已成功初始化。");
     }
   },
+  
+  // 【【【 核心修正：重构生命周期钩子 】】】
   mounted() {
+    console.log("Dashboard Panel 组件已挂载 (mounted)。");
     this.fetchDashboardData();
   },
+
+  /**
+   * 新增：updated 钩子
+   * 在每次数据变化导致 DOM 重新渲染后调用。
+   * 这是初始化非 Vue 插件（如 Chart.js）最可靠的地方。
+   */
+  updated() {
+    console.log("Dashboard Panel 组件已更新 (updated)。尝试初始化图表...");
+    // 每次 DOM 更新后，都尝试去初始化图表
+    // initLineChart 内部的检查会防止重复初始化
+    this.$nextTick(() => {
+        this.initLineChart();
+    });
+  },
+  
+  /**
+   * 新增：beforeDestroy 钩子
+   * 在组件销毁前，销毁 Chart.js 实例，防止内存泄漏。
+   */
+  beforeDestroy() {
+    if (this.performanceChart) {
+      console.log("正在销毁 Chart.js 实例...");
+      this.performanceChart.destroy();
+      this.performanceChart = null;
+    }
+  }
 });
