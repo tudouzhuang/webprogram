@@ -20,13 +20,31 @@ Vue.component('review-tasks-panel', {
                             <p class="card-description">
                                项目ID: {{ projectId }} | 共查询到 {{ totalTasks }} 条相关记录
                             </p>
-
-                            <!-- 【【【 新增：筛选开关区域 】】】 -->
-                            <div v-if="currentUser" class="mt-2">
-                                <el-switch
-                                    v-model="showMyTasksOnly"
-                                    active-text="只看我的待办">
-                                </el-switch>
+                            <!-- 【【【 核心修改：升级筛选区域 】】】 -->
+                            <div class="d-flex align-items-center mt-2" style="gap: 20px;">
+                                <!-- 开关 -->
+                                <div v-if="currentUser">
+                                    <el-switch
+                                        v-model="showMyTasksOnly"
+                                        active-text="只看我的待办">
+                                    </el-switch>
+                                </div>
+                                <!-- 状态筛选下拉框 -->
+                                <div>
+                                    <el-select 
+                                        v-model="selectedStatuses" 
+                                        multiple 
+                                        collapse-tags
+                                        placeholder="按状态筛选" 
+                                        style="width: 280px;"
+                                        size="small"
+                                        clearable>
+                                        <el-option label="待审核 (PENDING_REVIEW)" value="PENDING_REVIEW"></el-option>
+                                        <el-option label="已批准 (APPROVED)" value="APPROVED"></el-option>
+                                        <el-option label="修改中 (CHANGES_REQUESTED)" value="CHANGES_REQUESTED"></el-option>
+                                        <el-option label="草稿 (DRAFT)" value="DRAFT"></el-option>
+                                    </el-select>
+                                </div>
                             </div>
 
                         </div>
@@ -174,6 +192,7 @@ Vue.component('review-tasks-panel', {
             requestChangesComment: '', // 打回修改的意见
             userMap: {}, // 【新增】用于存储 { userId: username } 的映射
             showMyTasksOnly: false,
+            selectedStatuses: [] ,
         }
     },
 
@@ -183,16 +202,24 @@ Vue.component('review-tasks-panel', {
         },
         // 【【【 新增：核心筛选逻辑 】】】
         filteredReviewList() {
-            // this.currentUser 是从父组件通过 prop 传入的
-            if (!this.showMyTasksOnly || !this.currentUser || !this.currentUser.id) {
-                // 如果开关关闭，或无法获取当前用户信息，则显示全部
-                return this.reviewList;
+            let list = this.reviewList; // 从原始列表开始
+    
+            // --- 筛选步骤 1: “只看我的待办” ---
+            // this.currentUser 是从父组件 prop 传入的
+            if (this.showMyTasksOnly && this.currentUser && this.currentUser.id) {
+                list = list.filter(record => 
+                    record.status === 'PENDING_REVIEW' && 
+                    record.assigneeId === this.currentUser.id
+                );
             }
-            // 如果开关打开，则只返回【待审核】且【负责人是自己】的记录
-            return this.reviewList.filter(record =>
-                record.status === 'PENDING_REVIEW' &&
-                record.assigneeId === this.currentUser.id
-            );
+    
+            // --- 筛选步骤 2: “状态筛选” ---
+            if (this.selectedStatuses && this.selectedStatuses.length > 0) {
+                const statusSet = new Set(this.selectedStatuses);
+                list = list.filter(record => statusSet.has(record.status));
+            }
+            
+            return list;
         },
         availableReviewersForReassign() {
             console.log("--- [Debug Point 5] --- availableReviewersForReassign 计算属性被调用 ---");

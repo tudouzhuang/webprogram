@@ -16,13 +16,32 @@ Vue.component('process-record-list-panel', {
                                 <p class="card-description">
                                    项目ID: {{ projectId }} | 共查询到 {{ totalRecords }} 条记录
                                 </p>
-                                
-                                <!-- 【【【 新增：筛选开关区域 】】】 -->
-                                <div v-if="currentUser" class="mt-2">
-                                    <el-switch
-                                        v-model="showMyRecordsOnly"
-                                        active-text="只看我提交的">
-                                    </el-switch>
+                                <!-- 【筛选区域】 -->
+                                <div class="d-flex align-items-center mt-2" style="gap: 20px;">
+                                    <!-- 开关 -->
+                                    <div v-if="currentUser">
+                                        <el-switch
+                                            v-model="showMyRecordsOnly"
+                                            active-text="只看我提交的">
+                                        </el-switch>
+                                    </div>
+                                    <!-- 【【【 新增：状态筛选下拉框 】】】 -->
+                                    <div>
+                                        <el-select 
+                                            v-model="selectedStatuses" 
+                                            multiple 
+                                            collapse-tags
+                                            placeholder="按状态筛选" 
+                                            style="width: 280px;"
+                                            size="small"
+                                            clearable>
+                                            <el-option label="草稿 (DRAFT)" value="DRAFT"></el-option>
+                                            <el-option label="待审核 (PENDING_REVIEW)" value="PENDING_REVIEW"></el-option>
+                                            <el-option label="已批准 (APPROVED)" value="APPROVED"></el-option>
+                                            <el-option label="待修改 (CHANGES_REQUESTED)" value="CHANGES_REQUESTED"></el-option>
+                                            <el-option label="已驳回 (REJECTED)" value="REJECTED"></el-option>
+                                        </el-select>
+                                    </div>
                                 </div>
 
                             </div>
@@ -106,7 +125,8 @@ Vue.component('process-record-list-panel', {
             loadError: null,
             userMap: {},
             currentUser: null,       // 【【【 新增：用于存储当前登录用户信息 】】】
-            showMyRecordsOnly: false // 【【【 新增：筛选开关的状态 】】】
+            showMyRecordsOnly: false, // 【【【 新增：筛选开关的状态 】】】
+            selectedStatuses: [] // 初始为空数组，表示不过滤
         }
     },
 
@@ -117,13 +137,23 @@ Vue.component('process-record-list-panel', {
         },
 
         // 【【【 新增：核心筛选逻辑 】】】
+        // 【【【 核心修改：重构筛选逻辑 】】】
         filteredRecordList() {
-            if (!this.showMyRecordsOnly || !this.currentUser) {
-                // 如果开关关闭，或无法获取当前用户信息，则显示全部
-                return this.recordList;
+            let list = this.recordList; // 从原始列表开始
+
+            // --- 筛选步骤 1: “只看我的” ---
+            if (this.showMyRecordsOnly && this.currentUser) {
+                list = list.filter(record => record.createdByUserId === this.currentUser.id);
             }
-            // 如果开关打开，则只返回 createdByUserId 与当前用户ID匹配的记录
-            return this.recordList.filter(record => record.createdByUserId === this.currentUser.id);
+
+            // --- 筛选步骤 2: “状态筛选” ---
+            if (this.selectedStatuses && this.selectedStatuses.length > 0) {
+                // 将选中的状态值转为一个 Set，查询效率更高
+                const statusSet = new Set(this.selectedStatuses);
+                list = list.filter(record => statusSet.has(record.status));
+            }
+
+            return list;
         }
     },
 

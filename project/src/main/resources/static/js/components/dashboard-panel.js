@@ -1,6 +1,12 @@
 // public/js/components/dashboard-panel.js
 
 Vue.component('dashboard-panel', {
+  props: {
+      currentUser: {
+          type: Object,
+          default: null
+      }
+  },
   template: `
     <div style="width: 100%; height: 100%">
       <div class="content-wrapper" style="width: 100%; height: 100%">
@@ -22,7 +28,13 @@ Vue.component('dashboard-panel', {
               <div class="d-sm-flex align-items-center justify-content-between border-bottom">
                 <ul class="nav nav-tabs" role="tablist">
                   <li class="nav-item"><a class="nav-link active ps-0" id="home-tab" data-bs-toggle="tab" href="#overview" role="tab" aria-selected="true">工作概览</a></li>
-                  <li class="nav-item"><a class="nav-link" id="contact-tab" data-bs-toggle="tab" href="#demographics" role="tab">事务提醒</a></li>
+                  <li class="nav-item">
+                    <!-- 【【【 核心修改 1：在 a 标签上绑定 @click 事件 】】】 -->
+                    <a class="nav-link" id="contact-tab" data-bs-toggle="tab" href="#demographics" role="tab" aria-selected="false" @click="fetchUserTasks">
+                      事务提醒
+                      <el-badge :value="userTasks.length" class="ml-2" type="warning" :hidden="userTasks.length === 0"></el-badge>
+                    </a>
+                  </li>
                 </ul>
                 <div>
                   <div class="btn-wrapper">
@@ -76,7 +88,6 @@ Vue.component('dashboard-panel', {
                   </div>
                   <!-- 2. 图表与摘要 -->
                   <div class="row">
-                    <!-- 折线图 -->
                     <div class="col-lg-8 d-flex flex-column">
                       <div class="row flex-grow">
                         <div class="col-12 grid-margin stretch-card">
@@ -91,7 +102,6 @@ Vue.component('dashboard-panel', {
                         </div>
                       </div>
                     </div>
-                    <!-- 问题摘要 -->
                     <div class="col-lg-4 d-flex flex-column">
                        <div class="row flex-grow">
                          <div class="col-12 grid-margin stretch-card">
@@ -120,18 +130,93 @@ Vue.component('dashboard-panel', {
                     </div>
                   </div>
                 </div>
+                
+                <!-- 【【【 核心修改：事务提醒 Tab 的内容 】】】 -->
+                <div class="tab-pane fade" id="demographics" role="tabpanel" aria-labelledby="contact-tab">
+                  <!-- 
+                    我们将对这个外层 div 进行“装修”，而不是对 el-table 本身。
+                    p-0: 移除 Bootstrap 的内边距，因为我们将用自己的样式。
+                  -->
+                  <div class="p-0"> 
+                      <!-- 状态一：加载中 -->
+                      <div v-if="isTasksLoading" class="text-center p-5">
+                          <i class="el-icon-loading"></i> 正在刷新您的待办任务...
+                      </div>
+                      
+                      <!-- 状态二：无任务 -->
+                      <div v-else-if="userTasks.length === 0" class="text-center p-5">
+                        <i class="mdi mdi-check-circle-outline" style="font-size: 3rem; color: #67c23a;"></i>
+                        <h5 class="mt-3">太棒了！</h5>
+                        <p class="text-muted">您当前没有需要处理的任务。</p>
+                      </div>
+
+                      <!-- 
+                        状态三：有任务，显示表格
+                        【【【 核心修改：用一个带自定义样式的 div 包裹 el-table 】】】
+                      -->
+                      <div v-else 
+                           class="table-container-with-style" 
+                           style="border-radius: 10px; 
+                                  overflow: hidden; 
+                                  border: 1px solid #EBEEF5; 
+                                  box-shadow: 0 2px 12px 0 rgba(0,0,0,.1);
+                                  margin: 1.5rem;">
+                        
+                        <el-table :data="userTasks" stripe @row-click="handleTaskClick" style="cursor: pointer; width: 100%;">
+                          <el-table-column label="任务类型" width="120">
+                              <template slot-scope="scope">
+                                  <el-tag :type="getTaskTagType(scope.row.taskType)" size="small">{{ scope.row.taskType }}</el-tag>
+                              </template>
+                          </el-table-column>
+                          <el-table-column prop="projectNumber" label="项目编号" width="180" sortable></el-table-column>
+                          <el-table-column prop="recordName" label="记录名称" min-width="250" show-overflow-tooltip></el-table-column>
+                          <el-table-column prop="updatedAt" label="更新时间" width="200" sortable>
+                               <template slot-scope="scope">{{ new Date(scope.row.updatedAt).toLocaleString() }}</template>
+                          </el-table-column>
+                          <el-table-column label="操作" width="120" align="center">
+                              <template slot-scope="scope">
+                                  <el-button type="primary" size="mini" plain @click="handleTaskClick(scope.row)">处理任务</el-button>
+                              </template>
+                          </el-table-column>
+                        </el-table>
+                      </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+      <style>
+      .modern-table.el-table--border,
+      .modern-table.el-table--group {
+          border-radius: 10px; /* 从 8px 改为 10px */
+          overflow: hidden; 
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); 
+          border: 1px solid #EBEEF5; 
+      }
+          .modern-table .el-table__header-wrapper th {
+              background-color: #f5f7fa !important; color: #606266; font-weight: 600;
+          }
+          .modern-table .el-table--striped .el-table__body tr.el-table__row--striped td {
+              background: #fafcff !important;
+          }
+          .modern-table .el-table__body tr:hover > td {
+              background-color: #ecf5ff !important;
+          }
+          .modern-table.el-table--border::after, .modern-table.el-table--group::after, .modern-table::before {
+              background-color: transparent;
+          }
+      </style>
     </div>
   `,
   data() {
     return {
       isLoading: true,
       dashboardData: null,
-      performanceChart: null // 用于存储图表实例，方便销毁
+      performanceChart: null,
+      isTasksLoading: false,
+      userTasks: []
     };
   },
   methods: {
@@ -144,103 +229,108 @@ Vue.component('dashboard-panel', {
     async fetchDashboardData() {
       this.isLoading = true;
       try {
-        const response = await axios.get('/api/stats/dashboard');
-        this.dashboardData = response.data;
-        console.log("仪表盘数据一次性加载成功！", this.dashboardData);
-        // 【核心修正】：不再在这里调用 initLineChart
+        const [dashboardRes, tasksRes] = await Promise.all([
+          axios.get('/api/stats/dashboard'),
+          axios.get('/api/stats/user-tasks')
+        ]);
+        
+        this.dashboardData = dashboardRes.data;
+        this.userTasks = tasksRes.data;
+        console.log("仪表盘及待办数据一次性加载成功！", { dashboard: this.dashboardData, tasks: this.userTasks });
+
+        this.$nextTick(() => {
+          this.initLineChart();
+        });
       } catch (error) {
         this.$message.error("加载仪表盘数据失败！");
         this.dashboardData = null;
+        this.userTasks = [];
       } finally {
         this.isLoading = false;
       }
     },
-    initLineChart() {
-      // 1. 检查 DOM 和数据是否就绪
-      const canvasElement = document.getElementById("performaneLine");
-      if (!canvasElement || !this.dashboardData || !this.dashboardData.reviewWorkload) {
-        return; // 如果还没准备好，就直接返回，等待下一次 updated 钩子触发
-      }
-      
-      // 2. 如果图表已经存在，也直接返回，避免重复初始化
-      if (this.performanceChart) {
-        return;
-      }
-      
-      console.log("✅ Chart.js、容器和数据均已就绪，开始初始化折线图...");
+    
+    // 【【【 新增：独立获取用户任务的方法 】】】
+    async fetchUserTasks() {
+        // 防止重复点击
+        if (this.isTasksLoading) return;
+        
+        this.isTasksLoading = true;
+        console.log("正在刷新待办列表...");
+        try {
+            const response = await axios.get('/api/stats/user-tasks');
+            this.userTasks = response.data;
+            this.$message.success('待办列表已刷新！');
+        } catch (error) {
+            this.$message.error('刷新待办列表失败！');
+        } finally {
+            this.isTasksLoading = false;
+        }
+    },
 
+    initLineChart() {
+      const canvasElement = document.getElementById("performaneLine");
+      if (!canvasElement || !this.dashboardData || !this.dashboardData.reviewWorkload) return;
+      if (this.performanceChart) return;
+      
       const workload = this.dashboardData.reviewWorkload;
       const labels = workload.map(d => d.date);
       const data = workload.map(d => d.count);
-
       const ctx = canvasElement.getContext("2d");
       const saleGradientBg = ctx.createLinearGradient(5, 0, 5, 100);
       saleGradientBg.addColorStop(0, "rgba(26, 115, 232, 0.18)");
       saleGradientBg.addColorStop(1, "rgba(26, 115, 232, 0.02)");
-
       const salesTopData = {
           labels: labels,
           datasets: [{
-              label: "已审核数",
-              data: data,
-              backgroundColor: saleGradientBg,
-              borderColor: "#1F3BB3",
-              borderWidth: 1.5,
-              fill: true,
-              pointRadius: 4,
-              pointBackgroundColor: "#1F3BB3",
-              pointBorderColor: "#fff",
+              label: "已审核数", data: data, backgroundColor: saleGradientBg, borderColor: "#1F3BB3", borderWidth: 1.5,
+              fill: true, pointRadius: 4, pointBackgroundColor: "#1F3BB3", pointBorderColor: "#fff",
           }]
       };
-
       const salesTopOptions = {
-          responsive: true,
-          maintainAspectRatio: false,
+          responsive: true, maintainAspectRatio: false,
           scales: {
-            yAxes: [{
-                gridLines: { color: "#F0F0F0", zeroLineColor: "#F0F0F0" },
-                ticks: { beginAtZero: true, fontColor: "#6B778C" }
-            }],
-            xAxes: [{
-                gridLines: { display: false },
-                ticks: { fontColor: "#6B778C" }
-            }]
+            yAxes: [{ gridLines: { color: "#F0F0F0", zeroLineColor: "#F0F0F0" }, ticks: { beginAtZero: true, fontColor: "#6B778C" } }],
+            xAxes: [{ gridLines: { display: false }, ticks: { fontColor: "#6B778C" } }]
           },
-          legend: { display: false },
-          elements: { line: { tension: 0.4 } },
-          tooltips: { backgroundColor: "rgba(31, 59, 179, 1)" },
+          legend: { display: false }, elements: { line: { tension: 0.4 } }, tooltips: { backgroundColor: "rgba(31, 59, 179, 1)" },
       };
-
-      // 3. 创建新实例，并将其保存在 data 属性中
       this.performanceChart = new Chart(ctx, { type: "line", data: salesTopData, options: salesTopOptions });
       console.log("审批工作量折线图已成功初始化。");
+    },
+
+    handleTaskClick(task) {
+        console.log("用户点击了任务:", task);
+        if (this.currentUser && this.currentUser.identity) {
+            const role = this.currentUser.identity.toUpperCase();
+            if (task.taskType === '待审核' && (role === 'REVIEWER' || role === 'MANAGER')) {
+                this.$root.navigateTo('record-review-panel', { recordId: task.recordId });
+            } else {
+                this.$root.navigateTo('record-workspace-panel', { recordId: task.recordId });
+            }
+        } else {
+            console.warn("无法确定用户角色，跳转失败。");
+            this.$message.warning("无法确定您的角色，无法进行跳转。");
+        }
+    },
+    getTaskTagType(taskType) {
+        const typeMap = {
+            '待审核': 'warning', '待修改': 'primary', '草稿': 'info'
+        };
+        return typeMap[taskType] || '';
     }
   },
   
-  // 【【【 核心修正：重构生命周期钩子 】】】
   mounted() {
     console.log("Dashboard Panel 组件已挂载 (mounted)。");
     this.fetchDashboardData();
   },
-
-  /**
-   * 新增：updated 钩子
-   * 在每次数据变化导致 DOM 重新渲染后调用。
-   * 这是初始化非 Vue 插件（如 Chart.js）最可靠的地方。
-   */
   updated() {
     console.log("Dashboard Panel 组件已更新 (updated)。尝试初始化图表...");
-    // 每次 DOM 更新后，都尝试去初始化图表
-    // initLineChart 内部的检查会防止重复初始化
     this.$nextTick(() => {
         this.initLineChart();
     });
   },
-  
-  /**
-   * 新增：beforeDestroy 钩子
-   * 在组件销毁前，销毁 Chart.js 实例，防止内存泄漏。
-   */
   beforeDestroy() {
     if (this.performanceChart) {
       console.log("正在销毁 Chart.js 实例...");

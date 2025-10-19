@@ -54,7 +54,6 @@ public interface ProjectService {
     void uploadOrUpdateProjectFile(Long projectId, MultipartFile file, String documentType) throws IOException;
     Project createProject(ProjectCreateDTO createDTO);
 
-   void createProjectWithFile(ProjectFullCreateDTO createDTO, MultipartFile file) throws IOException;
     List<ProcessRecord> getRecordsByProjectId(Long projectId);
     List<ProjectFile> getFilesByRecordId(Long recordId);
 

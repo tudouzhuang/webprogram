@@ -796,8 +796,8 @@
                         :is="activePanel" 
                         :project-id="currentProjectId" 
                         :record-id="currentRecordId"   
+                        :current-user="currentUser"
                         v-bind="extraPanelProps"
-                        
                         @create-new-record="handleCreateNewRecord" 
                         @view-record-details="handleViewRecordDetails"
                         @project-created="onProjectCreated" 
