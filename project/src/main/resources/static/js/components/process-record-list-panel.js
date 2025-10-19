@@ -16,9 +16,18 @@ Vue.component('process-record-list-panel', {
                                 <p class="card-description">
                                    项目ID: {{ projectId }} | 共查询到 {{ totalRecords }} 条记录
                                 </p>
+                                
+                                <!-- 【【【 新增：筛选开关区域 】】】 -->
+                                <div v-if="currentUser" class="mt-2">
+                                    <el-switch
+                                        v-model="showMyRecordsOnly"
+                                        active-text="只看我提交的">
+                                    </el-switch>
+                                </div>
+
                             </div>
                             <div>
-                                <el-button type="info" icon="el-icon-refresh" @click="fetchRecordList" circle title="刷新列表"></el-button>
+                                <el-button type="info" icon="el-icon-refresh" @click="reloadData" circle title="刷新列表"></el-button>
                                 <el-button type="primary" icon="el-icon-plus" @click="createNewRecord" style="margin-left: 10px;">
                                     新建设计记录
                                 </el-button>
@@ -35,13 +44,13 @@ Vue.component('process-record-list-panel', {
                         </div>
                         
                         <div v-else>
-                            <el-table :data="recordList" style="width: 100%" v-loading="isLoading">
+                            <!-- 【【【 修改：表格数据源绑定到 filteredRecordList 】】】 -->
+                            <el-table :data="filteredRecordList" style="width: 100%" v-loading="isLoading">
                                 
                                 <el-table-column prop="id" label="记录ID" width="80"></el-table-column>
                                 <el-table-column prop="partName" label="零件名称" sortable></el-table-column>
                                 <el-table-column prop="processName" label="工序名称" width="150" sortable></el-table-column>
                                 <el-table-column label="提交人" width="120">
-                                    <!-- 必须把所有使用 scope 的地方都包裹在 template 标签内 -->
                                     <template slot-scope="scope"> 
                                         <span v-if="scope.row.createdByUserId && userMap[scope.row.createdByUserId]">
                                             {{ userMap[scope.row.createdByUserId] }}
@@ -79,26 +88,42 @@ Vue.component('process-record-list-panel', {
                                 </el-table-column>
                             </el-table>
                             
-                             <p v-if="recordList.length === 0" class="text-center text-muted mt-4">您在该项目下暂无设计记录。</p>
+                             <!-- 【【【 修改：空状态提示，使其能响应筛选状态 】】】 -->
+                             <p v-if="filteredRecordList.length === 0" class="text-center text-muted mt-4">
+                                {{ showMyRecordsOnly ? '您在该项目下暂无自己提交的设计记录。' : '该项目下暂无任何设计记录。' }}
+                             </p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     `,
-    
+
     data() {
         return {
             isLoading: false,
-            recordList: [],
+            recordList: [],      // 存储从后端获取的【原始】列表
             loadError: null,
-            userMap: {}
+            userMap: {},
+            currentUser: null,       // 【【【 新增：用于存储当前登录用户信息 】】】
+            showMyRecordsOnly: false // 【【【 新增：筛选开关的状态 】】】
         }
     },
 
     computed: {
         totalRecords() {
-            return this.recordList.length;
+            // totalRecords 现在应该计算【过滤后】的列表长度
+            return this.filteredRecordList.length;
+        },
+
+        // 【【【 新增：核心筛选逻辑 】】】
+        filteredRecordList() {
+            if (!this.showMyRecordsOnly || !this.currentUser) {
+                // 如果开关关闭，或无法获取当前用户信息，则显示全部
+                return this.recordList;
+            }
+            // 如果开关打开，则只返回 createdByUserId 与当前用户ID匹配的记录
+            return this.recordList.filter(record => record.createdByUserId === this.currentUser.id);
         }
     },
 
@@ -108,7 +133,8 @@ Vue.component('process-record-list-panel', {
             this.isLoading = true;
             Promise.all([
                 this.fetchAllUsers(),
-                this.fetchRecordList()
+                this.fetchRecordList(),
+                this.fetchCurrentUser() // 【【【 新增调用 】】】
             ]).catch(() => {
                 // 错误已在各自方法中提示，这里防止 unhandled rejection
             }).finally(() => {
@@ -129,6 +155,17 @@ Vue.component('process-record-list-panel', {
             } catch (error) {
                 this.$message.error("加载用户信息失败！");
                 throw error; // 抛出错误以便 Promise.all 捕获
+            }
+        },
+
+        // 【【【 新增方法：获取当前用户信息 】】】
+        async fetchCurrentUser() {
+            try {
+                const response = await axios.get('/api/users/me');
+                this.currentUser = response.data;
+            } catch (error) {
+                console.error("获取当前用户信息失败，筛选功能可能不可用。", error);
+                this.$message.warning("无法获取用户信息，筛选功能可能不可用。");
             }
         },
         // 【修改】fetchRecordList 现在只负责获取列表
@@ -154,7 +191,7 @@ Vue.component('process-record-list-panel', {
         viewRecordDetails(record) {
             this.$emit('view-record-details', record.id);
         },
-        
+
         /**
          * 删除记录的方法，包含了确认弹窗和API调用
          * @param {object} record - 要删除的记录对象
@@ -181,7 +218,7 @@ Vue.component('process-record-list-panel', {
                             // 如果后端返回的是字符串
                             if (typeof error.response.data === 'string') {
                                 errorMessage += ` 原因: ${error.response.data}`;
-                            } 
+                            }
                             // 如果后端返回的是JSON对象，例如 { "message": "..." }
                             else if (error.response.data.message) {
                                 errorMessage += ` 原因: ${error.response.data.message}`;
@@ -199,7 +236,7 @@ Vue.component('process-record-list-panel', {
         // --- 辅助格式化方法 ---
         formatDate(dateString) {
             if (!dateString) return 'N/A';
-            try { return new Date(dateString).toLocaleString(); } 
+            try { return new Date(dateString).toLocaleString(); }
             catch (e) { return dateString; }
         },
         formatStatus(status) {
@@ -210,7 +247,7 @@ Vue.component('process-record-list-panel', {
             return statusMap[status] || status;
         },
         getStatusTagType(status) {
-             const typeMap = {
+            const typeMap = {
                 'DRAFT': 'info', 'PENDING_REVIEW': 'warning', 'APPROVED': 'success',
                 'REJECTED': 'danger', 'CHANGES_REQUESTED': 'primary'
             };

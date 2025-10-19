@@ -20,6 +20,15 @@ Vue.component('review-tasks-panel', {
                             <p class="card-description">
                                项目ID: {{ projectId }} | 共查询到 {{ totalTasks }} 条相关记录
                             </p>
+
+                            <!-- 【【【 新增：筛选开关区域 】】】 -->
+                            <div v-if="currentUser" class="mt-2">
+                                <el-switch
+                                    v-model="showMyTasksOnly"
+                                    active-text="只看我的待办">
+                                </el-switch>
+                            </div>
+
                         </div>
                         <div>
                             <el-button type="info" icon="el-icon-refresh" @click="fetchReviewList" circle title="刷新列表"></el-button>
@@ -36,24 +45,19 @@ Vue.component('review-tasks-panel', {
                     </div>
                     
                     <div v-else>
-                        <el-table :data="reviewList" style="width: 100%" v-loading="isLoading">
+                        <!-- 【【【 修改：表格数据源绑定到 filteredReviewList 】】】 -->
+                        <el-table :data="filteredReviewList" style="width: 100%" v-loading="isLoading">
                             <el-table-column prop="id" label="记录ID" width="80"></el-table-column>
                             <el-table-column prop="partName" label="零件名称" sortable></el-table-column>
                             
-                            <!-- 新增: 当前处理人列 -->
                             <el-table-column label="当前处理人" width="120">
                                 <template slot-scope="scope">
-                                    <!-- 场景1: 记录有关联人 (assigneeId)，并且我们能在 userMap 中找到他 -->
                                     <span v-if="scope.row.assigneeId && userMap[scope.row.assigneeId]">
                                         {{ userMap[scope.row.assigneeId] }}
                                     </span>
-                                    
-                                    <!-- 场景2: 记录状态表示流程已结束，此时没有负责人 -->
                                     <el-tag v-else-if="scope.row.status === 'APPROVED' || scope.row.status === 'REJECTED'" type="info" size="mini">
                                         流程结束
                                     </el-tag>
-                                    
-                                    <!-- 场景3: 兜底情况，例如 assigneeId 存在但 userMap 还没加载完，或者其他未知状态 -->
                                     <span v-else class="text-muted">
                                         N/A
                                     </span>
@@ -76,9 +80,7 @@ Vue.component('review-tasks-panel', {
 
                             <el-table-column label="操作" width="280" fixed="right">
                                 <template slot-scope="scope">
-                                    <!-- 使用一个容器来保持按钮对齐 -->
                                     <div class="d-flex align-items-center">
-                                        <!-- 主要操作按钮 -->
                                         <div v-if="scope.row.status === 'PENDING_REVIEW'">
                                             <el-button @click="reviewRecord(scope.row)" type="primary" size="small">开始审核</el-button>
                                             <el-button @click="openReassignDialog(scope.row)" type="warning" size="small" plain>转交</el-button>
@@ -91,14 +93,13 @@ Vue.component('review-tasks-panel', {
                                             <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
                                         </div>
                                         <div v-else-if="scope.row.status === 'CHANGES_REQUESTED'">
-                                            <el-tag type="info" size="small">等待 {{ scope.row.assignee ? scope.row.assignee.username : '设计员' }} 修改</el-tag>
+                                            <el-tag type="info" size="small">等待 {{ userMap[scope.row.assigneeId] || '设计员' }} 修改</el-tag>
                                             <el-button @click="viewRecord(scope.row)" type="text" size="small" style="margin-left: 10px;">查看进度</el-button>
                                         </div>
                                         <div v-else-if="scope.row.status === 'DRAFT'">
                                             <el-tag type="info" size="small">设计员草稿</el-tag>
                                         </div>
 
-                                        <!-- 【新增】: 管理员专用的删除按钮 -->
                                         <el-button 
                                             v-if="isAdmin"
                                             @click="deleteRecord(scope.row)"
@@ -113,8 +114,9 @@ Vue.component('review-tasks-panel', {
                             </el-table-column>
                         </el-table>
                         
-                        <p v-if="reviewList.length === 0" class="text-center text-muted mt-4">
-                            该项目下暂无相关记录。
+                        <!-- 【【【 修改：空状态提示，使其能响应筛选状态 】】】 -->
+                        <p v-if="filteredReviewList.length === 0" class="text-center text-muted mt-4">
+                            {{ showMyTasksOnly ? '您当前没有待处理的审查任务。' : '该项目下暂无相关记录。' }}
                          </p>
                     </div>
                 </div>
@@ -151,12 +153,12 @@ Vue.component('review-tasks-panel', {
                 </div>
                 <span slot="footer" class="dialog-footer">
                     <el-button @click="requestChangesDialogVisible = false">取 消</el-button>
-                    <el-button type="danger" @click="handleRequestChanges" :loading="isSubmitting">确 认 打 回</el-button>
+                    <el-button type="danger" @click="handleRequestChanges" :loading="isSubmitting">确 定 打 回</el-button>
                 </span>
             </el-dialog>
         </div>
     `,
-    
+
     data() {
         return {
             isLoading: false,
@@ -170,7 +172,8 @@ Vue.component('review-tasks-panel', {
             reviewerUsers: [],        // 存储所有审核员用户列表
             selectedAssigneeId: null, // 转交时选中的新审核员ID
             requestChangesComment: '', // 打回修改的意见
-            userMap: {} // 【新增】用于存储 { userId: username } 的映射
+            userMap: {}, // 【新增】用于存储 { userId: username } 的映射
+            showMyTasksOnly: false,
         }
     },
 
@@ -178,9 +181,22 @@ Vue.component('review-tasks-panel', {
         totalTasks() {
             return this.reviewList.length;
         },
+        // 【【【 新增：核心筛选逻辑 】】】
+        filteredReviewList() {
+            // this.currentUser 是从父组件通过 prop 传入的
+            if (!this.showMyTasksOnly || !this.currentUser || !this.currentUser.id) {
+                // 如果开关关闭，或无法获取当前用户信息，则显示全部
+                return this.reviewList;
+            }
+            // 如果开关打开，则只返回【待审核】且【负责人是自己】的记录
+            return this.reviewList.filter(record =>
+                record.status === 'PENDING_REVIEW' &&
+                record.assigneeId === this.currentUser.id
+            );
+        },
         availableReviewersForReassign() {
             console.log("--- [Debug Point 5] --- availableReviewersForReassign 计算属性被调用 ---");
-            
+
             // 【检查站 D】: 查看计算时 this.reviewerUsers 的状态
             console.log("[Debug Point 6] 计算时，this.reviewerUsers 的内容:", JSON.parse(JSON.stringify(this.reviewerUsers)));
             console.log("[Debug Point 7] 计算时，this.currentRecord 的内容:", this.currentRecord ? this.currentRecord.id : 'null');
@@ -189,51 +205,51 @@ Vue.component('review-tasks-panel', {
                 console.warn("[Debug Info] 因前置条件不满足，返回空数组。");
                 return [];
             }
-            
+
             const filtered = this.reviewerUsers.filter(user => user.id !== this.currentRecord.assigneeId);
-            
+
             // 【检查站 E】: 查看最终返回给模板的数组
             console.log("[Debug Point 8] 最终返回给下拉框的数组:", JSON.parse(JSON.stringify(filtered)));
-            
+
             return filtered;
         },
         isAdmin() {
             // =======================================================
             //  ↓↓↓ 【核心调试代码】 ↓↓↓
             // =======================================================
-            
+
             console.log("--- [isAdmin Computed Property] 正在检查用户权限 ---");
-            
+
             // 检查 this.$root 是否存在
             if (!this.$root) {
                 console.error("【权限检查失败】: 无法访问 this.$root。");
                 return false;
             }
-            
+
             // 检查 currentUser 对象是否存在
             const currentUser = this.$root.currentUser;
             if (!currentUser) {
                 console.warn("【权限检查警告】: this.$root.currentUser 对象不存在或为 null。当前用户可能未登录。");
                 return false;
             }
-    
+
             // 打印 currentUser 的完整信息，以便查看其结构
             console.log("  - 当前用户信息 (this.$root.currentUser):", JSON.parse(JSON.stringify(currentUser)));
-            
+
             // 检查 identity 字段是否存在
             const identity = currentUser.identity;
             if (!identity) {
                 console.warn("【权限检查警告】: currentUser 对象中没有找到 'identity' 字段。");
                 return false;
             }
-            
+
             // 执行最终的权限判断
             const isAdminUser = (identity === 'ADMIN' || identity === 'MANAGER');
-            
+
             console.log(`  - 用户身份 (identity): '${identity}'`);
             console.log(`  - 是否为管理员 (isAdminUser): ${isAdminUser}`);
             console.log("-------------------------------------------------");
-            
+
             return isAdminUser;
             // =======================================================
         }
@@ -319,27 +335,27 @@ Vue.component('review-tasks-panel', {
         // --- 辅助格式化方法 (已更新) ---
         formatDate(dateString) {
             if (!dateString) return 'N/A';
-            try { return new Date(dateString).toLocaleString(); } 
+            try { return new Date(dateString).toLocaleString(); }
             catch (e) { return dateString; }
         },
         formatStatus(status) {
-            const statusMap = { 
-                'DRAFT': '草稿', 
-                'PENDING_REVIEW': '待审核', 
-                'APPROVED': '已批准', 
+            const statusMap = {
+                'DRAFT': '草稿',
+                'PENDING_REVIEW': '待审核',
+                'APPROVED': '已批准',
                 'REJECTED': '已驳回',
                 'CHANGES_REQUESTED': '修改中' // 新增
             };
             return statusMap[status] || status;
         },
         getStatusTagType(status) {
-             const typeMap = { 
-                'DRAFT': 'info', 
-                'PENDING_REVIEW': 'warning', 
-                'APPROVED': 'success', 
+            const typeMap = {
+                'DRAFT': 'info',
+                'PENDING_REVIEW': 'warning',
+                'APPROVED': 'success',
                 'REJECTED': 'danger',
                 'CHANGES_REQUESTED': 'primary' // 新增
-             };
+            };
             return typeMap[status] || 'primary';
         },
         getDesignerName(jsonString) { // 此方法保持不变
@@ -347,7 +363,7 @@ Vue.component('review-tasks-panel', {
             try {
                 const specData = JSON.parse(jsonString);
                 return specData.designerName || '未知';
-            } catch(e) { return '解析错误'; }
+            } catch (e) { return '解析错误'; }
         },
         deleteRecord(record) {
             this.$confirm(`【管理员操作】确定要永久删除记录 #${record.id} (${record.partName}) 吗? 这将一并删除所有关联文件，且操作不可恢复。`, '高危操作警告', {
@@ -382,9 +398,9 @@ Vue.component('review-tasks-panel', {
             try {
                 const response = await axios.get('/api/users');
                 const allUsers = response.data;
-                
+
                 console.log("[Debug Point 2] 从 /api/users 收到的原始数据:", JSON.parse(JSON.stringify(allUsers)));
-                
+
                 if (!allUsers || !Array.isArray(allUsers) || allUsers.length === 0) {
                     console.error("[Debug Error] API返回的数据为空或格式不正确！");
                     return;
@@ -393,9 +409,9 @@ Vue.component('review-tasks-panel', {
                 const userMap = {};
                 allUsers.forEach(user => { userMap[user.id] = user.username; });
                 this.userMap = userMap;
-                
+
                 console.log("[Debug Point 3] 生成的 userMap:", JSON.parse(JSON.stringify(this.userMap)));
-                
+
                 // 【【【核心修正：忽略大小写】】】
                 const filteredReviewers = allUsers.filter(user => {
                     // 1. 确保 user.identity 存在且是字符串
@@ -408,7 +424,7 @@ Vue.component('review-tasks-panel', {
                 console.log("[Debug Point 4] 过滤出的审核员 (filteredReviewers):", JSON.parse(JSON.stringify(filteredReviewers)));
 
                 this.reviewerUsers = filteredReviewers;
-        
+
             } catch (error) {
                 this.$message.error("加载用户信息失败！");
                 console.error("[Debug Error] fetchAllUsers 请求失败:", error);

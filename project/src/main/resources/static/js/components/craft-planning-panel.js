@@ -2,7 +2,7 @@ Vue.component('craft-planning-panel', {
     template: `
             <div class="content-wrapper">
                 <h1>工艺策划面板</h1>
-                <p>这里是工艺策划页面的具体内容。你可以把原先独立的HTML页面的内容粘贴到这里。</p>
+                <p>这里是工艺策划页面的测试。</p>
                 <!-- 例如，在这里可以放一个Element UI的表格 -->
                 <el-table :data="tableData" style="width: 100%">
                     <el-table-column prop="date" label="日期" width="180"></el-table-column>
