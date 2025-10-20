@@ -21,4 +21,7 @@ public class StatisticRule {
     private Boolean isActive;
     private LocalDateTime createdAt;
     private String totalCountRange;
+    private String majorRiskOkSymbol;
+    private String majorRiskNgSymbol;
+    private String majorRiskNaSymbol;
 }

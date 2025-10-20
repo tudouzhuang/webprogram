@@ -195,6 +195,7 @@
                 container: 'luckysheet-container',
                 data: luckysheetData,
                 title: fileName,
+                autoFormatw: false, 
                 ...options
             };
 
@@ -203,7 +204,9 @@
                     console.log(`[Iframe] 准备创建实例...`, finalOptions);
                     luckysheet.create(finalOptions);
                     console.log(`[Iframe] 创建实例成功！`);
-
+                    luckysheet.setluckysheetfile(luckysheet.getAllSheets()); // 先同步一下数据
+                    luckysheet.luckysheetautofixrowlen = false;
+                    console.log("[Iframe] 已通过全局 API 强制禁用自动行高。");
                     // 【【【 最终兼容版解决方案：直接覆盖全局钩子 】】】
                     // 这种方法不依赖任何 API，只要实例创建成功就能挂载
                     console.log('%c[Hooks-Debug] 准备通过全局覆盖方式设置钩子...', 'color: orange; font-weight: bold;');

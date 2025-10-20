@@ -219,6 +219,23 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 sheetData.setOrder(i);
                 sheetData.setStatus(sheet.isSelected() ? 1 : 0);
 
+                // 【【【 核心修正 1：动态规则选择 】】】
+                // =================================================================
+                String okSymbol;
+                String ngSymbol;
+                
+                if (sheet.getSheetName().contains("重大风险")) {
+                    log.info("  -> 检测到 '重大风险' Sheet，切换到特殊解析规则。");
+                    // 在这里定义“重大风险”工作表专用的符号
+                    okSymbol = "OK"; 
+                    ngSymbol = "NG";
+                } else {
+                    // 默认规则
+                    okSymbol = "√";
+                    ngSymbol = "×";
+                }
+                // =================================================================
+
                 List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                     Row row = sheet.getRow(r);
@@ -345,22 +362,20 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 break;
                         }
 
-                        // 【【【 核心修正：在这里注入后端自动标红逻辑 】】】
+                        // 【【【 核心修正 2：应用动态规则进行标红 】】】
                         // =================================================================
-                        // 定义需要应用此规则的列 (E=4, F=5, ..., K=10)
                         List<Integer> targetColumns = java.util.Arrays.asList(4, 5, 6, 7, 8, 9, 10);
                         if (targetColumns.contains(c)) {
-                            if ("×".equals(finalValue.trim())) {
-                                // 分支 A：值是 "×"，强制标红
-                                log.trace("后端标红: 单元格 (r={}, c={}) 值为'×'，设置红色背景。", r, c);
-                                cellValue.setBg("#ffdddd"); // 设置淡红色背景
-                                cellValue.setFc("#9c0006"); // 设置深红色字体
+                            // 使用我们动态选择的 ngSymbol 来判断
+                            if (ngSymbol.equals(finalValue.trim())) {
+                                log.trace("后端标红: 单元格 (r={}, c={}) 值为'{}'，设置红色背景。", r, c, ngSymbol);
+                                cellValue.setBg("#ffdddd");
+                                cellValue.setFc("#9c0006");
                             } else {
-                                // 分支 B：值不是 "×"，检查并清除之前可能存在的标红
                                 if (cellValue.getBg() != null && "#ffdddd".equalsIgnoreCase(cellValue.getBg())) {
-                                    log.trace("后端清除标红: 单元格 (r={}, c={}) 值不再是'×'，清除红色背景。", r, c);
-                                    cellValue.setBg(null); // 将背景色设置回 null (无背景)
-                                    cellValue.setFc(null); // 将字体色设置回 null (默认颜色)
+                                    log.trace("后端清除标红: 单元格 (r={}, c={}) 值不再是'{}'，清除红色背景。", r, c, ngSymbol);
+                                    cellValue.setBg(null);
+                                    cellValue.setFc(null);
                                 }
                             }
                         }

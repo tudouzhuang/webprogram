@@ -36,8 +36,9 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Autowired
 private ProcessRecordMapper processRecordMapper;
 
-    /**
+/**
      * 【核心】计算并保存指定文件的统计数据。
+     * 【已升级】：增加了对“重大风险”Sheet的特殊统计逻辑。
      * @param fileId       文件的数据库ID
      * @param luckysheetData 从前端传来的完整 Luckysheet JSON 数据
      */
@@ -46,104 +47,134 @@ private ProcessRecordMapper processRecordMapper;
     public void calculateAndSaveStats(Long fileId, LuckySheetJsonDTO luckysheetData) {
         log.info("开始为 fileId: {} 计算统计数据...", fileId);
 
+        // --- [第一部分：执行所有数据库中定义的常规规则] ---
         List<StatisticRule> rules = statisticRuleMapper.selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
         if (rules.isEmpty()) {
-            log.warn("系统中没有配置任何有效的统计规则，跳过计算。");
-            return;
-        }
-        
-        if (luckysheetData == null || luckysheetData.getSheets() == null || luckysheetData.getSheets().isEmpty()) {
-            log.warn("传入的 Luckysheet 数据为空，跳过计算。");
-            return;
-        }
-        LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
-        List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
-        if (celldata == null || celldata.isEmpty()) {
-            log.warn("Sheet '{}' 中没有任何单元格数据，跳过计算。", sheet.getName());
-            return;
-        }
-
-        for (StatisticRule rule : rules) {
-            log.info(">>> 正在应用规则: '{}', 范围: {}", rule.getRuleName(), rule.getRangeToScan());
-            
-            // 1. 解析 "√, ×, 无" 的扫描范围
-            Range valueRange = parseRange(rule.getRangeToScan());
-            if (valueRange == null) {
-                log.error("规则 '{}' 的扫描范围 '{}' 格式不正确，已跳过。", rule.getRuleName(), rule.getRangeToScan());
-                continue;
-            }
-
-            // 2. 统计 OK, NG, NA 的数量
-            int okCount = 0;
-            int ngCount = 0;
-            int naCount = 0;
-            for (LuckySheetJsonDTO.CellData cell : celldata) {
-                if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol &&
-                    cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
+            log.warn("系统中没有配置任何有效的统计规则，跳过常规计算。");
+        } else {
+            LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
+            List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
+            if (celldata == null || celldata.isEmpty()) {
+                log.warn("Sheet '{}' 中没有任何单元格数据，跳过常规计算。", sheet.getName());
+            } else {
+                for (StatisticRule rule : rules) {
+                    log.info(">>> 正在应用常规规则: '{}', 范围: {}", rule.getRuleName(), rule.getRangeToScan());
                     
-                    if (cell.getV() != null && cell.getV().getV() != null) {
-                        String cellValue = cell.getV().getV().trim();
-                        if (Objects.equals(cellValue, rule.getOkSymbol())) okCount++;
-                        else if (Objects.equals(cellValue, rule.getNgSymbol())) ngCount++;
-                        else if (Objects.equals(cellValue, rule.getNaSymbol())) naCount++;
+                    Range valueRange = parseRange(rule.getRangeToScan());
+                    if (valueRange == null) {
+                        log.error("规则 '{}' 的扫描范围 '{}' 格式不正确，已跳过。", rule.getRuleName(), rule.getRangeToScan());
+                        continue;
                     }
-                }
-            }
-            
-            // 3. 【【【 核心升级：计算总项数 】】】
-            int totalCount;
-            if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
-                // --- 分支A：如果定义了独立的总数范围 (如 A10:A100) ---
-                log.debug("  -> 使用独立范围 '{}' 计算总项数。", rule.getTotalCountRange());
-                Range totalRange = parseRange(rule.getTotalCountRange());
-                if (totalRange == null) {
-                    log.error("规则 '{}' 的总数范围 '{}' 格式不正确，总数将计为0。", rule.getRuleName(), rule.getTotalCountRange());
-                    totalCount = 0;
-                } else {
-                    int count = 0;
+
+                    int okCount = 0, ngCount = 0, naCount = 0;
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
-                        if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol &&
-                            cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
-                            
-                            // 检查单元格是否不为空，且值为数字
-                            if (cell.getV() != null && cell.getV().getV() != null && !cell.getV().getV().trim().isEmpty()) {
-                                try {
-                                    Double.parseDouble(cell.getV().getV().trim());
-                                    count++; // 如果能成功解析为数字，计数器+1
-                                } catch (NumberFormatException e) {
-                                    // 值不是数字，忽略
-                                }
+                        if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol &&
+                            cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
+                            if (cell.getV() != null && cell.getV().getV() != null) {
+                                String cellValue = cell.getV().getV().trim();
+                                if (Objects.equals(cellValue, rule.getOkSymbol())) okCount++;
+                                else if (Objects.equals(cellValue, rule.getNgSymbol())) ngCount++;
+                                else if (Objects.equals(cellValue, rule.getNaSymbol())) naCount++;
                             }
                         }
                     }
-                    totalCount = count;
+                    
+                    int totalCount;
+                    if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
+                        Range totalRange = parseRange(rule.getTotalCountRange());
+                        if (totalRange == null) {
+                            totalCount = 0;
+                        } else {
+                            int count = 0;
+                            for (LuckySheetJsonDTO.CellData cell : celldata) {
+                                if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol &&
+                                    cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
+                                    if (cell.getV() != null && cell.getV().getV() != null && !cell.getV().getV().trim().isEmpty()) {
+                                        try {
+                                            Double.parseDouble(cell.getV().getV().trim());
+                                            count++;
+                                        } catch (NumberFormatException e) { /* ignore */ }
+                                    }
+                                }
+                            }
+                            totalCount = count;
+                        }
+                    } else {
+                        totalCount = okCount + ngCount + naCount;
+                    }
+                    
+                    log.info("常规规则 '{}' 计算结果: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
+
+                    saveOrUpdateStatistic(fileId, rule.getCategory(), okCount, ngCount, naCount, totalCount);
                 }
-            } else {
-                // --- 分支B：如果没有定义，则使用传统方式 ---
-                log.debug("  -> 未定义独立总数范围，总项数 = OK + NG + NA。");
-                totalCount = okCount + ngCount + naCount;
-            }
-            
-            log.info("规则 '{}' 计算结果: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
-
-            // 4. 将结果存入或更新到 sheet_statistics 表 (这部分逻辑不变)
-            SheetStatistic statisticRecord = new SheetStatistic();
-            statisticRecord.setFileId(fileId);
-            statisticRecord.setCategory(rule.getCategory());
-            statisticRecord.setOkCount(okCount);
-            statisticRecord.setNgCount(ngCount);
-            statisticRecord.setNaCount(naCount);
-            statisticRecord.setTotalCount(totalCount);
-
-            UpdateWrapper<SheetStatistic> updateWrapper = new UpdateWrapper<>();
-            updateWrapper.eq("file_id", fileId).eq("category", rule.getCategory());
-            
-            int updatedRows = sheetStatisticMapper.update(statisticRecord, updateWrapper);
-            if (updatedRows == 0) {
-                sheetStatisticMapper.insert(statisticRecord);
             }
         }
+        
+        // --- [第二部分：【【【 新增 】】】 检查并执行“重大风险”特殊规则] ---
+        if (luckysheetData != null && luckysheetData.getSheets() != null && !luckysheetData.getSheets().isEmpty()) {
+            LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
+            if (sheet.getName() != null && sheet.getName().contains("重大风险")) {
+                log.info(">>> 检测到 '重大风险' Sheet，开始执行特殊统计...");
+                
+                List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
+                if (celldata == null || celldata.isEmpty()) {
+                    log.warn("'重大风险' Sheet 中没有任何单元格数据，跳过特殊统计。");
+                } else {
+                    // 定义特殊规则
+                    final int TARGET_COLUMN_I = 8; // I列是第9列，0-based索引是8
+                    final String okSymbol = "OK";
+                    final String ngSymbol = "NG";
+                    final String naSymbol = "NA";
+                    
+                    int okCount = 0;
+                    int ngCount = 0;
+                    int naCount = 0;
+                    
+                    for (LuckySheetJsonDTO.CellData cell : celldata) {
+                        // 只关心第 I 列
+                        if (cell.getC() == TARGET_COLUMN_I) {
+                            if (cell.getV() != null && cell.getV().getV() != null) {
+                                String cellValue = cell.getV().getV().trim();
+                                if (okSymbol.equalsIgnoreCase(cellValue)) okCount++;
+                                else if (ngSymbol.equalsIgnoreCase(cellValue)) ngCount++;
+                                else if (naSymbol.equalsIgnoreCase(cellValue)) naCount++;
+                            }
+                        }
+                    }
+                    
+                    int totalCount = okCount + ngCount + naCount;
+                    
+                    log.info("特殊规则 '重大风险统计' 计算结果: OK={}, NG={}, NA={}, Total={}", okCount, ngCount, naCount, totalCount);
+                    
+                    // 将结果保存到数据库，使用一个固定的 category 名
+                    saveOrUpdateStatistic(fileId, "重大风险", okCount, ngCount, naCount, totalCount);
+                }
+            }
+        }
+        
         log.info("fileId: {} 的统计数据计算并保存完毕。", fileId);
+    }
+
+    /**
+     * 【【【 新增：辅助方法，用于保存或更新一条统计记录 】】】
+     * 将重复的数据库操作逻辑提取出来。
+     */
+    private void saveOrUpdateStatistic(Long fileId, String category, int okCount, int ngCount, int naCount, int totalCount) {
+        SheetStatistic statisticRecord = new SheetStatistic();
+        statisticRecord.setFileId(fileId);
+        statisticRecord.setCategory(category);
+        statisticRecord.setOkCount(okCount);
+        statisticRecord.setNgCount(ngCount);
+        statisticRecord.setNaCount(naCount);
+        statisticRecord.setTotalCount(totalCount);
+
+        UpdateWrapper<SheetStatistic> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("file_id", fileId).eq("category", category);
+        
+        int updatedRows = sheetStatisticMapper.update(statisticRecord, updateWrapper);
+        if (updatedRows == 0) {
+            sheetStatisticMapper.insert(statisticRecord);
+        }
     }
 
 /**

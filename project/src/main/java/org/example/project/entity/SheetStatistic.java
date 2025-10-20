@@ -18,4 +18,5 @@ public class SheetStatistic {
     private Integer naCount;
     private Integer totalCount;
     private LocalDateTime calculatedAt;
+    
 }
