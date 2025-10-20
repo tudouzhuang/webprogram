@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-
+import org.springframework.context.annotation.Lazy; // 【【【 1. 确保添加这个 import 】】】
 import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.ProcessRecordCreateDTO;
 import org.example.project.entity.ProcessRecord;
@@ -17,6 +17,8 @@ import org.example.project.mapper.ProjectFileMapper;
 import org.example.project.mapper.ProjectMapper;
 import org.example.project.mapper.UserMapper;
 import org.example.project.service.*;
+import org.example.project.service.impl.*;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
@@ -25,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,19 +44,24 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 import org.example.project.entity.ProcessRecordStatus;
+
 import org.springframework.security.access.AccessDeniedException;
 
 /**
  * ProcessRecordService 的实现类。 负责处理所有与设计过程记录表相关的业务逻辑。
  */
 @Service
-public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, ProcessRecord> implements ProcessRecordService {
+public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, ProcessRecord>
+        implements ProcessRecordService {
 
     @Autowired
     private ProjectService projectService;
     @Autowired
     private UserService userService;
-    
+
+    @Lazy
+    @Autowired
+    private ProcessRecordServiceImpl self; // 注入自己
     @Autowired
     private StatisticsService statisticsService;
 
@@ -92,13 +100,28 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
-
     /**
      * 新增的辅助方法：根据绝对路径计算相对于uploadDir的相对路径
      */
     private String calculateRelativePath(Path absolutePath) {
         Path rootPath = Paths.get(this.uploadDir);
         return rootPath.relativize(absolutePath).toString().replace("\\", "/");
+    }
+
+    // 在 ProcessRecordServiceImpl 中，添加这个新方法
+    @Transactional(propagation = Propagation.REQUIRES_NEW) // 【关键】: 开启一个全新的、独立的事务
+    public void triggerStatisticsCalculation(Long fileId, String filePath) {
+        log.info("--- [统计-新事务] 准备触发对 fileId: {} 的统计计算...", fileId);
+        try {
+            List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(filePath);
+            LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
+            luckysheetData.setSheets(sheets);
+            statisticsService.calculateAndSaveStats(fileId, luckysheetData);
+            log.info("--- [统计-新事务] 统计计算成功完成。 ---");
+        } catch (Exception e) {
+            log.error("--- [统计-新事务] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
+            // 即使这里出错，也只会回滚这个新事务，不会影响外层的主事务
+        }
     }
 
     /**
@@ -149,7 +172,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.warn("【Security】无法获取当前登录用户ID，将返回 null。");
         return null;
     }
-    
+
     private User getCurrentUser() {
         try {
             Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -173,9 +196,9 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("【SERVICE】正在查询项目ID {} 的过程记录表列表...", projectId);
         // 使用 MyBatis-Plus 自带的标准查询方法
         return this.lambdaQuery()
-                   .eq(ProcessRecord::getProjectId, projectId)
-                   .orderByDesc(ProcessRecord::getUpdatedAt)
-                   .list();
+                .eq(ProcessRecord::getProjectId, projectId)
+                .orderByDesc(ProcessRecord::getUpdatedAt)
+                .list();
     }
 
     @Override
@@ -192,16 +215,16 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Override
     public ProjectFile findReviewSheetByRecordId(Long recordId) {
         log.info("【SERVICE】正在查询 recordId {} 对应的审核表...", recordId);
-    
+
         // 1. 创建查询条件
         QueryWrapper<ProjectFile> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("record_id", recordId)
-                    .eq("document_type", "REVIEW_SHEET")
-                    .orderByDesc("id");
-    
+                .eq("document_type", "REVIEW_SHEET")
+                .orderByDesc("id");
+
         // 2. 查询数据库。使用 getOne 可以简化代码，它会取第一条记录
         ProjectFile reviewSheet = this.projectFileMapper.selectOne(queryWrapper);
-    
+
         // 3. 判断结果
         if (reviewSheet != null) {
             // 3a. 如果找到了，正常返回
@@ -210,30 +233,30 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         } else {
             // 3b. 如果没找到，构造并返回一个指向模板的“伪” ProjectFile 对象
             log.warn("【SERVICE】未找到 recordId {} 对应的审核表。将返回模板文件信息。", recordId);
-            
+
             ProjectFile templateFile = new ProjectFile();
             templateFile.setId(-1L); // 使用一个特殊的ID，表示这是模板
             templateFile.setFileName("审核模板.xlsx");
-            
+
             // 【核心修正】
             // 提供前端可直接访问的模板 API 端点路径，不包含 .xlsx 后缀。
             // 这个路径需要与 FileController 中的 @GetMapping("/templates/{templateName}") 匹配。
             templateFile.setFilePath("/api/files/templates/review-sheet");
-            
+
             // 使用一个特殊的类型，方便前端识别并采取不同的加载策略
             templateFile.setDocumentType("TEMPLATE_SHEET");
-            
+
             return templateFile;
         }
     }
 
-// 在你的 ProcessRecordServiceImpl.java 文件中
+    // 在你的 ProcessRecordServiceImpl.java 文件中
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProjectFile saveReviewSheet(Long recordId, MultipartFile file) throws IOException {
 
         // =======================================================
-        //  ↓↓↓ 阶段 1: 接收与验证 ↓↓↓
+        // ↓↓↓ 阶段 1: 接收与验证 ↓↓↓
         // =======================================================
         log.info("==================== 开始执行 saveReviewSheet ====================");
         log.info("【Debug 1.1】接收到请求 - recordId: {}", recordId);
@@ -254,7 +277,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("【Debug 1.3】成功找到关联的过程记录: {}", record);
 
         // =======================================================
-        //  ↓↓↓ 阶段 2: 旧文件处理 ↓↓↓
+        // ↓↓↓ 阶段 2: 旧文件处理 ↓↓↓
         // =======================================================
         log.info("--- 阶段 2: 开始处理旧文件 ---");
 
@@ -283,7 +306,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         }
 
         // =======================================================
-        //  ↓↓↓ 阶段 3: 新文件保存 ↓↓↓
+        // ↓↓↓ 阶段 3: 新文件保存 ↓↓↓
         // =======================================================
         log.info("--- 阶段 3: 开始保存新文件 ---");
 
@@ -291,7 +314,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         String storedFileName = "REVIEW_" + originalFilename;
 
         // 【重要】构建绝对物理路径
-        Path physicalFilePath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
+        Path physicalFilePath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId),
+                storedFileName);
         log.info("【Debug 3.1】新文件的目标绝对物理路径为: {}", physicalFilePath);
 
         try {
@@ -305,14 +329,14 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             log.error("【Debug 3.4 - 失败】保存新物理文件时发生严重IO异常！", e);
             throw e; // 抛出异常，触发事务回滚
         }
-        
 
         // =======================================================
-        //  ↓↓↓ 阶段 4: 数据库记录更新/插入 ↓↓↓
+        // ↓↓↓ 阶段 4: 数据库记录更新/插入 ↓↓↓
         // =======================================================
         log.info("--- 阶段 4: 开始更新/插入数据库记录 ---");
 
-        String relativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
+        String relativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName)
+                .toString().replace("\\", "/");
 
         if (fileRecordToUpdate == null) {
             log.info("【Debug 4.1】创建新的 ProjectFile 实体对象...");
@@ -338,32 +362,31 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         }
 
         // =======================================================
-    //  ↓↓↓ 新增：在文件保存和数据库记录更新后，执行统计计算 ↓↓↓
-    // =======================================================
-    if (fileRecordToUpdate.getId() != null) {
-        log.info("--- [统计] 准备触发对 fileId: {} 的统计计算...", fileRecordToUpdate.getId());
-        try {
-            // 1. 使用 ExcelSplitterService 将刚刚保存的文件，反向解析回 Luckysheet JSON 数据
-            List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(physicalFilePath.toString());
-            LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
-            luckysheetData.setSheets(sheets);
+        // ↓↓↓ 新增：在文件保存和数据库记录更新后，执行统计计算 ↓↓↓
+        // =======================================================
+        if (fileRecordToUpdate.getId() != null) {
+            log.info("--- [统计] 准备触发对 fileId: {} 的统计计算...", fileRecordToUpdate.getId());
+            try {
+                // 1. 使用 ExcelSplitterService 将刚刚保存的文件，反向解析回 Luckysheet JSON 数据
+                List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService
+                        .convertExcelToLuckysheetJson(physicalFilePath.toString());
+                LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
+                luckysheetData.setSheets(sheets);
 
-            // 2. 正式调用统计服务
-            statisticsService.calculateAndSaveStats(fileRecordToUpdate.getId(), luckysheetData);
-            log.info("--- [统计] 统计计算成功完成。 ---");
-        } catch (Exception e) {
-            // 即使统计失败，也不应该影响主流程的成功返回，只记录错误日志。
-            log.error("--- [统计] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
+                // 2. 正式调用统计服务
+                statisticsService.calculateAndSaveStats(fileRecordToUpdate.getId(), luckysheetData);
+                log.info("--- [统计] 统计计算成功完成。 ---");
+            } catch (Exception e) {
+                // 即使统计失败，也不应该影响主流程的成功返回，只记录错误日志。
+                log.error("--- [统计] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
+            }
+        } else {
+            log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
         }
-    } else {
-         log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
-    }
-    // --- 统计逻辑结束 ---
-
-
+        // --- 统计逻辑结束 ---
 
         // =======================================================
-        //  ↓↓↓ 阶段 5: 更新主记录状态 ↓↓↓
+        // ↓↓↓ 阶段 5: 更新主记录状态 ↓↓↓
         // =======================================================
         log.info("--- 阶段 5: 开始更新主记录状态 ---");
 
@@ -396,8 +419,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         Map<Long, Long> taskCounts = taskCountsResult.stream()
                 .collect(Collectors.toMap(
                         row -> (Long) row.get("assigneeId"),
-                        row -> (Long) row.get("taskCount")
-                ));
+                        row -> (Long) row.get("taskCount")));
 
         // 3. 找出任务最少的人 (Java Stream API 的优雅写法)
         return allReviewers.stream()
@@ -432,10 +454,11 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
         // --- 步骤 2: 【【【修正后的权限校验】】】 ---
         log.info("  - Performing permission check...");
-        
-        boolean isManagerOrAdmin = "MANAGER".equalsIgnoreCase(currentUserRole) || "ADMIN".equalsIgnoreCase(currentUserRole);
+
+        boolean isManagerOrAdmin = "MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole);
         boolean isCurrentAssignee = record.getAssigneeId() != null && record.getAssigneeId().equals(currentUserId);
-        
+
         // 调试日志，清晰地显示判断依据
         log.info("  - Is Operator the Current Assignee? -> {}", isCurrentAssignee);
         log.info("  - Is Operator a Manager/Admin? -> {}", isManagerOrAdmin);
@@ -461,14 +484,15 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         if (!"REVIEWER".equalsIgnoreCase(newAssigneeRole) && !"MANAGER".equalsIgnoreCase(newAssigneeRole)) {
             throw new IllegalArgumentException("操作失败：目标用户 " + newAssignee.getUsername() + " 不是一个有效的审核员。");
         }
-        
+
         // --- 步骤 5: 执行更新 (保持不变) ---
         record.setAssigneeId(newAssigneeId);
         this.updateById(record);
         log.info("  - SUCCESS! Task reassigned to {} (ID: {})", newAssignee.getUsername(), newAssigneeId);
         log.info("--- [END REASSIGN TASK] ---");
     }
-// 在 ProcessRecordServiceImpl.java 中
+
+    // 在 ProcessRecordServiceImpl.java 中
     @Override
     @Transactional
     public void requestChanges(Long recordId, String comment) {
@@ -485,8 +509,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         }
 
         // =======================================================
-        //  ↓↓↓ 【核心逻辑修正】 ↓↓↓
-        //  重新设计权限校验，使其更健壮
+        // ↓↓↓ 【核心逻辑修正】 ↓↓↓
+        // 重新设计权限校验，使其更健壮
         // =======================================================
         boolean hasPermission = false;
 
@@ -498,7 +522,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         } // 场景2: 任务已批准，需要打回。此时应检查用户角色。
         else if (record.getStatus() == ProcessRecordStatus.APPROVED) {
             // 假设 User 实体有 getIdentity() 方法返回角色字符串, 例如 "REVIEWER"
-            if ("MANAGER".equalsIgnoreCase(currentUser.getIdentity()) || "ADMIN".equalsIgnoreCase(currentUser.getIdentity())) {
+            if ("MANAGER".equalsIgnoreCase(currentUser.getIdentity())
+                    || "ADMIN".equalsIgnoreCase(currentUser.getIdentity())) {
                 hasPermission = true;
             }
         }
@@ -508,7 +533,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         }
 
         // 业务规则校验 (保持不变)
-        if (record.getStatus() != ProcessRecordStatus.APPROVED && record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
+        if (record.getStatus() != ProcessRecordStatus.APPROVED
+                && record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
             throw new IllegalStateException("操作失败：当前状态无法打回。");
         }
 
@@ -526,7 +552,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     public void approveRecord(Long recordId) {
         User currentUser = getCurrentUser(); // 确保有这个辅助方法
         ProcessRecord record = this.getById(recordId);
-        if (record == null) throw new NoSuchElementException("记录不存在");
+        if (record == null)
+            throw new NoSuchElementException("记录不存在");
 
         // 权限校验：只有当前负责人才能批准
         if (!record.getAssigneeId().equals(currentUser.getId())) {
@@ -581,13 +608,16 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         // 保持和创建时一致的文件命名和存储结构
         String storedFileName = "source_" + originalFilename;
-        Path newPhysicalPath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName);
+        Path newPhysicalPath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId),
+                storedFileName);
 
         Files.createDirectories(newPhysicalPath.getParent());
         Files.copy(file.getInputStream(), newPhysicalPath, StandardCopyOption.REPLACE_EXISTING);
 
         // 2.4 更新 project_files 表中的记录
-        String newRelativePath = Paths.get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString().replace("\\", "/");
+        String newRelativePath = Paths
+                .get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString()
+                .replace("\\", "/");
         sourceFileRecord.setFileName(storedFileName);
         sourceFileRecord.setFilePath(newRelativePath);
         sourceFileRecord.setFileType(file.getContentType());
@@ -596,7 +626,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         // 3. --- 更新主记录状态和负责人 ---
         record.setStatus(ProcessRecordStatus.PENDING_REVIEW); // 状态改回“待审核”
         // 将任务重新分配给审核员，这里我们使用一个“智能分配”或“固定分配”的逻辑
-        // Long reviewerId = findDefaultReviewerForProject(record.getProjectId()); // 示例：找到项目默认审核员
+        // Long reviewerId = findDefaultReviewerForProject(record.getProjectId()); //
+        // 示例：找到项目默认审核员
         Long reviewerId = findLeastBusyReviewerId(); // 使用你之前写的智能分配算法
         record.setAssigneeId(reviewerId);
 
@@ -665,19 +696,18 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("管理员 {} 成功删除了记录 #{}", currentUser.getUsername(), recordId);
     }
 
-
     @Override
     @Transactional
     public void updateAssociatedFile(Long recordId, Long fileId, MultipartFile file) throws IOException {
         log.info("【SERVICE-UPDATE_FILE】开始更新文件, recordId: {}, fileId: {}", recordId, fileId);
-    
+
         // 1. 验证文件是否为空
         if (file.isEmpty()) {
             throw new IllegalArgumentException("上传的文件不能为空。");
         }
-    
+
         // 2. 查找并验证文件记录 (ProjectFile)
-        //    确保它存在，并且确实属于传入的 recordId
+        // 确保它存在，并且确实属于传入的 recordId
         ProjectFile fileRecord = projectFileMapper.selectById(fileId);
         if (fileRecord == null) {
             throw new NoSuchElementException("找不到ID为 " + fileId + " 的文件记录。");
@@ -687,9 +717,9 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new AccessDeniedException("权限错误：文件 " + fileId + " 不属于过程记录 " + recordId);
         }
         log.info("【SERVICE-UPDATE_FILE】文件记录校验通过。");
-    
+
         // 3. 删除旧的物理文件
-        //    fileRecord.getFilePath() 中存储的是相对路径，如 "70/19/xxx.xlsx"
+        // fileRecord.getFilePath() 中存储的是相对路径，如 "70/19/xxx.xlsx"
         Path oldPath = Paths.get(uploadDir, fileRecord.getFilePath());
         try {
             Files.deleteIfExists(oldPath);
@@ -697,41 +727,28 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         } catch (IOException e) {
             log.error("【SERVICE-UPDATE_FILE】删除旧物理文件失败，但将继续执行覆盖操作。", e);
         }
-    
+
         // 4. 保存新的物理文件 (保持原有的目录结构)
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         // 为了避免重名，仍然建议使用时间戳或UUID
         String newStoredFileName = System.currentTimeMillis() + "_" + originalFilename;
-        
+
         // 构建新的相对路径和绝对路径
-        Path newRelativePath = Paths.get(String.valueOf(fileRecord.getProjectId()), String.valueOf(recordId), newStoredFileName);
+        Path newRelativePath = Paths.get(String.valueOf(fileRecord.getProjectId()), String.valueOf(recordId),
+                newStoredFileName);
         Path newAbsolutePath = Paths.get(uploadDir).resolve(newRelativePath);
-    
+
         Files.createDirectories(newAbsolutePath.getParent());
         Files.copy(file.getInputStream(), newAbsolutePath, StandardCopyOption.REPLACE_EXISTING);
         log.info("【SERVICE-UPDATE_FILE】新物理文件已保存: {}", newAbsolutePath);
         // =======================================================
-        //  ↓↓↓ 新增：在文件更新成功后，执行统计计算 ↓↓↓
+        // ↓↓↓ 新增：在文件更新成功后，执行统计计算 ↓↓↓
         // =======================================================
         if (fileId != null) {
-            log.info("--- [统计] 准备触发对 fileId: {} 的统计计算...", fileId);
-            try {
-                // 1. 使用 ExcelSplitterService 将刚刚保存的文件，反向解析回 Luckysheet JSON 数据
-                // 注意：这里我们使用 newAbsolutePath，它是文件的完整物理路径
-                List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(newAbsolutePath.toString());
-                LuckySheetJsonDTO luckysheetData = new LuckySheetJsonDTO();
-                luckysheetData.setSheets(sheets);
-
-                // 2. 正式调用统计服务
-                statisticsService.calculateAndSaveStats(fileId, luckysheetData);
-                log.info("--- [统计] 统计计算成功完成。 ---");
-            } catch (Exception e) {
-                // 即使统计失败，也不应该影响主流程的成功返回，只记录错误日志。
-                // 异常已经在Controller层被捕获，这里只记录即可。
-                log.error("--- [统计] 在执行统计计算时发生严重错误！统计数据可能未更新。", e);
-            }
+            // 调用 self (代理对象) 的方法，这样 @Transactional(propagation = REQUIRES_NEW) 才能生效
+            self.triggerStatisticsCalculation(fileId, newAbsolutePath.toString());
         } else {
-             log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
+            log.warn("--- [统计] 跳过统计，因为未能获取到文件的数据库ID。");
         }
         // --- 统计逻辑结束 ---
         // 5. 更新数据库中的文件记录 (ProjectFile)
@@ -741,9 +758,8 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         // fileRecord.setUpdatedAt(LocalDateTime.now()); // 可选：更新时间戳
         projectFileMapper.updateById(fileRecord);
         log.info("【SERVICE-UPDATE_FILE】数据库中的文件记录 (ID: {}) 已成功更新。", fileId);
-    
-    }
 
+    }
 
     /**
      * 【新增实现 2】: 启动审核流程
