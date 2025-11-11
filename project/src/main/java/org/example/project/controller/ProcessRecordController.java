@@ -58,6 +58,11 @@ public class ProcessRecordController {
     /**
      * API: 根据ID获取单个过程记录表的详细信息 路径: GET /api/process-records/{recordId}
      */
+
+     @Data // 需要 Lombok
+     public static class RequestChangesPayload {
+         private String comment;
+     }
     @GetMapping("/{recordId}") // 【优化点】: 路径简化
     public ResponseEntity<?> getProcessRecordById(@PathVariable Long recordId) {
         log.info("【Controller】获取单个过程记录表详情, ID: {}", recordId);
@@ -176,10 +181,29 @@ public class ProcessRecordController {
     /**
      * API: 打回修改 路径: POST /api/process-records/{recordId}/request-changes
      */
-    @PostMapping("/{recordId}/request-changes") // 【优化点】: 路径简化
-    public ResponseEntity<?> requestChanges(@PathVariable Long recordId, @RequestBody RequestChangesRequest dto) {
-        processRecordService.requestChanges(recordId, dto.getComment());
-        return ResponseEntity.ok().body("记录已成功打回。");
+    @PostMapping("/{recordId}/request-changes")
+    public ResponseEntity<?> requestChanges(
+            @PathVariable Long recordId, 
+            // 【【【 2. 核心修正：使用我们刚刚定义的、正确的 DTO 】】】
+            @RequestBody RequestChangesPayload payload 
+        ) {
+        
+        // 3. 从 payload 中获取 comment
+        String comment = payload.getComment();
+    
+        // 4. 安全检查
+        if (comment == null || comment.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("打回意见不能为空。");
+        }
+    
+        try {
+            // 5. 将正确的 comment 值传递给 Service
+            processRecordService.requestChanges(recordId, comment);
+            return ResponseEntity.ok().body("记录已成功打回。");
+        } catch (Exception e) {
+            // 捕获 Service 层可能抛出的业务异常
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     /**

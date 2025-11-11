@@ -42,6 +42,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.example.project.entity.ProcessRecordStatus;
 
@@ -550,26 +551,65 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Override
     @Transactional
     public void approveRecord(Long recordId) {
-        User currentUser = getCurrentUser(); // 确保有这个辅助方法
-        ProcessRecord record = this.getById(recordId);
-        if (record == null)
-            throw new NoSuchElementException("记录不存在");
+        try {
+            log.info("--- [Approve] 开始执行 approveRecord 事务 for recordId: {} ---", recordId);
+            
+            // 1. 获取当前用户和目标记录
+            User currentUser = getCurrentUser();
+            ProcessRecord record = this.getById(recordId);
+            if (record == null) {
+                throw new NoSuchElementException("记录不存在");
+            }
 
-        // 权限校验：只有当前负责人才能批准
-        if (!record.getAssigneeId().equals(currentUser.getId())) {
-            throw new AccessDeniedException("权限不足，您不是当前任务的负责人。");
-        }
-        // 状态校验：只有“审核中”的状态才能批准
-        if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
-            throw new IllegalStateException("操作失败：当前状态无法批准。");
-        }
+            // 2. 权限与状态校验
+            if (!Objects.equals(record.getAssigneeId(), currentUser.getId())) {
+                throw new AccessDeniedException("权限不足，您不是当前任务的负责人。");
+            }
+            if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
+                throw new IllegalStateException("操作失败：当前状态无法批准。");
+            }
 
-        record.setStatus(ProcessRecordStatus.APPROVED);
-        record.setAssigneeId(null); // 任务完成，负责人清空
-        this.updateById(record);
-        log.info("记录 {} 已被用户 {} 批准。", recordId, currentUser.getUsername());
+            // 3. 校对人员判定逻辑
+            if (record.getProofreaderUserId() == null && record.getRejectionComment() != null) {
+                log.info("【校对判定】记录 #{} 的 rejection_comment 不为空。设置校对人员 ID: {}", recordId, currentUser.getId());
+                record.setProofreaderUserId(currentUser.getId());
+            }
+
+            // 4. 更新记录状态
+            record.setStatus(ProcessRecordStatus.APPROVED);
+            record.setAssigneeId(null);
+            
+            log.info("--- [Approve] 准备执行 updateById 操作...");
+            this.updateById(record);
+            log.info("--- [Approve] updateById 操作执行完毕。数据库现在应该已更新（但事务未提交）。");
+
+            log.info("记录 {} 已被用户 {} 批准。", recordId, currentUser.getUsername());
+
+        } catch (Exception e) {
+            // 【【【 核心修正 1：添加 catch 块以捕获任何潜在的异常 】】】
+            // 如果在 try 块的任何地方（包括 log.info）发生异常，都会被这里捕获。
+            log.error("--- [Approve - CATCH] 在 approveRecord 事务执行期间捕获到异常！事务将被回滚。", e);
+            
+            // 【【【 核心修正 2：重新抛出异常 】】】
+            // 这一步至关重要！它告诉 Spring 的事务管理器：“嘿，出错了，快回滚！”
+            // 如果没有这一行，事务管理器会认为一切正常，并尝试提交一个已被标记为 rollback-only 的事务，从而导致我们之前看到的 UnexpectedRollbackException。
+            throw e; 
+        
+        } finally {
+            // 【【【 核心修正 3：在 finally 块中增加更详细的日志 】】】
+            log.info("--- [Approve - FINALLY] 即将退出方法，事务将要提交或回滚。");
+            // 重新从数据库查询，以检查（在当前事务视图内）的最终状态
+            ProcessRecord finalRecordInDb = this.getById(recordId);
+            if (finalRecordInDb != null) {
+                log.info("    -> [FINALLY] 数据库中 proofreader_user_id 的值是: {}", finalRecordInDb.getProofreaderUserId());
+                log.info("    -> [FINALLY] 数据库中 status 的值是: {}", finalRecordInDb.getStatus());
+            } else {
+                log.warn("    -> [FINALLY] 警告：在 finally 块中找不到记录！");
+            }
+            log.info("--- [Approve - FINALLY] 检查结束。---");
+        }
     }
-
+    
     @Override
     @Transactional // 确保文件操作和数据库更新是一个原子操作
     public void resubmit(Long recordId, MultipartFile file) throws IOException {

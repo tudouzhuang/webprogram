@@ -45,8 +45,8 @@ public class SecurityConfig {
                 ).permitAll()
                 // 【【【核心修正2：为转交API添加明确的授权规则】】】
                 // 允许任何已登录的用户访问转交接口，先确保功能跑通
-                .antMatchers(HttpMethod.POST, "/api/process-records/**")
-                .hasAnyRole("MANAGER", "REVIEWER", "ADMIN") // 假设 ADMIN 也有权限
+                .antMatchers(HttpMethod.POST, "/api/process-records/**", "/api/problems/**")
+                    .hasAnyRole("DESIGNER", "REVIEWER", "MANAGER", "ADMIN")
                 // b. 允许 MANAGER 或 ADMIN 删除 process-records
                 .antMatchers(HttpMethod.DELETE, "/api/process-records/**")
                 .hasAnyRole("MANAGER", "ADMIN")

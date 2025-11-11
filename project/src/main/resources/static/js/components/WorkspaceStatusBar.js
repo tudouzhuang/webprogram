@@ -1,4 +1,4 @@
-// public/components/workspace-status-bar.js
+// public/js/components/workspace-status-bar.js
 
 const WorkspaceStatusBar = {
     props: {
@@ -14,83 +14,104 @@ const WorkspaceStatusBar = {
             isLoading: false,
             savedStats: null,
             isDirty: false,
-            error: null // 【调试】新增一个错误信息属性
+            error: null
         };
     },
     computed: {
         displayData() {
-            // 【调试】在计算属性中加入日志
-            console.log('[StatusBar - Computed] displayData is being calculated. liveStats:', this.liveStats, 'savedStats:', this.savedStats);
             return this.liveStats || this.savedStats;
         },
-        // 【调试】新增一个用于模板展示的 personnelInfo 计算属性
+
+        // 【【【 最终修正版：优先使用 displayData，其次使用 recordInfo 】】】
         personnelInfo() {
-            // displayData 是我们的 "真理之源"，它要么是 savedStats，要么是 liveStats
-            if (!this.displayData) return {};
-            return {
-                number: this.displayData.fileNumber || 'N/A',
-                designer: this.displayData.designerName || 'N/A',
-                proofreader: this.displayData.proofreaderName || 'N/A',
-                auditor: this.displayData.auditorName || 'N/A'
-            };
+            // --- 主数据源：尝试从 displayData (即 /statistics 接口) 获取 ---
+            // 这是最理想的情况，因为后端 getSavedStats 方法已经帮我们查询并组装好了所有姓名。
+            if (this.displayData && this.displayData.fileNumber) {
+                return {
+                    number: this.displayData.fileNumber || 'N/A',
+                    designer: this.displayData.designerName || 'N/A',
+                    proofreader: this.displayData.proofreaderName || 'N/A',
+                    auditor: this.displayData.auditorName || 'N/A'
+                };
+            }
+
+            // --- 后备数据源：如果主数据源不可用（例如在“问题记录”Tab），则从 recordInfo prop 中获取 ---
+            // recordInfo 是父组件传递的基础信息，它始终存在。
+            if (this.recordInfo) {
+                console.warn("[StatusBar] 警告：statistics 数据源不可用或不包含人员信息，人员信息已回退到使用 recordInfo。");
+                // 这里的字段名需要根据您 recordInfo 对象的实际结构来定
+                return {
+                    number: this.recordInfo.projectNumber || this.recordInfo.partName || 'N/A',
+                    // 假设 recordInfo 中可能没有姓名，提供一个兜底
+                    designer: this.recordInfo.designerName || '（未知）',
+                    proofreader: this.recordInfo.proofreaderName || '（未知）',
+                    auditor: this.recordInfo.auditorName || '（未知）'
+                };
+            }
+
+            // --- 最终的兜底，在 recordInfo 也不存在时显示 ---
+            return { number: '加载中...', designer: '加载中...', proofreader: '加载中...', auditor: '加载中...' };
         },
-        // 【【【 新增这个计算属性 】】】
+
         overallTotalCount() {
             if (this.displayData && this.displayData.stats && this.displayData.stats.length > 0) {
-                // 查找第一个 totalCount 大于 0 的记录，并返回它的 totalCount
                 const statWithTotal = this.displayData.stats.find(s => s.totalCount > 0);
-                if (statWithTotal) {
-                    return statWithTotal.totalCount;
-                }
-                // 如果所有记录的 totalCount 都是0，则返回0
-                return 0;
+                return statWithTotal ? statWithTotal.totalCount : 0;
             }
-            // 如果没有数据，也返回0
             return 0;
+        },
+
+        // 【【【 核心修正：新增计算属性，用于控制统计模块的显示/隐藏 】】】
+        shouldShowStatistics() {
+            // 只有当 fileId 有效（大于0）时，才显示统计模块
+            // 这会自动处理“表单元数据”和“问题记录”Tab (此时 fileId 会被父组件设为0)
+            return this.fileId > 0;
         }
     },
     watch: {
         fileId: {
             immediate: true,
             handler(newId, oldId) {
-                // 【调试】监听 fileId 变化
                 console.log(`[StatusBar - Watch] fileId changed from ${oldId} to ${newId}.`);
-                if (newId) {
+
+                // 【【【 核心修正：增加对无效 fileId 的处理 】】】
+                if (newId && newId > 0) {
                     this.fetchSavedStats();
                 } else {
-                    console.warn('[StatusBar - Watch] fileId is null or invalid. Skipping fetch.');
+                    console.warn('[StatusBar - Watch] fileId is invalid. Clearing stats and skipping fetch.');
+                    this.savedStats = null; // 清空旧数据
+                    this.error = null;      // 清空错误
+                    this.isLoading = false; // 确保加载状态关闭
                 }
             }
         },
         liveStats(newVal) {
-            // 【调试】监听 liveStats 变化
             console.log('[StatusBar - Watch] liveStats has been updated:', newVal);
-            this.isDirty = newVal !== null;
+            if (newVal && JSON.stringify(newVal) !== JSON.stringify(this.savedStats)) {
+                this.isDirty = true;
+            } else {
+                this.isDirty = false;
+            }
         }
     },
     methods: {
         fetchSavedStats() {
             console.log(`[StatusBar - Method] fetchSavedStats called for fileId: ${this.fileId}`);
             this.isLoading = true;
-            this.error = null; // 【调试】每次请求前清空错误信息
+            this.error = null;
 
             axios.get(`/api/files/${this.fileId}/statistics`)
                 .then(response => {
-                    // 【调试】打印成功获取的数据
                     console.log('[StatusBar - Axios SUCCESS] Successfully fetched stats:', response.data);
-                    
-                    // 【调试】增加一个检查，确保返回的是一个对象
                     if (typeof response.data === 'object' && response.data !== null) {
                         this.savedStats = response.data;
                         this.isDirty = false;
                     } else {
-                        console.error('[StatusBar - Axios ERROR] Response data is not a valid object:', response.data);
                         this.error = '从服务器返回的数据格式不正确。';
                         this.savedStats = null;
                     }
                 })
                 .catch(error => {
-                    // 【调试】打印详细的错误信息
                     console.error("[StatusBar - Axios FAILED] 加载统计数据失败:", error.response || error);
                     this.error = `加载统计数据失败: ${error.message || '未知网络错误'}`;
                     this.savedStats = null;
@@ -101,9 +122,7 @@ const WorkspaceStatusBar = {
                 });
         },
         formatDuration(totalSeconds) {
-            if (totalSeconds == null || totalSeconds < 0) {
-                return '暂无记录';
-            }
+            if (totalSeconds == null || totalSeconds < 0) return '暂无记录';
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
@@ -118,23 +137,14 @@ const WorkspaceStatusBar = {
             return typeMap[status] || 'primary';
         },
     },
-    // 【【【 核心调试：在 mounted 钩子中打印初始 props 】】】
     mounted() {
         console.log('[StatusBar - Lifecycle] Component has been MOUNTED.');
-        console.log('[StatusBar - Initial Props]', {
-            fileId: this.fileId,
-            recordInfo: JSON.parse(JSON.stringify(this.recordInfo)), // 深拷贝以清晰地查看初始值
-            liveStats: this.liveStats
-        });
     },
-template: `
-    <div class="card">
-        <div class="card-body p-3">
-            <div v-if="isLoading" class="text-center py-5">正在加载统计信息...</div>
-            <div v-else>
-                <!-- ======================= 区域一：顶部KPI指标卡 ======================= -->
+    template: `
+        <div class="card">
+            <div class="card-body p-3">
+                <!-- ======================= 区域一：顶部KPI指标卡 (保持不变) ======================= -->
                 <el-row :gutter="20" class="mb-3">
-                    <!-- KPI 1: 当前状态 -->
                     <el-col :span="8">
                         <div class="kpi-card">
                             <div class="kpi-label text-muted">当前状态</div>
@@ -143,14 +153,12 @@ template: `
                             </div>
                         </div>
                     </el-col>
-                    <!-- KPI 2: 累计时长 -->
                     <el-col :span="8">
                         <div class="kpi-card">
                             <div class="kpi-label text-muted">累计设计时长</div>
                             <div class="kpi-value h5 mb-0 font-weight-bold">{{ formatDuration(totalDuration) }}</div>
                         </div>
                     </el-col>
-                    <!-- KPI 3: 本次时长 -->
                     <el-col :span="8">
                         <div class="kpi-card">
                             <div class="kpi-label text-muted">本次设计时长</div>
@@ -163,12 +171,12 @@ template: `
 
                 <!-- ======================= 区域二：底部详细信息 ======================= -->
                 <el-row :gutter="20">
-                    <!-- 左侧：项目人员 -->
+                    <!-- 左侧：项目人员 (保持不变) -->
                     <el-col :span="9">
                         <h6 class="text-muted small font-weight-bold mb-2">项目人员</h6>
                         <table class="table table-bordered table-sm m-0" style="font-size: 0.85em;">
                             <tbody>
-                                <tr><td style="width: 35%;" class="font-weight-bold bg-light">编号</td><td>{{ personnelInfo.number }}</td></tr>
+                                <tr><td style="width: 35%;" class="font-weight-bold bg-light">记录表编号</td><td>{{ personnelInfo.number }}</td></tr>
                                 <tr><td class="font-weight-bold bg-light">设计人员</td><td>{{ personnelInfo.designer }}</td></tr>
                                 <tr><td class="font-weight-bold bg-light">校对人员</td><td>{{ personnelInfo.proofreader }}</td></tr>
                                 <tr><td class="font-weight-bold bg-light">审核人员</td><td>{{ personnelInfo.auditor }}</td></tr>
@@ -176,9 +184,14 @@ template: `
                         </table>
                     </el-col>
                     
-                    <!-- 右侧：数据统计 -->
-                    <el-col :span="15">
-                        <div v-if="!displayData || !displayData.stats || displayData.stats.length === 0" class="text-center text-muted" style="padding-top: 20px;">暂无统计数据</div>
+                    <!-- 
+                        【【【 核心修正：用 v-if="shouldShowStatistics" 包裹整个统计模块 】】】 
+                        栅格系统总分为 24，(9 + 15 = 24)。当统计模块隐藏时，人员信息会自动撑满整行。
+                    -->
+                    <el-col :span="15" v-if="shouldShowStatistics">
+                        <div v-if="isLoading" class="text-center text-muted pt-4"><i class="el-icon-loading"></i> 正在加载统计...</div>
+                        <div v-else-if="error" class="alert alert-danger p-2 small">{{ error }}</div>
+                        <div v-else-if="!displayData || !displayData.stats || displayData.stats.length === 0" class="text-center text-muted" style="padding-top: 20px;">暂无统计数据</div>
                         <div v-else>
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <h6 class="text-muted small font-weight-bold">数据统计</h6>
@@ -198,22 +211,13 @@ template: `
                             </el-table>
                         </div>
                     </el-col>
+                    
                 </el-row>
             </div>
         </div>
-
-        <!-- 【【【 新增：为KPI卡片添加样式 】】】 -->
         <style>
-            .kpi-card {
-                padding: 10px;
-                background-color: #f8f9fa;
-                border-radius: 4px;
-                text-align: center;
-            }
-            .kpi-label {
-                font-size: 0.8em;
-                margin-bottom: 5px;
-            }
+            .kpi-card { padding: 10px; background-color: #f8f9fa; border-radius: 4px; text-align: center; }
+            .kpi-label { font-size: 0.8em; margin-bottom: 5px; }
         </style>
     `
 };

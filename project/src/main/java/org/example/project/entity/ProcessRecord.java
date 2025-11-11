@@ -25,6 +25,8 @@ public class ProcessRecord {
 
     private LocalDateTime createdAt;  // The timestamp when the record was created.
 
+    private Long proofreaderUserId;
+    
     // This is used to store JSON data in the database, which will be handled by MyBatis-Plus's JsonTypeHandler.
     private String specificationsJson; 
     private String sourceFilePath; // 对应数据库的 source_file_path 列

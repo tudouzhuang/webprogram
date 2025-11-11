@@ -210,14 +210,19 @@ private ProcessRecordMapper processRecordMapper;
         }
 
         // 4. 填充DTO的基础信息
-        resultDTO.setFileNumber(project.getProjectNumber());
+        if (record != null) {
+            resultDTO.setFileNumber(record.getProcessName()); // <-- 现在它获取的是过程记录的名称
+        } else {
+            resultDTO.setFileNumber(project.getProjectNumber()); // 作为后备，如果找不到record，仍然显示项目编号
+        }
         
         // 从 ProcessRecord 实体中获取人员ID并查找用户名
         // 注意：请根据您 ProcessRecord 实体中的【实际字段名】进行调整！
         // 这里的 createdByUserId 和 assigneeId 是基于之前代码的猜测。
         resultDTO.setDesignerName(findUsernameById(record != null ? record.getCreatedByUserId() : null));
         resultDTO.setAuditorName(findUsernameById(record != null ? record.getAssigneeId() : null));
-        resultDTO.setProofreaderName("N/A"); // 假设校对人员信息当前不可用，设置为默认值
+        resultDTO.setProofreaderName(findUsernameById(record != null ? record.getProofreaderUserId() : null));
+
 
         // 5. 根据 fileId 查询 sheet_statistics 表获取统计数据
         List<SheetStatistic> stats = sheetStatisticMapper.selectList(new QueryWrapper<SheetStatistic>().eq("file_id", fileId));
