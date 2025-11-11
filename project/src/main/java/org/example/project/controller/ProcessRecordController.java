@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import lombok.Data;
-
+import lombok.extern.slf4j.Slf4j; // <-- 1. 添加 import
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +35,8 @@ import javax.validation.Valid;
  * 【专用控制器】: 负责处理所有与“设计过程记录表” (ProcessRecord) 资源相关的API请求。 根路径为
  * /api/process-records
  */
+
+@Slf4j
 @RestController
 @RequestMapping("/api/process-records") // 【优化点】: 将根路径统一定义在类级别
 public class ProcessRecordController {
@@ -184,25 +186,42 @@ public class ProcessRecordController {
     @PostMapping("/{recordId}/request-changes")
     public ResponseEntity<?> requestChanges(
             @PathVariable Long recordId, 
-            // 【【【 2. 核心修正：使用我们刚刚定义的、正确的 DTO 】】】
             @RequestBody RequestChangesPayload payload 
         ) {
-        
-        // 3. 从 payload 中获取 comment
-        String comment = payload.getComment();
     
-        // 4. 安全检查
+        // =======================================================
+        //  ↓↓↓ 【【【 核心调试代码 】】】 ↓↓↓
+        // =======================================================
+        log.info("--- [Request Changes] 接口 /api/process-records/{}/request-changes 被调用 ---", recordId);
+        
+        // 探针 1: 检查接收到的 payload 是否为 null
+        if (payload == null) {
+            log.error("【调试错误】: 请求体 (payload) 为 null！前端可能没有正确发送 JSON Body。");
+            return ResponseEntity.badRequest().body("请求体不能为空。");
+        }
+        
+        // 探针 2: 打印从 payload 中获取到的 comment 值
+        String comment = payload.getComment();
+        log.info("  -> 从 payload 中获取到的 comment 值是: '{}'", comment);
+        // =======================================================
+    
+    
+        // 4. 安全检查 (保持不变)
         if (comment == null || comment.trim().isEmpty()) {
+            log.warn("  -> [验证失败] comment 为空或只有空格，返回 400 Bad Request。");
             return ResponseEntity.badRequest().body("打回意见不能为空。");
         }
     
         try {
             // 5. 将正确的 comment 值传递给 Service
+            log.info("  -> [调用 Service] 准备调用 processRecordService.requestChanges...");
             processRecordService.requestChanges(recordId, comment);
+            log.info("--- [Request Changes] Service 方法执行完毕，操作成功。---");
             return ResponseEntity.ok().body("记录已成功打回。");
         } catch (Exception e) {
             // 捕获 Service 层可能抛出的业务异常
-            return ResponseEntity.badRequest().body(e.getMessage());
+            log.error("--- [Request Changes] Service 方法执行时抛出异常！---", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
         }
     }
 
