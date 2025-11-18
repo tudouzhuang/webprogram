@@ -23,4 +23,5 @@ public class StatisticsResultDTO {
         private int totalCount;
         private double okPercentage; // OK 比例 (0.0 - 100.0)
     }
+    
 }

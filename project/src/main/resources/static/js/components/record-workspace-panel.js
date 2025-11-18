@@ -35,9 +35,11 @@ Vue.component('record-workspace-panel', {
                                 <workspace-status-bar
                                     v-if="recordInfo"
                                     ref="statusBarRef"
-                                    :file-id="activeFile ? activeFile.id : 0" 
+                                    :file-id="activeFile ? activeFile.id : null"
                                     
                                     :record-info="recordInfo"
+                                    :personnel-data="lockedPersonnelInfo"
+                                    
                                     :live-stats="currentLiveStats"
                                     :status="recordInfo.status"
                                     :total-duration="recordInfo.totalDesignDurationSeconds"
@@ -263,7 +265,9 @@ Vue.component('record-workspace-panel', {
             isPaused: false,
             currentSessionSeconds: 0, // 用于存储本次会话已经过的秒数
             sessionTimer: null,        // 用于存储驱动UI更新的秒级定时器
-            currentLiveStats: null // 用于存储来自 iframe 的实时统计 
+            currentLiveStats: null, // 用于存储来自 iframe 的实时统计 
+            lockedPersonnelInfo: null, // 【新增】用于锁定人员信息
+            personnelCache: null // 用于“挪用”和缓存人员信息
         }
     },
 
@@ -292,29 +296,61 @@ Vue.component('record-workspace-panel', {
     },
 
     methods: {
-        // fetchData 逻辑基本不变，保持原样
         async fetchData() {
+            // 重置状态
             this.isLoading = true;
+            this.recordInfo = null;
+            this.associatedFiles = null;
             this.loadError = null;
-            this.associatedFiles = [];
-            this.iframesLoaded = {};
-            this.activeTab = '';
-            this.metaDataContent = null; // 重置
 
             try {
-                const recordResponse = await axios.get(`/api/process-records/${this.recordId}`);
-                this.recordInfo = recordResponse.data;
-                const filesResponse = await axios.get(`/api/process-records/${this.recordId}/files`);
-                this.associatedFiles = (filesResponse.data || []).sort((a, b) => a.documentType.localeCompare(b.documentType));
+                // 步骤 1: 获取所有基础数据
+                const [recordResponse, filesResponse] = await Promise.all([
+                    axios.get(`/api/process-records/${this.recordId}`),
+                    axios.get(`/api/process-records/${this.recordId}/files`)
+                ]);
+                
+                let baseRecordInfo = recordResponse.data;
+                const files = (filesResponse.data || []);
+                const excelFiles = files.filter(file => file.fileType && (file.fileType.includes('spreadsheetml') || file.fileType.includes('excel')));
+                
+                let finalRecordInfo = baseRecordInfo;
 
-                // 【修正】: 设定默认激活的Tab页，优先Excel，其次元数据
+                // 步骤 2: 如果有Excel文件，用它来获取人员姓名
+                if (excelFiles.length > 0) {
+                    const firstFileId = excelFiles[0].id;
+                    try {
+                        const statsResponse = await axios.get(`/api/files/${firstFileId}/statistics`);
+                        const personnel = statsResponse.data.personnel;
+                        if (personnel) {
+                            // 增强 recordInfo
+                            finalRecordInfo = {
+                                ...baseRecordInfo,
+                                designerName: personnel.designer,
+                                proofreaderName: personnel.proofreader,
+                                auditorName: personnel.auditor
+                            };
+                        }
+                    } catch (e) {
+                         console.error("通过 statistics 接口获取人员信息失败，将使用默认值:", e);
+                         finalRecordInfo = { ...baseRecordInfo, designerName: '（未知）', proofreaderName: '（未知）', auditorName: '（未知）' };
+                    }
+                } else {
+                    finalRecordInfo = { ...baseRecordInfo, designerName: '（未知）', proofreaderName: '（未知）', auditorName: '（未知）' };
+                }
+
+                // 步骤 3: 【原子化更新】一次性更新所有数据
+                this.recordInfo = finalRecordInfo;
+                this.associatedFiles = files.sort((a, b) => a.documentType.localeCompare(b.documentType));
+
                 if (this.excelFiles.length > 0) {
                     this.activeTab = this.excelFiles[0].documentType;
                 } else if (this.metaFile) {
                     this.activeTab = 'recordMeta';
-                    // 如果默认就是元数据页，则立即获取其内容
-                    this.fetchAndDisplayMetaData();
                 }
+                
+                // 启动工作会话
+                this.startWorkSession();
 
             } catch (error) {
                 this.loadError = "加载工作区数据失败。";
@@ -374,15 +410,15 @@ Vue.component('record-workspace-panel', {
         },
 
         handleTabClick(tab) {
-            // tab.name 就是 documentType
+            console.log(`%c[DEBUGGER] 7. handleTabClick 事件触发，点击的Tab是: '${tab.name}'`, 'color: #8A2BE2; font-weight: bold;');
+
+            // 此时 this.recordInfo 应该已经是增强过的版本
+            console.log("[DEBUGGER] 7.1. 在 handleTabClick 执行时，this.recordInfo 的当前值是:", JSON.parse(JSON.stringify(this.recordInfo)));
+
             if (tab.name === 'recordMeta') {
-                // 如果是元数据Tab，调用专门的方法
                 this.fetchAndDisplayMetaData();
             } else {
-                // 否则，是Excel Tab，调用加载iframe的方法
                 const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
-                // 【【【 修正点 】】】
-                // 确保在 $nextTick 中调用，等待 iframe 被渲染出来
                 this.$nextTick(() => {
                     this.loadSheetInIframe(fileToLoad);
                 });
@@ -643,6 +679,37 @@ Vue.component('record-workspace-panel', {
                 this.sessionTimer = null;
             }
         },
+        // 【新增方法】: 一次性加载并锁定人员信息
+        async loadAndLockPersonnelInfo() {
+            // 如果已经锁定，则不再执行
+            if (this.lockedPersonnelInfo) return;
+
+            console.log("[DEBUG] 开始一次性加载并锁定人员信息...");
+            try {
+                const excelFiles = this.excelFiles;
+                if (excelFiles.length > 0) {
+                    const firstFileId = excelFiles[0].id;
+                    const statsResponse = await axios.get(`/api/files/${firstFileId}/statistics`);
+                    if (statsResponse.data && statsResponse.data.personnel) {
+                        this.lockedPersonnelInfo = statsResponse.data.personnel;
+                        console.log('%c[DEBUG] 成功锁定人员信息!', 'color: green', this.lockedPersonnelInfo);
+                    }
+                } else {
+                    console.warn("[DEBUG] 未找到Excel文件，无法锁定人员信息。");
+                    // 即使没有Excel文件，也提供一个默认对象，避免子组件显示错误
+                    this.lockedPersonnelInfo = {
+                        number: this.recordInfo.processName || 'N/A',
+                        designer: '（未知）',
+                        proofreader: '（未知）',
+                        auditor: '（未知）'
+                    };
+                }
+            } catch (e) {
+                console.error('[DEBUG] 加载并锁定人员信息失败:', e);
+                this.lockedPersonnelInfo = { number: '加载失败', designer: '加载失败', proofreader: '加载失败', auditor: '加载失败' };
+            }
+        },
+
     },
 
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
@@ -687,6 +754,45 @@ Vue.component('record-workspace-panel', {
         };
 
         window.addEventListener('wheel', this.handleWheel, { passive: true });
+        this.$watch(
+            () => {
+                // 这个函数返回我们想要监听的值
+                if (this.$refs.statusBarRef && this.$refs.statusBarRef.savedStats) {
+                    return this.$refs.statusBarRef.savedStats.personnel;
+                }
+                return null;
+            },
+            (newPersonnel) => {
+                // 这是回调函数，当监听的值变化时触发
+                if (newPersonnel && !this.personnelCache) {
+                    this.personnelCache = newPersonnel;
+                    console.log('%c[挪用成功] 已通过动态 watch 捕获 personnel 数据!', 'color: green', this.personnelCache);
+                }
+            },
+            { deep: true } // 深度监听
+        );
+        // 【【【 新增的、可靠的“挪用”监听器 】】】
+        this.$nextTick(() => {
+            const statusBar = this.$refs.statusBarRef;
+            if (statusBar) {
+                // 使用 vm.$watch API 来动态创建监听
+                this.$watch(
+                    // 要监听的表达式
+                    () => statusBar.savedStats,
+                    // 回调函数
+                    (newStats) => {
+                        if (newStats && newStats.personnel && !this.personnelCache) {
+                            this.personnelCache = newStats.personnel;
+                            console.log('%c[挪用成功] 已通过动态 watch 成功捕获 personnel 数据!', 'color: green', this.personnelCache);
+                        }
+                    },
+                    // 配置项
+                    { deep: true }
+                );
+            } else {
+                console.error("严重错误：mounted 钩子中未能找到 statusBarRef 实例！");
+            }
+        });
         // =======================================================
     },
 
@@ -710,34 +816,20 @@ Vue.component('record-workspace-panel', {
         window.removeEventListener('wheel', this.handleWheel);
         // =======================================================
     },
-    watch: {
+watch: {
         recordId: {
             immediate: true,
-            handler(newId, oldId) {
-                // 当 recordId 发生有效变化时，执行清理和重新加载
+            handler(newId) {
                 if (newId) {
-                    // 如果是从一个有效的旧ID切换过来的，先停止上一个会话
-                    if (oldId && this.workSessionId) {
-                        console.log(`[WorkTimer] Record ID 从 ${oldId} 切换到 ${newId}，停止旧会话。`);
-                        this.stopWorkSession();
-                    }
-
-
-                    // 【【【 核心修改 】】】
-                    // fetchData 是一个 async 函数，所以它返回一个 Promise。
-                    // 我们使用 .then() 来确保在数据获取成功之后再执行后续操作。
-                    this.fetchData().then(() => {
-                        console.log("[WorkTimer] fetchData 完成，准备启动工作会话。");
-                        // 在这里调用 startWorkSession，可以确保 this.recordInfo 和 this.canEdit 都是最新的
-                        this.startWorkSession();
-                    }).catch(error => {
-                        console.error("[WorkTimer] fetchData 失败，无法启动工作会话。", error);
-                    });
-
+                    this.fetchData(); // 只负责调用
                 } else {
-                    // 如果 recordId 变为 null 或 undefined (例如返回列表页)，也停止会话
                     this.stopWorkSession();
                 }
+            }
+        },
+        activeTab(newTabName) {
+            if (newTabName === 'recordMeta') {
+                this.fetchAndDisplayMetaData();
             }
         }
     }
