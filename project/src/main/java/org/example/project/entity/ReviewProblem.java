@@ -1,4 +1,3 @@
-// src/main/java/org/example/project/entity/ReviewProblem.java
 package org.example.project.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -27,10 +26,10 @@ public class ReviewProblem {
     private String description;
 
     @TableField("screenshot_path")
-    private String screenshotPath;
+    private String screenshotPath; // 问题提出时的截图
 
     @TableField("status")
-    private ReviewProblemStatus status; // 使用新的枚举
+    private ReviewProblemStatus status;
 
     @TableField("created_by_user_id")
     private Long createdByUserId; // 问题提出者 (审核员)
@@ -38,12 +37,19 @@ public class ReviewProblem {
     @TableField("created_at")
     private LocalDateTime createdAt;
 
-    // --- 新增字段 ---
+    // --- 确认/解决信息 ---
     @TableField("confirmed_by_user_id")
-    private Long confirmedByUserId; // 问题确认者 (设计员)
+    private Long confirmedByUserId; // 问题确认/解决者 (设计员)
 
     @TableField("confirmed_at")
-    private LocalDateTime confirmedAt; // 确认时间
+    private LocalDateTime confirmedAt; // 确认/解决时间
+
+    // --- 【新增】闭环修复证明 ---
+    @TableField("fix_screenshot_path")
+    private String fixScreenshotPath; // 修改后的截图证明
+
+    @TableField("fix_comment")
+    private String fixComment; // 设计员的修改备注/说明
     // ----------------
 
     @TableField("updated_at")

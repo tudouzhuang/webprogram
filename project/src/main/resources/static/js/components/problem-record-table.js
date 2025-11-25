@@ -22,11 +22,24 @@ const ProblemRecordTable = {
         isDesignerMode() {
             return this.mode === 'designer';
         },
+        // 【修改】通用上传 URL，根据 uploadType 动态决定接口
         uploadActionUrl() {
-            if (this.currentProblemForUpload) {
+            if (!this.currentProblemForUpload) return '';
+            
+            if (this.uploadType === 'fix') {
+                // 上传修复证明
+                return `/api/problems/${this.currentProblemForUpload.id}/fix-screenshot`;
+            } else {
+                // 默认：上传问题描述截图
                 return `/api/problems/${this.currentProblemForUpload.id}/screenshot`;
             }
-            return ''; // 如果没有选中问题，则返回空，避免出错
+        },
+        // 【新增】上传修复证明截图的 URL (设计员解决弹窗专用)
+        resolveUploadUrl() {
+            if (this.currentProblemForResolve) {
+                return `/api/problems/${this.currentProblemForResolve.id}/fix-screenshot`;
+            }
+            return '';
         }
     },
     /**
@@ -36,27 +49,38 @@ const ProblemRecordTable = {
         return {
             problems: [],           // 从服务器获取的问题列表
             isLoading: false,       // 控制表格的加载动画
+            
+            // --- 新增/编辑问题相关 ---
             dialogVisible: false,   // 控制新增/编辑对话框的显示与隐藏
             isEditMode: false,      // 标记对话框是用于“新增”还是“编辑”   
-            screenshotUploadVisible: false, // 控制截图弹窗的显示
-            currentProblemForUpload: null,  // 记录正在操作截图的是哪个问题
             currentProblem: {       // 与对话框内表单双向绑定的数据模型
                 id: null,
                 stage: 'FMC',
-                problemPoint: '',   // [FIXED] 统一为驼峰式
+                problemPoint: '',   
                 description: '',
                 status: 'OPEN'
             },
             formRules: {            // Element UI 表单的验证规则
                 stage: [{ required: true, message: '请选择问题阶段', trigger: 'change' }],
-                problemPoint: [{ required: true, message: '请输入问题点', trigger: 'blur' }] // [FIXED] 统一为驼峰式
+                problemPoint: [{ required: true, message: '请输入问题点', trigger: 'blur' }]
+            },
+
+            // --- 截图上传相关 (通用) ---
+            screenshotUploadVisible: false, // 控制截图弹窗的显示
+            currentProblemForUpload: null,  // 记录正在操作截图的是哪个问题
+            uploadType: 'problem',          // 【新增】记录当前上传类型：'problem' 或 'fix'
+
+            // --- 【新增】解决问题闭环相关 (设计员) ---
+            resolveDialogVisible: false,     // 控制“确认解决”弹窗
+            isResolving: false,              // 提交 Loading 状态
+            currentProblemForResolve: null,  // 当前正在处理解决的问题
+            resolveForm: {                   // 解决表单数据
+                fixComment: '',
+                fixScreenshotPath: ''
             }
         };
     },
-    /**
-     * Lifecycle Hook: 在组件实例被创建后立即调用。
-     * 这是发起初始数据请求的最佳位置。
-     */
+    
     watch: {
         recordId: {
             immediate: true,
@@ -68,10 +92,6 @@ const ProblemRecordTable = {
         }
     },
 
-
-    /**
-     * Methods: 包含组件的所有业务逻辑方法。
-     */
     methods: {
         /**
          * 从后端API获取指定 recordId 的所有问题列表。
@@ -91,14 +111,11 @@ const ProblemRecordTable = {
                 });
         },
 
-        /**
-         * 重置表单绑定的数据模型到初始状态。
-         */
         resetForm() {
             this.currentProblem = {
                 id: null,
                 stage: 'FMC',
-                problemPoint: '', // [FIXED] 统一为驼峰式
+                problemPoint: '',
                 description: '',
                 status: 'OPEN'
             };
@@ -107,15 +124,13 @@ const ProblemRecordTable = {
             }
         },
 
-        /**
-         * 处理“新增问题”按钮的点击事件。
-         */
         handleAddNew() {
             if (!this.isReviewerMode) return;
             this.isEditMode = false;
             this.resetForm();
             this.dialogVisible = true;
         },
+        
         handleEdit(row) {
             if (!this.isReviewerMode) return;
             this.isEditMode = true;
@@ -123,10 +138,6 @@ const ProblemRecordTable = {
             this.dialogVisible = true;
         },
 
-        /**
-         * 处理表格行内“删除”按钮的点击事件。
-         * @param {number} problemId - 要删除的问题的ID。
-         */
         handleDelete(problemId) {
             this.$confirm('此操作将永久删除该问题记录及其截图, 是否继续?', '提示', {
                 confirmButtonText: '确定',
@@ -136,7 +147,7 @@ const ProblemRecordTable = {
                 axios.delete(`/api/problems/${problemId}`)
                     .then(() => {
                         this.$message.success('删除成功!');
-                        this.fetchProblems(); // 删除成功后重新加载列表
+                        this.fetchProblems(); 
                     })
                     .catch(error => {
                         this.$message.error('删除失败!');
@@ -147,44 +158,117 @@ const ProblemRecordTable = {
             });
         },
 
+        /**
+         * 【重写】处理“标记为已解决”按钮点击
+         * 不再直接提交，而是打开弹窗让设计员上传证明
+         */
         handleResolve(problem) {
-            this.$confirm(`确定要将问题 "${problem.problemPoint}" 标记为已解决吗？`, '确认操作', {
-                confirmButtonText: '确定', cancelButtonText: '取消', type: 'info'
-            }).then(() => {
-                axios.post(`/api/problems/${problem.id}/resolve`)
-                    .then(response => {
-                        this.$message.success('问题已成功标记为已解决！');
-                        // 使用后端返回的数据进行局部更新，体验更好
-                        const index = this.problems.findIndex(p => p.id === problem.id);
-                        if (index !== -1) {
-                            this.$set(this.problems, index, response.data);
-                        } else {
-                            this.fetchProblems(); // 兜底刷新
-                        }
-                    })
-                    .catch(error => {
-                        this.$message.error('操作失败: ' + (error.response?.data?.message || '未知错误'));
-                    });
-            }).catch(() => { });
+            this.currentProblemForResolve = problem;
+            // 【修改】回显已有数据，而不是清空，方便修改
+            this.resolveForm = {
+                fixComment: problem.fixComment || '',
+                fixScreenshotPath: problem.fixScreenshotPath || ''
+            };
+            this.resolveDialogVisible = true;
         },
+
+        /**
+         * 【新增】处理解决弹窗中的图片粘贴
+         */
+        handleResolvePaste(event) {
+            const items = (event.clipboardData || window.clipboardData).items;
+            let imageFile = null;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    imageFile = items[i].getAsFile();
+                    break;
+                }
+            }
+            if (imageFile) {
+                event.preventDefault();
+                this.uploadFixFile(imageFile);
+            }
+        },
+
+        /**
+         * 【新增】上传修复证明图片的底层逻辑 (弹窗用)
+         */
+        async uploadFixFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                // 使用 resolveUploadUrl (fix-screenshot 接口)
+                const res = await axios.post(this.resolveUploadUrl, formData);
+                this.handleResolveUploadSuccess(res.data);
+            } catch (error) {
+                this.$message.error('截图上传失败');
+                console.error(error);
+            }
+        },
+
+        /**
+         * 【新增】修复截图上传成功回调 (弹窗用)
+         */
+        handleResolveUploadSuccess(res) {
+            if (res.filePath) {
+                this.resolveForm.fixScreenshotPath = res.filePath;
+                this.$message.success('修改证明已上传');
+            }
+        },
+
+        /**
+         * 【新增】提交“已解决”确认
+         * 同时提交 截图路径 和 备注
+         */
+        submitResolve() {
+            // 校验：必须上传截图（根据你的业务需求，这里强制要求上传）
+            if (!this.resolveForm.fixScreenshotPath) {
+                this.$message.warning('请上传修改后的截图作为证明');
+                return;
+            }
+            
+            this.isResolving = true;
+            // 构建 DTO
+            const payload = {
+                // 【FIX】不要发送 status: 'RESOLVED'，否则后端先update状态后，再执行resolve业务流校验状态时会报错
+                fixComment: this.resolveForm.fixComment,
+                fixScreenshotPath: this.resolveForm.fixScreenshotPath
+            };
+            
+            axios.post(`/api/problems/${this.currentProblemForResolve.id}/resolve`, payload)
+                .then(response => {
+                    this.$message.success('问题已标记为已解决！');
+                    this.resolveDialogVisible = false;
+                    
+                    // 局部更新列表
+                    const index = this.problems.findIndex(p => p.id === this.currentProblemForResolve.id);
+                    if (index !== -1) {
+                        this.$set(this.problems, index, response.data);
+                    }
+                })
+                .catch(error => {
+                    this.$message.error('提交失败: ' + (error.response?.data?.message || '未知错误'));
+                })
+                .finally(() => {
+                    this.isResolving = false;
+                });
+        },
+
         handleReopen(problem) {
-            // 使用 Element UI 的 $prompt 来获取用户输入的打回原因
             this.$prompt('请输入打回原因，内容将反馈给设计员。', '确认打回', {
                 confirmButtonText: '确定',
                 cancelButtonText: '取消',
-                inputPattern: /.+/, // 简单的验证，确保输入不为空
+                inputPattern: /.+/, 
                 inputErrorMessage: '打回原因不能为空！'
-            }).then(({ value }) => { // value 就是用户输入的原因
-                // 用户点击了“确定”，我们向后端发送请求
-                axios.post(`/api/problems/${problem.id}/reopen`, { comment: value }) // 将原因作为请求体发送
+            }).then(({ value }) => { 
+                axios.post(`/api/problems/${problem.id}/reopen`, { comment: value })
                     .then(response => {
                         this.$message.success('问题已成功打回！');
-                        // 使用后端返回的最新数据更新表格行，实现局部刷新
                         const index = this.problems.findIndex(p => p.id === problem.id);
                         if (index !== -1) {
                             this.$set(this.problems, index, response.data);
                         } else {
-                            this.fetchProblems(); // 如果找不到，就全局刷新
+                            this.fetchProblems();
                         }
                     })
                     .catch(error => {
@@ -194,9 +278,7 @@ const ProblemRecordTable = {
                 this.$message.info('已取消打回操作');
             });
         },
-        /**
-         * 提交表单（新增或更新）。
-         */
+
         submitForm() {
             this.$refs.problemForm.validate(valid => {
                 if (valid) {
@@ -207,7 +289,7 @@ const ProblemRecordTable = {
                     action.then(() => {
                         this.$message.success(this.isEditMode ? '更新成功!' : '新增成功!');
                         this.dialogVisible = false;
-                        this.fetchProblems(); // 操作成功后重新加载列表
+                        this.fetchProblems(); 
                     }).catch(error => {
                         this.$message.error('操作失败!');
                         console.error("提交表单时出错:", error);
@@ -219,16 +301,16 @@ const ProblemRecordTable = {
         },
 
         /**
-         * 【【【新增】】】 打开截图弹窗
+         * 【修改】打开截图上传弹窗，支持指定类型
+         * @param problem 问题对象
+         * @param type 上传类型 'problem' | 'fix'
          */
-        openScreenshotUploader(problem) {
+        openScreenshotUploader(problem, type = 'problem') {
             this.currentProblemForUpload = problem;
+            this.uploadType = type; // 设置上传类型
             this.screenshotUploadVisible = true;
         },
 
-        /**
-         * 【【【新增】】】 处理粘贴事件
-         */
         handlePaste(event) {
             const items = (event.clipboardData || window.clipboardData).items;
             let imageFile = null;
@@ -240,50 +322,39 @@ const ProblemRecordTable = {
             }
 
             if (imageFile) {
-                event.preventDefault(); // 阻止默认粘贴行为
+                event.preventDefault(); 
                 this.$message.info('检测到图片，正在上传...');
-                // 手动触发上传
                 this.uploadFile(imageFile);
             }
         },
 
-        /**
-         * 【【【新增】】】 统一的文件上传方法
-         */
         async uploadFile(file) {
             const formData = new FormData();
             formData.append('file', file);
             try {
-                // 使用 computed 属性获取正确的URL
                 const response = await axios.post(this.uploadActionUrl, formData);
-                // 直接调用您已有的成功处理方法
                 this.handleSingleScreenshotSuccess(response.data);
             } catch (error) {
                 this.handleScreenshotError(error);
             }
         },
 
-        /**
-         * 【【【修改】】】 重命名您已有的 handleScreenshotSuccess 方法
-         * 并优化其逻辑
-         */
         handleSingleScreenshotSuccess(res) {
             console.log('截图上传成功，服务器响应:', res);
             this.$message.success('截图上传成功!');
             if (res.filePath && this.currentProblemForUpload) {
-                // 更新表格中的对应行数据
-                this.currentProblemForUpload.screenshotPath = res.filePath;
-                // 关闭弹窗
+                // 【修改】根据 uploadType 更新对应字段
+                if (this.uploadType === 'fix') {
+                    this.currentProblemForUpload.fixScreenshotPath = res.filePath;
+                } else {
+                    this.currentProblemForUpload.screenshotPath = res.filePath;
+                }
                 this.screenshotUploadVisible = false;
             } else {
                 this.$message.error('未能从服务器获取文件路径！');
             }
         },
 
-        /**
-         * 截图上传失败时的回调函数。
-         * @param {Error} err - 错误对象。
-         */
         handleScreenshotError(err) {
             this.$message.error('截图上传失败，请检查网络或联系管理员。');
             console.error("截图上传失败:", err);
@@ -320,15 +391,13 @@ const ProblemRecordTable = {
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h4 class="card-title mb-0">问题记录表</h4>
-                    <!-- 只有审核员模式才能新增问题 -->
                     <el-button v-if="isReviewerMode" type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                 </div>
             
-                <!-- 【【【新增：截图上传与粘贴弹窗】】】 -->
-                <!-- 使用 v-if 确保在需要时才渲染，提高性能 -->
+                <!-- 通用截图上传弹窗 (表格列操作用) -->
                 <el-dialog
                     v-if="screenshotUploadVisible"
-                    title="上传/粘贴截图"
+                    :title="uploadType === 'fix' ? '上传修复证明' : '上传问题截图'"
                     :visible.sync="screenshotUploadVisible"
                     width="500px"
                     @close="currentProblemForUpload = null"
@@ -352,104 +421,175 @@ const ProblemRecordTable = {
                     </div>
                 </el-dialog>
 
-                <el-table :data="problems" v-loading="isLoading" stripe style="width: 100%" border>
-                    <el-table-column type="index" label="序号" width="55" align="center"></el-table-column>
-                    <el-table-column prop="stage" label="阶段" min-width="80"></el-table-column>
-                    <el-table-column prop="problemPoint" label="问题点" min-width="120" show-overflow-tooltip></el-table-column>
-                    <el-table-column prop="description" label="描述" min-width="120" show-overflow-tooltip></el-table-column>
-                    
-                    <el-table-column label="截图" width="80" align="center">
-                        <template slot-scope="scope">
+                <!-- 设计员：确认解决弹窗 (上传修改证明) -->
+                <el-dialog
+                    title="确认已解决"
+                    :visible.sync="resolveDialogVisible"
+                    width="500px"
+                    append-to-body
+                    :close-on-click-modal="false">
+                    <el-form :model="resolveForm" label-width="80px">
+                        <el-alert title="请上传修改后的截图作为证明，并填写备注。" type="info" :closable="false" class="mb-3"></el-alert>
                         
-                            <!-- 情况一：如果已有截图 (scope.row.screenshotPath 存在) -->
-                            <div v-if="scope.row.screenshotPath">
-                                <!-- 
-                                    el-image 组件自身就带有点击放大的功能。
-                                    关键在于 :preview-src-list 属性。
-                                    我们不需要给它绑定额外的 @click 事件。
-                                -->
-                                <el-image 
-                                    style="width: 50px; height: 50px; display: block; margin: auto;"
-                                    :src="scope.row.screenshotPath" 
-                                    :preview-src-list="[scope.row.screenshotPath]">
-                                    <div slot="error" class="image-slot" style="text-align: center; line-height: 50px;">
-                                        <i class="el-icon-picture-outline"></i>
+                        <el-form-item label="修改备注">
+                            <el-input type="textarea" v-model="resolveForm.fixComment" placeholder="例如：已按要求修改尺寸，请复核。" :rows="2"></el-input>
+                        </el-form-item>
+                        
+                        <el-form-item label="修改截图" required>
+                             <div @paste="handleResolvePaste" class="screenshot-paste-area">
+                                <el-upload
+                                    class="screenshot-uploader-in-dialog"
+                                    drag
+                                    :action="resolveUploadUrl"
+                                    :show-file-list="false"
+                                    :on-success="handleResolveUploadSuccess"
+                                    name="file">
+                                    <div v-if="resolveForm.fixScreenshotPath" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+                                        <img :src="resolveForm.fixScreenshotPath" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                                     </div>
-                                </el-image>
+                                    <div v-else>
+                                        <i class="el-icon-upload"></i>
+                                        <div class="el-upload__text">拖拽/点击上传<br><small>支持 Ctrl+V 粘贴</small></div>
+                                    </div>
+                                </el-upload>
                             </div>
-                            
-                            <!-- 情况二：如果没有截图 -->
-                            <div v-else>
-                                <!-- 
-                                    这个按钮只负责一件事：打开上传弹窗。
-                                -->
-                                <el-button
-                                    icon="el-icon-plus"
-                                    circle
-                                    size="mini"
-                                    title="上传/粘贴截图"
-                                    @click="openScreenshotUploader(scope.row)">
-                                </el-button>
+                            <div v-if="resolveForm.fixScreenshotPath" class="text-success small mt-1">
+                                <i class="el-icon-check"></i> 图片已上传
                             </div>
+                        </el-form-item>
+                    </el-form>
+                    <span slot="footer" class="dialog-footer">
+                        <el-button @click="resolveDialogVisible = false">取消</el-button>
+                        <el-button type="primary" :loading="isResolving" @click="submitResolve">确认提交</el-button>
+                    </span>
+                </el-dialog>
+
+
+                <el-table :data="problems" v-loading="isLoading" stripe style="width: 100%" border>
+                    <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
+                    <el-table-column prop="stage" label="阶段" width="80" align="center"></el-table-column>
+                    <el-table-column prop="problemPoint" label="问题点" min-width="110" show-overflow-tooltip></el-table-column>
                     
+                    <el-table-column label="问题描述" min-width="150">
+                        <template slot-scope="scope">
+                            <div class="d-flex align-items-center">
+                                <span class="text-truncate" :title="scope.row.description">{{ scope.row.description }}</span>
+                            </div>
                         </template>
                     </el-table-column>
 
-                    <el-table-column prop="status" label="状态" min-width="90" align="center">
+                    <!-- 【修改】明确表头为“问题截图”，与“修复证明”区分 -->
+                    <el-table-column label="问题截图" width="100" align="center">
                         <template slot-scope="scope">
-                            <el-tag :type="scope.row.status === 'OPEN' ? 'danger' : scope.row.status === 'RESOLVED' ? 'warning' : 'success'" size="small">
+                            <div class="d-flex align-items-center justify-content-center">
+                                <!-- 图片 (如果有) -->
+                                <el-image 
+                                    v-if="scope.row.screenshotPath"
+                                    style="width: 40px; height: 40px; margin-right: 5px; border-radius: 4px; border: 1px solid #eee;"
+                                    :src="scope.row.screenshotPath" 
+                                    :preview-src-list="[scope.row.screenshotPath]">
+                                </el-image>
+
+                                <!-- 
+                                    上传/替换按钮：仅审核员在 OPEN 状态下，或图片为空时显示
+                                -->
+                                <el-button
+                                    v-if="!scope.row.screenshotPath || (isReviewerMode && scope.row.status === 'OPEN')"
+                                    type="text"
+                                    :icon="scope.row.screenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
+                                    :title="scope.row.screenshotPath ? '更换截图' : '上传截图'"
+                                    @click="openScreenshotUploader(scope.row, 'problem')">
+                                </el-button>
+                            </div>
+                        </template>
+                    </el-table-column>
+
+                    <!-- 【修改】明确表头为“修复证明” -->
+                    <el-table-column label="修复证明" min-width="140">
+                         <template slot-scope="scope">
+                            <div v-if="scope.row.fixScreenshotPath" class="d-flex align-items-center">
+                                <!-- 修复截图 -->
+                                <el-image 
+                                    style="width: 40px; height: 40px; margin-right: 5px; flex-shrink: 0; border: 1px solid #67c23a;"
+                                    :src="scope.row.fixScreenshotPath" 
+                                    :preview-src-list="[scope.row.fixScreenshotPath]">
+                                </el-image>
+                                <div style="font-size: 0.85em; line-height: 1.2; flex-grow: 1;">
+                                    <div class="text-success font-weight-bold">已修复</div>
+                                    <div class="text-muted text-truncate" style="max-width: 90px;" :title="scope.row.fixComment">
+                                        {{ scope.row.fixComment || '无备注' }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <span v-else-if="scope.row.status === 'RESOLVED' || scope.row.status === 'CLOSED'" class="text-muted small">
+                                (无证明)
+                            </span>
+
+                            <!-- 【关键新增】设计员在 OPEN 状态下，可以直接在这里上传/更换修复截图 -->
+                            <div v-if="isDesignerMode && scope.row.status === 'OPEN'" style="display: inline-block;">
+                                <el-button
+                                    type="text"
+                                    :icon="scope.row.fixScreenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
+                                    :title="scope.row.fixScreenshotPath ? '更换修复截图' : '上传修复截图'"
+                                    @click="openScreenshotUploader(scope.row, 'fix')">
+                                </el-button>
+                            </div>
+                        </template>
+                    </el-table-column>
+                    
+                    <el-table-column prop="status" label="状态" width="85" align="center">
+                        <template slot-scope="scope">
+                            <el-tag :type="scope.row.status === 'OPEN' ? 'danger' : scope.row.status === 'RESOLVED' ? 'warning' : 'success'" size="small" effect="dark">
                                 {{ scope.row.status === 'OPEN' ? '待解决' : scope.row.status === 'RESOLVED' ? '待复核' : '已关闭' }}
                             </el-tag>
                         </template>
                     </el-table-column>
 
-                    <el-table-column prop="confirmedByUsername" label="确认人" width="80"></el-table-column>
-                    <el-table-column prop="confirmedAt" label="确认时间" min-width="160"></el-table-column>
-                    <el-table-column prop="reviewerUsername" label="审核人" min-width="90"></el-table-column>
-                    <el-table-column prop="reviewedAt" label="审核时间" min-width="160"></el-table-column>
+                    <el-table-column label="责任人" min-width="120">
+                         <template slot-scope="scope">
+                            <div style="font-size: 0.85em;">
+                                <div><span class="text-muted">提:</span> {{ scope.row.createdByUsername }}</div>
+                                <div v-if="scope.row.confirmedByUsername"><span class="text-muted">改:</span> {{ scope.row.confirmedByUsername }}</div>
+                            </div>
+                         </template>
+                    </el-table-column>
 
-                    <el-table-column label="操作" width="180" align="center" fixed="right">
+                    <el-table-column label="操作" width="160" align="center" fixed="right">
                         <template slot-scope="scope">
                         
-                            <!-- ======================= 审核员模式下的操作按钮 ======================= -->
+                            <!-- 审核员操作 -->
                             <div v-if="isReviewerMode">
                                 <template v-if="scope.row.status === 'OPEN'">
-                                    <el-button size="mini" @click="handleEdit(scope.row)" icon="el-icon-edit">编辑</el-button>
-                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)" icon="el-icon-delete">删除</el-button>
+                                    <el-button size="mini" @click="handleEdit(scope.row)" icon="el-icon-edit" circle title="编辑"></el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row.id)" icon="el-icon-delete" circle title="删除"></el-button>
                                 </template>
                                 <template v-else-if="scope.row.status === 'RESOLVED'">
-                                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
-                                        <div>
-                                            <el-button size="mini" type="warning" icon="el-icon-refresh-left" @click="handleReopen(scope.row)">打回</el-button>
-                                        </div>
-                                        <div>
-                                            <el-button size="mini" type="success" icon="el-icon-circle-check" @click="handleClose(scope.row)">关闭</el-button>
-                                        </div>
-                                    </div>
+                                    <el-button size="mini" type="warning" @click="handleReopen(scope.row)">打回</el-button>
+                                    <el-button size="mini" type="success" @click="handleClose(scope.row)">通过</el-button>
                                 </template>
-                                <el-tag v-else-if="scope.row.status === 'CLOSED'" type="success" effect="plain">已关闭</el-tag>
-                                <el-tag v-else type="info">状态未知</el-tag>
+                                <span v-else class="text-muted small">已归档</span>
                             </div>
                     
-                            <!-- ======================= 设计员模式下的操作按钮 ======================= -->
+                            <!-- 设计员操作 -->
                             <div v-if="isDesignerMode">
                                 <el-button 
                                     v-if="scope.row.status === 'OPEN'"
                                     size="mini" 
-                                    type="success" 
+                                    type="primary" 
                                     icon="el-icon-check"
                                     @click="handleResolve(scope.row)">
-                                    标记为已解决
+                                    解决
                                 </el-button>
-                                <el-tag v-else :type="scope.row.status === 'RESOLVED' ? 'warning' : 'info'" effect="plain">
-                                    无需操作
-                                </el-tag>
+                                <span v-else class="text-muted small">
+                                    {{ scope.row.status === 'RESOLVED' ? '等待复核' : '已完成' }}
+                                </span>
                             </div>
                         </template>
                     </el-table-column>
                 </el-table>
 
-                <!-- 新增与编辑问题的对话框 -->
+                <!-- 新增与编辑问题的对话框 (审核员用) -->
                 <el-dialog :title="isEditMode ? '编辑问题' : '新增问题'" :visible.sync="dialogVisible" width="50%" :close-on-click-modal="false">
                     <el-form :model="currentProblem" :rules="formRules" ref="problemForm" label-width="100px">
                         <el-form-item label="问题阶段" prop="stage">

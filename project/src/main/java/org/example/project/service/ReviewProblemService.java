@@ -1,4 +1,3 @@
-// src/main/java/org/example/project/service/ReviewProblemService.java
 package org.example.project.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -28,7 +27,7 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
      */
     ReviewProblem createProblem(Long recordId, ReviewProblemCreateDTO createDTO);
 
-        /**
+    /**
      * 更新问题详情
      */
     ReviewProblem updateProblem(Long problemId, ReviewProblemUpdateDTO updateDTO);
@@ -39,12 +38,17 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
     void deleteProblem(Long problemId);
 
     /**
-     * 上传并关联截图
+     * 上传并关联【问题描述】截图（审核员用）
      */
     String uploadAndLinkScreenshot(Long problemId, MultipartFile file) throws IOException;
+
+    /**
+     * 【新增】上传并关联【修改证明】截图（设计员用）
+     */
+    String uploadAndLinkFixScreenshot(Long problemId, MultipartFile file) throws IOException;
     
     /**
-     * [NEW] 解决一个问题
+     * 解决一个问题
      */
     ReviewProblem resolveProblem(Long problemId);
 
