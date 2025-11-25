@@ -33,16 +33,17 @@ Vue.component('record-review-panel', {
                             
                             <!-- 左侧：统一的信息中心 -->
                             <div style="flex-grow: 1; margin-right: 20px;">
-                                <workspace-status-bar
-                                    v-if="recordInfo"
-                                    ref="statusBarRef"
-                                    :file-id="activeFile ? activeFile.id : null"
-                                    :record-info="recordInfo"
-                                    :live-stats="currentLiveStats"
-                                    :status="recordInfo.status"
-                                    :total-duration="recordInfo.totalDesignDurationSeconds"
-                                    :session-duration="0"> <!-- 审核员面板不计时，传0 -->
-                                </workspace-status-bar>
+                            <workspace-status-bar
+                            v-if="recordInfo"
+                                ref="statusBarRef"
+                                :file-id="activeFile ? activeFile.id : null"
+                                :record-info="recordInfo"
+                                :meta-data="metaDataContent"
+                                :live-stats="currentLiveStats"
+                                :status="recordInfo.status"
+                                :total-duration="recordInfo.totalDesignDurationSeconds"
+                                :session-duration="currentSessionSeconds">
+                            </workspace-status-bar>
                             </div>
 
                             <!-- 右侧：审核员的操作按钮 (垂直排列) -->

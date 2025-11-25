@@ -36,10 +36,8 @@ Vue.component('record-workspace-panel', {
                                     v-if="recordInfo"
                                     ref="statusBarRef"
                                     :file-id="activeFile ? activeFile.id : null"
-                                    
                                     :record-info="recordInfo"
-                                    :personnel-data="lockedPersonnelInfo"
-                                    
+                                    :meta-data="metaDataContent"
                                     :live-stats="currentLiveStats"
                                     :status="recordInfo.status"
                                     :total-duration="recordInfo.totalDesignDurationSeconds"
@@ -263,11 +261,10 @@ Vue.component('record-workspace-panel', {
             workSessionId: null,
             heartbeatInterval: null,
             isPaused: false,
-            currentSessionSeconds: 0, // 用于存储本次会话已经过的秒数
-            sessionTimer: null,        // 用于存储驱动UI更新的秒级定时器
-            currentLiveStats: null, // 用于存储来自 iframe 的实时统计 
-            lockedPersonnelInfo: null, // 【新增】用于锁定人员信息
-            personnelCache: null // 用于“挪用”和缓存人员信息
+            currentSessionSeconds: 0, 
+            sessionTimer: null,
+            currentLiveStats: null, 
+            personnelCache: null // 【保留】用于“挪用”和缓存人员信息
         }
     },
 
@@ -343,10 +340,11 @@ Vue.component('record-workspace-panel', {
                 this.recordInfo = finalRecordInfo;
                 this.associatedFiles = files.sort((a, b) => a.documentType.localeCompare(b.documentType));
 
-                if (this.excelFiles.length > 0) {
-                    this.activeTab = this.excelFiles[0].documentType;
-                } else if (this.metaFile) {
+                if (this.metaFile) {
                     this.activeTab = 'recordMeta';
+                    this.fetchAndDisplayMetaData(); // 关键：手动触发一次元数据加载
+                } else if (this.excelFiles.length > 0) {
+                    this.activeTab = this.excelFiles[0].documentType;
                 }
                 
                 // 启动工作会话
@@ -409,21 +407,34 @@ Vue.component('record-workspace-panel', {
             }
         },
 
-        handleTabClick(tab) {
-            console.log(`%c[DEBUGGER] 7. handleTabClick 事件触发，点击的Tab是: '${tab.name}'`, 'color: #8A2BE2; font-weight: bold;');
+// 【修改后】
+handleTabClick(tab) {
+    console.log(`[Workspace] 切换到 Tab: ${tab.name}`);
 
-            // 此时 this.recordInfo 应该已经是增强过的版本
-            console.log("[DEBUGGER] 7.1. 在 handleTabClick 执行时，this.recordInfo 的当前值是:", JSON.parse(JSON.stringify(this.recordInfo)));
+    // 1. 【核心修复】: 立即清除上一份文件的实时统计残留！
+    // 否则状态栏会优先显示上一个文件的 liveStats，导致数据不刷新
+    this.currentLiveStats = null;
 
-            if (tab.name === 'recordMeta') {
-                this.fetchAndDisplayMetaData();
-            } else {
-                const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
-                this.$nextTick(() => {
-                    this.loadSheetInIframe(fileToLoad);
-                });
-            }
-        },
+    // 2. 正常加载逻辑
+    if (tab.name === 'recordMeta') {
+        this.fetchAndDisplayMetaData();
+    } else if (tab.name === 'problemRecord') {
+        // 问题记录页无需特殊加载
+    } else {
+        const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
+        // 确保 DOM 更新后再加载 iframe
+        this.$nextTick(() => {
+            this.loadSheetInIframe(fileToLoad);
+        });
+    }
+
+    // 3. 【双重保险】: 强制状态栏组件重新获取“已保存”的数据
+    this.$nextTick(() => {
+        if (this.$refs.statusBarRef && typeof this.$refs.statusBarRef.fetchSavedStats === 'function') {
+            this.$refs.statusBarRef.fetchSavedStats();
+        }
+    });
+},
 
         // --- 【第4步】: 新增在线保存和提交的核心逻辑 ---
 
@@ -560,17 +571,19 @@ Vue.component('record-workspace-panel', {
                 //  ↓↓↓ 分支 2: 【【【 新增 】】】 处理实时统计更新的消息 ↓↓↓
                 // =================================================================
             } else if (type === 'STATS_UPDATE') {
+                
+                // 1. 获取当前激活的 Excel 文件信息
+                const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
+                
+                // 2. 【核心修复】: 只有当消息来源看起来像是当前激活的文件时，才更新 UI
+                // (由于 Luckysheet 没发 ID，我们只能做简单的防御：确认当前确实在看 Excel)
+                if (activeFile) {
+                    // 如果需要在此时更新数据，直接赋值
+                    this.currentLiveStats = payload;
+                } else {
+                    console.warn('[Workspace] 收到统计更新，但当前不在 Excel Tab，已忽略。');
+                }
 
-                console.log('[Parent] 消息类型匹配！正在处理 STATS_UPDATE...');
-                console.log('[Parent] 接收到实时统计更新:', payload);
-
-                // 将从 iframe 接收到的实时统计数据，存入父组件的 data 属性中
-                // 这个属性通过 prop 绑定到了 <workspace-status-bar> 组件
-                this.currentLiveStats = payload;
-
-                // =================================================================
-                //  ↓↓↓ 分支 3: 处理 iframe 内点击事件（您的原有逻辑，保持不变） ↓↓↓
-                // =================================================================
             } else if (type === 'IFRAME_CLICKED') {
                 // 可以在这里处理 iframe 点击事件，如果需要的话
             }
@@ -679,36 +692,6 @@ Vue.component('record-workspace-panel', {
                 this.sessionTimer = null;
             }
         },
-        // 【新增方法】: 一次性加载并锁定人员信息
-        async loadAndLockPersonnelInfo() {
-            // 如果已经锁定，则不再执行
-            if (this.lockedPersonnelInfo) return;
-
-            console.log("[DEBUG] 开始一次性加载并锁定人员信息...");
-            try {
-                const excelFiles = this.excelFiles;
-                if (excelFiles.length > 0) {
-                    const firstFileId = excelFiles[0].id;
-                    const statsResponse = await axios.get(`/api/files/${firstFileId}/statistics`);
-                    if (statsResponse.data && statsResponse.data.personnel) {
-                        this.lockedPersonnelInfo = statsResponse.data.personnel;
-                        console.log('%c[DEBUG] 成功锁定人员信息!', 'color: green', this.lockedPersonnelInfo);
-                    }
-                } else {
-                    console.warn("[DEBUG] 未找到Excel文件，无法锁定人员信息。");
-                    // 即使没有Excel文件，也提供一个默认对象，避免子组件显示错误
-                    this.lockedPersonnelInfo = {
-                        number: this.recordInfo.processName || 'N/A',
-                        designer: '（未知）',
-                        proofreader: '（未知）',
-                        auditor: '（未知）'
-                    };
-                }
-            } catch (e) {
-                console.error('[DEBUG] 加载并锁定人员信息失败:', e);
-                this.lockedPersonnelInfo = { number: '加载失败', designer: '加载失败', proofreader: '加载失败', auditor: '加载失败' };
-            }
-        },
 
     },
 
@@ -771,28 +754,30 @@ Vue.component('record-workspace-panel', {
             },
             { deep: true } // 深度监听
         );
-        // 【【【 新增的、可靠的“挪用”监听器 】】】
+        // 【【【 修正后的“挪用”监听器 】】】
         this.$nextTick(() => {
             const statusBar = this.$refs.statusBarRef;
             if (statusBar) {
-                // 使用 vm.$watch API 来动态创建监听
                 this.$watch(
-                    // 要监听的表达式
                     () => statusBar.savedStats,
-                    // 回调函数
                     (newStats) => {
-                        if (newStats && newStats.personnel && !this.personnelCache) {
-                            this.personnelCache = newStats.personnel;
-                            console.log('%c[挪用成功] 已通过动态 watch 成功捕获 personnel 数据!', 'color: green', this.personnelCache);
+                        // 检查数据是否有效。注意：现在数据是扁平的，直接检查 designerName
+                        if (newStats && newStats.designerName && !this.personnelCache) {
+                            // 我们手动构建一个符合 personnelInfo 格式的对象来缓存
+                            this.personnelCache = {
+                                number: newStats.fileNumber,
+                                designer: newStats.designerName,
+                                proofreader: newStats.proofreaderName,
+                                auditor: newStats.auditorName
+                            };
+                            console.log('%c[挪用成功] 已捕获人员数据!', 'color: green', this.personnelCache);
                         }
                     },
-                    // 配置项
                     { deep: true }
                 );
-            } else {
-                console.error("严重错误：mounted 钩子中未能找到 statusBarRef 实例！");
             }
         });
+    
         // =======================================================
     },
 
@@ -821,16 +806,41 @@ watch: {
             immediate: true,
             handler(newId) {
                 if (newId) {
-                    this.fetchData(); // 只负责调用
+                    this.personnelCache = null;
+                    this.fetchData().then(() => {
+                        this.startWorkSession();
+                    });
                 } else {
                     this.stopWorkSession();
                 }
             }
         },
-        activeTab(newTabName) {
-            if (newTabName === 'recordMeta') {
-                this.fetchAndDisplayMetaData();
+        
+        activeTab(newTabName, oldTabName) {
+            // 【新增步骤 0】：在切换瞬间，尝试从旧Tab的状态栏中捕获数据
+            // 这作为一个保险，防止 mounted 中的 watcher 没抓到
+            const statusBar = this.$refs.statusBarRef;
+            if (statusBar && statusBar.savedStats && statusBar.savedStats.designerName) {
+                this.personnelCache = statusBar.savedStats;
+                console.log('%c[主动捕获] 在Tab切换前成功捕获数据!', 'color: blue', this.personnelCache);
             }
+
+            this.$nextTick(() => {
+                const statusBar = this.$refs.statusBarRef;
+                if (statusBar) {
+                    this.$watch(
+                        () => statusBar.savedStats,
+                        (newStats) => {
+                            // 只要有数据，且包含 designerName，就缓存它
+                            if (newStats && newStats.designerName) {
+                                this.personnelCache = newStats; // 直接缓存整个对象
+                                console.log('%c[挪用成功] 已捕获数据!', 'color: green', this.personnelCache);
+                            }
+                        },
+                        { deep: true }
+                    );
+                }
+            });
         }
     }
 });
