@@ -230,7 +230,7 @@ Vue.component('record-workspace-panel', {
                                 <problem-record-table
                                     v-if="activeTab === 'problemRecord'"
                                     :record-id="Number(recordId)"
-                                    mode="reviewer">
+                                    mode="designer">
                                 </problem-record-table>
                             </el-tab-pane>
             
