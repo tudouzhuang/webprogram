@@ -85,14 +85,9 @@ Vue.component('process-record-panel', {
 
                                 <el-divider>尺寸与重量</el-divider>
                                 
-                                <!-- ======================================================= -->
-                                <!--   ↓↓↓ 【核心修正 A】: 移除了尺寸部分嵌套的 el-form-item ↓↓↓   -->
-                                <!-- ======================================================= -->
-                                
                                 <el-form-item label="报价 尺寸">
                                     <el-row :gutter="10">
                                         <el-col :span="7">
-                                            <!-- 注意：这里的 prop 绑定在外层 el-form-item 上，内层不再需要 -->
                                             <el-input v-model="recordForm.quoteSize.length" placeholder="长度(mm)"></el-input>
                                         </el-col>
                                         <el-col :span="1" class="text-center">X</el-col>
@@ -132,15 +127,20 @@ Vue.component('process-record-panel', {
                                 
                                 <el-divider>检查项文件上传</el-divider>
 
-                                <!-- 【已修复】: 将所有相关UI都包裹在同一个 el-form-item 中 -->
                                 <el-form-item label="检查项文件" prop="sheetFiles">
                                     <div class="p-3 border rounded">
-                                        <!-- 【已添加】: 恢复了动态添加的交互区域 -->
                                             <el-row :gutter="10" class="mb-3">
                                                 <!-- 默认项选择区域 -->
                                                 <el-col :span="12">
                                                     <div class="d-flex align-items-center">
-                                                        <el-select v-model="selectedTemplateKey" placeholder="从常用模板中选择" size="small" style="flex-grow: 1; margin-right: 10px;">
+                                                        <!-- 【修改】改为多选下拉框 -->
+                                                        <el-select 
+                                                            v-model="selectedTemplateKeys" 
+                                                            multiple 
+                                                            collapse-tags 
+                                                            placeholder="请勾选需要的模板(可多选)" 
+                                                            size="small" 
+                                                            style="flex-grow: 1; margin-right: 10px;">
                                                             <el-option
                                                                 v-for="item in availableSheetTemplates"
                                                                 :key="item.key"
@@ -149,7 +149,8 @@ Vue.component('process-record-panel', {
                                                                 :disabled="isItemAlreadyAdded(item.key)">
                                                             </el-option>
                                                         </el-select>
-                                                        <el-button @click="addDefaultSheetItem" type="primary" size="small" icon="el-icon-plus">添加模板项</el-button>
+                                                        <!-- 【修改】按钮改为批量添加 -->
+                                                        <el-button @click="addSelectedTemplates" type="primary" size="small" icon="el-icon-plus" :loading="isTemplateLoading">批量添加</el-button>
                                                     </div>
                                                 </el-col>
                                     
@@ -168,66 +169,65 @@ Vue.component('process-record-panel', {
                                                 </el-col>
                                             </el-row>
                                 
-                                        <!-- 【已修复】: 只有在有数据时才显示表格 -->
-                                        <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
-                                            <!-- 列1: 检查项名称 -->
-                                            <el-table-column prop="name" label="检查项名称" min-width="180">
-                                                <template slot-scope="scope">
-                                                    <span style="color: #F56C6C;">* </span>
-                                                    <span>{{ scope.row.name }}</span>
-                                                </template>
-                                            </el-table-column>
-                                            
-                                            <!-- 列2: 上传状态 (强化版) -->
-                                            <el-table-column label="上传状态" min-width="250">
-                                                <template slot-scope="scope">
-                                                    <div v-if="scope.row.file">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="el-icon-success" style="color: #67C23A; font-size: 18px; margin-right: 8px;"></i>
-                                                            <div>
-                                                                <div style="font-weight: 500; line-height: 1.2;">{{ scope.row.file.name }}</div>
-                                                                <div style="font-size: 12px; color: #909399; line-height: 1.2;">
-                                                                    大小: {{ (scope.row.file.size / 1024).toFixed(2) }} KB
+                                            <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
+                                                <!-- 列1: 检查项名称 -->
+                                                <el-table-column prop="name" label="检查项名称" min-width="180">
+                                                    <template slot-scope="scope">
+                                                        <span style="color: #F56C6C;">* </span>
+                                                        <span>{{ scope.row.name }}</span>
+                                                    </template>
+                                                </el-table-column>
+                                                
+                                                <!-- 列2: 上传状态 -->
+                                                <el-table-column label="上传状态" min-width="250">
+                                                    <template slot-scope="scope">
+                                                        <div v-if="scope.row.file">
+                                                            <div class="d-flex align-items-center">
+                                                                <i class="el-icon-success" style="color: #67C23A; font-size: 18px; margin-right: 8px;"></i>
+                                                                <div>
+                                                                    <div style="font-weight: 500; line-height: 1.2;">{{ scope.row.file.name }}</div>
+                                                                    <div style="font-size: 12px; color: #909399; line-height: 1.2;">
+                                                                        大小: {{ (scope.row.file.size / 1024).toFixed(2) }} KB
+                                                                        <el-tag size="mini" type="info" v-if="scope.row.isTemplate" effect="plain" style="margin-left:5px">模板预设</el-tag>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                    <div v-else class="d-flex align-items-center text-muted">
-                                                        <i class="el-icon-warning-outline" style="font-size: 16px; margin-right: 8px;"></i>
-                                                        <span>等待上传文件...</span>
-                                                    </div>
-                                                </template>
-                                            </el-table-column>
-                                            
-                                            <!-- 列3: 上传操作 -->
-                                            <el-table-column label="上传操作" width="150" align="center">
-                                                <template slot-scope="scope">
-                                                    <el-upload
-                                                        action="#"
-                                                        :http-request="() => {}"
-                                                        :auto-upload="false"
-                                                        :show-file-list="false"
-                                                        :limit="1" 
-                                                        :on-change="(file) => handleFileChange(file, scope.row.key)"
-                                                        :on-exceed="() => handleFileExceed(scope.row.key)">
-                                                        <el-button v-if="!scope.row.file" slot="trigger" size="mini" type="primary" icon="el-icon-upload2">选择文件</el-button>
-                                                        <el-button v-else slot="trigger" size="mini" type="warning" icon="el-icon-refresh" plain>重新选择</el-button>
-                                                    </el-upload>
-                                                </template>
-                                            </el-table-column>
+                                                        <div v-else class="d-flex align-items-center text-muted">
+                                                            <i class="el-icon-warning-outline" style="font-size: 16px; margin-right: 8px;"></i>
+                                                            <span>等待上传文件...</span>
+                                                        </div>
+                                                    </template>
+                                                </el-table-column>
+                                                
+                                                <!-- 列3: 上传操作 -->
+                                                <el-table-column label="上传操作" width="150" align="center">
+                                                    <template slot-scope="scope">
+                                                        <el-upload
+                                                            action="#"
+                                                            :http-request="() => {}"
+                                                            :auto-upload="false"
+                                                            :show-file-list="false"
+                                                            :limit="1" 
+                                                            :on-change="(file) => handleFileChange(file, scope.row.key)"
+                                                            :on-exceed="() => handleFileExceed(scope.row.key)">
+                                                            <el-button v-if="!scope.row.file" slot="trigger" size="mini" type="primary" icon="el-icon-upload2">选择文件</el-button>
+                                                            <el-button v-else slot="trigger" size="mini" type="warning" icon="el-icon-refresh" plain>重新选择</el-button>
+                                                        </el-upload>
+                                                    </template>
+                                                </el-table-column>
                                 
-                                            <!-- 列4: 删除操作 -->
-                                            <el-table-column label="删除" width="100" align="center">
-                                                <template slot-scope="scope">
-                                                    <el-button @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
-                                                </template>
-                                            </el-table-column>
-                                        </el-table>
-                                        
-                                        <!-- 【已修复】: 当表格为空时显示提示 -->
-                                        <div v-else class="text-center text-muted p-4">
-                                            <p>暂未添加任何检查项，请从上方选择并添加。</p>
-                                        </div>
+                                                <!-- 列4: 删除操作 -->
+                                                <el-table-column label="删除" width="100" align="center">
+                                                    <template slot-scope="scope">
+                                                        <el-button @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
+                                                    </template>
+                                                </el-table-column>
+                                            </el-table>
+                                            
+                                            <div v-else class="text-center text-muted p-4">
+                                                <p>暂未添加任何检查项，请从上方选择并添加。</p>
+                                            </div>
                                     </div>
                                 </el-form-item>
                                 
@@ -269,7 +269,8 @@ Vue.component('process-record-panel', {
 
         return {
             isSubmitting: false,
-            selectedTemplateKey: '',
+            isTemplateLoading: false, // 控制添加模板按钮的 loading 状态
+            selectedTemplateKeys: [], // 【修改】改为数组，用于多选
             customSheetName: '', 
             recordForm: {
                 partName: '',
@@ -292,14 +293,25 @@ Vue.component('process-record-panel', {
                 auditorDate: null,
                 sheetFiles: []
             },
+            // 【修改】更新为所有可用的模板文件列表
             availableSheetTemplates: [
-                { key: '2-清单', name: '2-清单' },
-                { key: '3定位、基准', name: '3-定位、基准' },
-                { key: '4模具存放、限位', name: '4-模具存放、限位' },
-                { key: '调试工艺卡', name: '调试工艺卡' },
-                { key: '废料滑落检查', name: '废料滑落检查' },
-                { key: '18修冲模', name: '18-修冲模' },
-                { key: '20斜楔', name: '20-斜楔' }
+                { key: '减重问题清单', name: '减重问题清单' },
+                { key: '动态干涉检查', name: '动态干涉检查' },
+                { key: '包边', name: '包边' },
+                { key: '后工序', name: '后工序' },
+                { key: '后序压力控制专项检查表', name: '后序压力控制专项检查表' },
+                { key: '安全部件检查表', name: '安全部件检查表' },
+                { key: '废料滑落检查表', name: '废料滑落检查表' },
+                { key: '拉延', name: '拉延' },
+                { key: '拉延调试工艺卡', name: '拉延调试工艺卡' },
+                { key: '机床参数检查表', name: '机床参数检查表' },
+                { key: '材质确认表', name: '材质确认表' },
+                { key: '目录', name: '目录' },
+                { key: '筋厚检查报告', name: '筋厚检查报告' },
+                { key: '结构FMC审核记录表', name: '结构FMC审核记录表' },
+                { key: '结构正式图审核记录表', name: '结构正式图审核记录表' },
+                { key: '设计重大风险排查表', name: '设计重大风险排查表' },
+                { key: '静态干涉检查', name: '静态干涉检查' }
             ],
             rules: {
                 partName: [{ required: true, message: '零件名称不能为空', trigger: 'blur' }],
@@ -337,34 +349,96 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
-    // 【已修复】: 只保留一个通用检查方法
     isItemAlreadyAdded(keyOrName) {
         const trimmedValue = keyOrName.trim();
         return this.recordForm.sheetFiles.some(item => item.key.trim() === trimmedValue);
     },
     
-    // 【已修复】: 只保留一个从预设模板添加的方法，并重命名为 addDefaultSheetItem
-    addDefaultSheetItem() {
-        if (!this.selectedTemplateKey) {
-            this.$message.warning('请先从下拉列表中选择一个模板。');
+    // 【核心修改】: 支持批量异步加载服务器端模板文件
+    async addSelectedTemplates() {
+        if (!this.selectedTemplateKeys || this.selectedTemplateKeys.length === 0) {
+            this.$message.warning('请至少勾选一个模板。');
             return;
         }
-        const templateToAdd = this.availableSheetTemplates.find(t => t.key === this.selectedTemplateKey);
         
-        if (templateToAdd && !this.isItemAlreadyAdded(templateToAdd.key)) {
-            this.recordForm.sheetFiles.push({
-                key: templateToAdd.key,
-                name: templateToAdd.name,
-                file: null
-            });
-            this.selectedTemplateKey = '';
+        // 过滤掉已经添加的
+        const keysToAdd = this.selectedTemplateKeys.filter(key => !this.isItemAlreadyAdded(key));
+        
+        if (keysToAdd.length === 0) {
+            this.$message.warning('所选模板均已添加。');
+            this.selectedTemplateKeys = []; // 清空选择
+            return;
+        }
+
+        this.isTemplateLoading = true;
+        let successCount = 0;
+        let failCount = 0;
+
+        try {
+            // 并行处理所有选中的模板
+            await Promise.all(keysToAdd.map(async (key) => {
+                const template = this.availableSheetTemplates.find(t => t.key === key);
+                if (!template) return;
+
+                try {
+                    // 1. 尝试从服务器静态资源目录获取文件
+                    // 假设后端静态资源映射是默认的，文件存放在 src/main/resources/static/templates/
+                    // 浏览器访问路径通常为 /templates/文件名.xlsx
+                    const fileName = template.name + '.xlsx'; // 假设文件后缀为 .xlsx
+                    const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`; // URL编码防止中文乱码
+
+                    const response = await axios.get(fileUrl, { 
+                        responseType: 'blob', // 关键：告诉 axios 返回二进制流
+                        validateStatus: status => status === 200 // 只接受 200 OK
+                    });
+
+                    // 2. 将 Blob 转换为 File 对象
+                    const file = new File([response.data], fileName, { 
+                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        lastModified: new Date().getTime()
+                    });
+
+                    // 3. 添加到列表
+                    this.recordForm.sheetFiles.push({
+                        key: template.key,
+                        name: template.name,
+                        file: file, 
+                        isTemplate: true 
+                    });
+                    successCount++;
+
+                } catch (error) {
+                    console.error(`加载模板 "${template.name}" 失败:`, error);
+                    failCount++;
+                    // 加载失败时添加一个空项，让用户知道这个模板有问题
+                    this.recordForm.sheetFiles.push({
+                        key: template.key,
+                        name: template.name,
+                        file: null,
+                        isTemplate: false
+                    });
+                }
+            }));
+
+            if (successCount > 0) {
+                this.$message.success(`成功添加 ${successCount} 个模板项。`);
+            }
+            if (failCount > 0) {
+                this.$message.warning(`${failCount} 个模板文件加载失败，已添加空项请手动上传。`);
+            }
+
+            this.selectedTemplateKeys = []; // 清空选择
             this.$refs.recordForm.validateField('sheetFiles');
-        } else {
-             this.$message.error('该模板项已被添加或不存在。');
+
+        } catch (error) {
+            console.error("批量添加模板过程发生错误:", error);
+            this.$message.error("批量添加过程中发生错误。");
+        } finally {
+            this.isTemplateLoading = false;
         }
     },
     
-    // 【已修复】: 添加自定义项的方法
+    // 添加自定义项 (保持手动上传逻辑)
     addCustomSheetItem() {
         const name = this.customSheetName.trim();
         if (!name) {
@@ -375,7 +449,7 @@ Vue.component('process-record-panel', {
             this.$message.error(`检查项 "${name}" 已存在，请勿重复添加。`);
             return;
         }
-        this.recordForm.sheetFiles.push({ key: name, name: name, file: null });
+        this.recordForm.sheetFiles.push({ key: name, name: name, file: null, isTemplate: false });
         this.customSheetName = '';
         this.$refs.recordForm.validateField('sheetFiles');
     },
@@ -400,7 +474,7 @@ Vue.component('process-record-panel', {
     handleFileChange(file, sheetKey) {
         const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
         if (index !== -1) {
-            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw };
+            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw, isTemplate: false }; // 手动上传覆盖后，取消模板标记
             this.$set(this.recordForm.sheetFiles, index, updatedSheet);
             this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
             this.$refs.recordForm.validateField('sheetFiles');
@@ -423,6 +497,8 @@ Vue.component('process-record-panel', {
                 formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
                 this.recordForm.sheetFiles.forEach(sheetFile => {
                     if (sheetFile.file) {
+                        // 使用检查项名称作为 key，这样后端可以识别是哪个Sheet
+                        // 如果是自动加载的模板，file.name 也是对的
                         formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
                     }
                 });
@@ -442,11 +518,11 @@ Vue.component('process-record-panel', {
         });
     },
 
-        // 【修改6】: 更新 resetForm 方法
+        // 更新 resetForm 方法
         resetForm() {
             this.$refs.recordForm.resetFields();
             this.recordForm.sheetFiles = [];
-            this.selectedTemplateKey = '';
+            this.selectedTemplateKeys = []; // 【修改】重置数组
             this.customSheetName = ''; // 确保自定义输入框也被清空
             this.recordForm.designerDate = new Date();
         },

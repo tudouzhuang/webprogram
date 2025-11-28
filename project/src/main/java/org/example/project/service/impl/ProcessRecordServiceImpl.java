@@ -48,6 +48,13 @@ import org.example.project.entity.ProcessRecordStatus;
 
 import org.springframework.security.access.AccessDeniedException;
 
+import org.example.project.dto.LuckySheetJsonDTO;
+import org.example.project.dto.StatisticsResultDTO;
+import org.example.project.mapper.ProjectFileMapper;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
+
 /**
  * ProcessRecordService 的实现类。 负责处理所有与设计过程记录表相关的业务逻辑。
  */
@@ -59,12 +66,13 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     private ProjectService projectService;
     @Autowired
     private UserService userService;
+    @Autowired
+    private StatisticsService statisticsService; // 用于获取其他文件的统计结果
 
     @Lazy
     @Autowired
     private ProcessRecordServiceImpl self; // 注入自己
-    @Autowired
-    private StatisticsService statisticsService;
+
 
     private static final Logger log = LoggerFactory.getLogger(ProcessRecordServiceImpl.class);
 
@@ -553,7 +561,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     public void approveRecord(Long recordId) {
         try {
             log.info("--- [Approve] 开始执行 approveRecord 事务 for recordId: {} ---", recordId);
-            
+
             // 1. 获取当前用户和目标记录
             User currentUser = getCurrentUser();
             ProcessRecord record = this.getById(recordId);
@@ -578,7 +586,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             // 4. 更新记录状态
             record.setStatus(ProcessRecordStatus.APPROVED);
             record.setAssigneeId(null);
-            
+
             log.info("--- [Approve] 准备执行 updateById 操作...");
             this.updateById(record);
             log.info("--- [Approve] updateById 操作执行完毕。数据库现在应该已更新（但事务未提交）。");
@@ -589,12 +597,12 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             // 【【【 核心修正 1：添加 catch 块以捕获任何潜在的异常 】】】
             // 如果在 try 块的任何地方（包括 log.info）发生异常，都会被这里捕获。
             log.error("--- [Approve - CATCH] 在 approveRecord 事务执行期间捕获到异常！事务将被回滚。", e);
-            
+
             // 【【【 核心修正 2：重新抛出异常 】】】
             // 这一步至关重要！它告诉 Spring 的事务管理器：“嘿，出错了，快回滚！”
             // 如果没有这一行，事务管理器会认为一切正常，并尝试提交一个已被标记为 rollback-only 的事务，从而导致我们之前看到的 UnexpectedRollbackException。
-            throw e; 
-        
+            throw e;
+
         } finally {
             // 【【【 核心修正 3：在 finally 块中增加更详细的日志 】】】
             log.info("--- [Approve - FINALLY] 即将退出方法，事务将要提交或回滚。");
@@ -609,7 +617,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             log.info("--- [Approve - FINALLY] 检查结束。---");
         }
     }
-    
+
     @Override
     @Transactional // 确保文件操作和数据库更新是一个原子操作
     public void resubmit(Long recordId, MultipartFile file) throws IOException {
@@ -836,5 +844,145 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         processRecordMapper.updateById(record);
 
         System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
+    }
+
+/**
+     * 【严格版】自动化填充逻辑
+     * 规则：
+     * 1. 仅在【当前记录 (Record)】的文件列表中查找。
+     * 2. 如果找到对应文件 -> 读取统计结果 (OK/NG)。
+     * 3. 如果没找到对应文件 -> 直接填入 "NA" (灰色)。
+     */
+    @Override
+    public void autoFillRiskSheetData(Long recordId, List<LuckySheetJsonDTO.SheetData> sheets) {
+        log.info("【AutoFill】执行风险清单填充 (严格模式)，RecordId: {}", recordId);
+
+        // 1. 仅获取【当前记录】下的文件
+        QueryWrapper<ProjectFile> query = new QueryWrapper<>();
+        query.eq("record_id", recordId);
+        List<ProjectFile> currentFiles = projectFileMapper.selectList(query);
+
+        if (sheets == null || sheets.isEmpty()) return;
+
+        for (LuckySheetJsonDTO.SheetData sheet : sheets) {
+            List<LuckySheetJsonDTO.CellData> cellDataList = sheet.getCelldata();
+            if (cellDataList == null || cellDataList.isEmpty()) continue;
+
+            // 构建 Grid 索引
+            Map<Integer, Map<Integer, LuckySheetJsonDTO.CellData>> grid = new HashMap<>();
+            for (LuckySheetJsonDTO.CellData cell : cellDataList) {
+                if (cell != null) {
+                    grid.computeIfAbsent(cell.getR(), k -> new HashMap<>()).put(cell.getC(), cell);
+                }
+            }
+
+            // 逐行扫描
+            for (Map.Entry<Integer, Map<Integer, LuckySheetJsonDTO.CellData>> rowEntry : grid.entrySet()) {
+                Integer r = rowEntry.getKey();
+                Map<Integer, LuckySheetJsonDTO.CellData> rowCells = rowEntry.getValue();
+
+                String targetFileName = null;
+                int descriptionColIndex = -1;
+
+                // 3.1 寻找引用 《...》
+                for (Map.Entry<Integer, LuckySheetJsonDTO.CellData> cellEntry : rowCells.entrySet()) {
+                    Integer c = cellEntry.getKey();
+                    LuckySheetJsonDTO.CellData cell = cellEntry.getValue();
+                    if (cell == null || cell.getV() == null || cell.getV().getV() == null) continue;
+                    String cellValue = String.valueOf(cell.getV().getV());
+
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("《([^》]+)》").matcher(cellValue);
+                    if (matcher.find()) {
+                        targetFileName = matcher.group(1);
+                        descriptionColIndex = c;
+                        break; 
+                    }
+                }
+
+                // 3.2 匹配文件处理
+                if (targetFileName != null) {
+                    String result = "NA"; // 【核心】默认结果设为 NA
+
+                    // 在当前记录中查找
+                    ProjectFile matchFile = findFileByKeyword(currentFiles, targetFileName);
+
+                    if (matchFile != null) {
+                        try {
+                            StatisticsResultDTO stats = statisticsService.getSavedStats(matchFile.getId());
+                            if (stats != null) {
+                                long ngCount = stats.getStats().stream().mapToLong(StatisticsResultDTO.CategoryStat::getNgCount).sum();
+                                result = (ngCount > 0) ? "NG" : "OK";
+                            }
+                        } catch (Exception e) {
+                            log.error("获取文件统计失败", e);
+                            // 发生异常保持 NA，或者可以设为 Error
+                        }
+                    } else {
+                        log.info("【AutoFill】当前记录未找到文件《{}》，设为 NA", targetFileName);
+                    }
+
+                    // 3.3 写入结果 (OK / NG / NA)
+                    // 寻找写入位置
+                    int targetCol = -1;
+                    for (int k = descriptionColIndex + 1; k < descriptionColIndex + 15; k++) {
+                        LuckySheetJsonDTO.CellData c = rowCells.get(k);
+                        if (c != null && c.getV() != null && c.getV().getV() != null) {
+                            String v = String.valueOf(c.getV().getV());
+                            // 增加 "NA" 的识别，防止重复填充时找不到位置
+                            if (v.contains("读取结果") || v.contains("待修复") || "OK".equals(v) || "NG".equals(v) || "NA".equals(v)) {
+                                targetCol = k;
+                                break;
+                            }
+                        }
+                    }
+                    // 没找到标记位，默认偏移 +6 (根据你的截图，描述在D列左右，结果在J/K列，+6差不多)
+                    if (targetCol == -1) targetCol = descriptionColIndex + 6;
+
+                    // 准备单元格
+                    LuckySheetJsonDTO.CellData targetCell = rowCells.get(targetCol);
+                    if (targetCell == null) {
+                        targetCell = new LuckySheetJsonDTO.CellData();
+                        targetCell.setR(r);
+                        targetCell.setC(targetCol);
+                        cellDataList.add(targetCell);
+                        rowCells.put(targetCol, targetCell);
+                    }
+
+                    // 填值
+                    LuckySheetJsonDTO.CellValue val = new LuckySheetJsonDTO.CellValue();
+                    val.setV(result);
+                    val.setM(result);
+
+                    // 设置样式
+                    if ("NG".equals(result)) {
+                        val.setFc("#FF0000"); // 红色
+                        val.setBl(1); // 加粗
+                    } else if ("OK".equals(result)) {
+                        val.setFc("#008000"); // 绿色
+                        val.setBl(1);
+                    } else {
+                        val.setFc("#808080"); // 灰色 (NA)
+                        val.setBl(0); // 正常粗细
+                    }
+                    
+                    targetCell.setV(val);
+                }
+            }
+        }
+    }
+
+    /**
+     * 辅助方法：在文件列表中按关键词模糊查找
+     */
+    private ProjectFile findFileByKeyword(List<ProjectFile> files, String keyword) {
+        if (files == null) return null;
+        for (ProjectFile f : files) {
+            if (f.getDocumentType() != null && f.getDocumentType().contains("风险")) continue;
+            String fName = (f.getDocumentType() + f.getFileName());
+            if (fName.contains(keyword)) {
+                return f;
+            }
+        }
+        return null;
     }
 }

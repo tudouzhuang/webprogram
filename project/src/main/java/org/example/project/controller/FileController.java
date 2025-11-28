@@ -1,13 +1,14 @@
 package org.example.project.controller;
 
 // --- 基础 Spring 依赖 ---
-import org.example.project.dto.LuckySheetJsonDTO; // 【新增】 导入我们定义好的 Luckysheet 数据传输对象
+import org.example.project.dto.LuckySheetJsonDTO; 
 import org.example.project.dto.StatisticsResultDTO;
-import org.example.project.service.ExcelSplitterService; // 【新增】 导入我们处理Excel的核心服务
+import org.example.project.service.ExcelSplitterService;
+import org.example.project.service.ProcessRecordService; // 【新增】导入 ProcessRecordService
 import org.example.project.service.StatisticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource; // 【新增】: 导入 ClassPathResource
+import org.springframework.core.io.ClassPathResource; 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestParam; // 【修改】 导入 RequestParam
+import org.springframework.web.bind.annotation.RequestParam; 
 
 // --- 日志、实体和Mapper依赖 ---
 import org.example.project.entity.ProjectFile;
@@ -33,7 +34,7 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List; // 【新增】 用于接收List类型
+import java.util.List; 
 
 /**
  * 文件控制器 (File Controller)
@@ -51,17 +52,19 @@ public class FileController {
     @Autowired
     private ExcelSplitterService excelSplitterService;
 
+    @Autowired
+    private StatisticsService statisticsService;
+
+    // 【新增】注入 ProcessRecordService，用于处理自动填充逻辑
+    @Autowired
+    private ProcessRecordService processRecordService;
+
     @Value("${file.upload-dir}")
     private String uploadDir;
 
     // =======================================================
     //  ↓↓↓ 【新增功能】: 提供审核模板文件的API ↓↓↓
     // =======================================================
-    /**
-     * 【API - 获取模板】
-     * 提供固定的审核表单模板文件下载。
-     * @return 审核模板的Excel文件流
-     */
     @GetMapping("/templates/review-sheet")
     public ResponseEntity<Resource> getReviewTemplate() {
         try {
@@ -69,8 +72,6 @@ public class FileController {
 
             if (resource.exists() && resource.isReadable()) {
                 log.info("正在提供审核模板文件: {}", resource.getFilename());
-                // 【关键修改】: 移除了 .header(HttpHeaders.CONTENT_DISPOSITION, ...)
-                // 只设置 Content-Type 和 Content-Length，让浏览器将它作为普通的数据流处理。
                 return ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                         .contentLength(resource.contentLength())
@@ -87,13 +88,13 @@ public class FileController {
 
 
     // =======================================================
-    //  ↓↓↓ 【已有功能】: 你的原有代码，保持不变 ↓↓↓
+    //  ↓↓↓ 【已有功能】: 获取文件内容 (核心修改点) ↓↓↓
     // =======================================================
 
     @GetMapping("/content/{fileId}")
     public ResponseEntity<?> getFileContentById(
             @PathVariable Long fileId,
-            @RequestParam(name = "format", required = false) String format) { // 接收可选的 format 参数
+            @RequestParam(name = "format", required = false) String format) {
 
         log.info("接收到获取文件内容的请求，文件ID: {}, 请求格式: {}", fileId, format == null ? "默认(文件流)" : format);
 
@@ -112,10 +113,34 @@ public class FileController {
 
             // 2. 【核心判断】根据 format 参数决定执行哪个逻辑分支
             if ("json".equalsIgnoreCase(format)) {
-                // --- 分支A: 用户需要JSON数据 ---
+                // --- 分支A: 用户需要JSON数据 (Luckysheet 加载用) ---
                 log.info("【JSON模式】开始将文件转换为JSON: {}", filePath);
+                
+                // 2.1 解析 Excel 为 Luckysheet 数据结构
                 List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(filePath.toString());
-                return ResponseEntity.ok(sheets); // 直接返回JSON数据
+                
+                // =================================================================================
+                // 【自动化逻辑植入点】: 如果是“重大风险清单”，则尝试自动注入前序表格的结论
+                // =================================================================================
+                // 这里的判断条件: documentType 包含 "风险" 或者是特定的文件名
+                // 你可以根据实际数据库中的 document_type 字段值来调整这个 if 条件
+                if (fileRecord.getDocumentType() != null && 
+                   (fileRecord.getDocumentType().contains("风险") || fileRecord.getFileName().contains("风险"))) {
+                    
+                    log.info("检测到正在打开风险清单文件 (ID: {})，开始执行自动填充逻辑...", fileId);
+                    try {
+                        // 调用 Service 层方法，修改 sheets 中的数据
+                        processRecordService.autoFillRiskSheetData(fileRecord.getRecordId(), sheets);
+                        log.info("自动填充逻辑执行完毕。");
+                    } catch (Exception e) {
+                        // 即使自动填充失败，也不要阻断文件打开，记录错误即可
+                        log.error("自动填充风险清单数据时发生错误，将返回原始数据。", e);
+                    }
+                }
+                // =================================================================================
+
+                return ResponseEntity.ok(sheets); 
+
             } else {
                 // --- 分支B: 用户需要原始文件 (默认行为) ---
                 log.info("【文件流模式】准备提供原始文件下载: {}", filePath);
@@ -136,7 +161,7 @@ public class FileController {
     }
 
     
-    // determineContentType 方法保持原样，它已经非常完善
+    // determineContentType 方法保持原样
     private String determineContentType(Path path, String fileName) {
         try {
             String probedType = Files.probeContentType(path);
@@ -169,11 +194,6 @@ public class FileController {
     public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
         log.info("接收到删除文件的请求，文件ID: {}", fileId);
         try {
-            // 我们需要一个 Service 方法来处理删除逻辑
-            // 为了保持Controller的简洁，我们假设有一个 fileService
-            // fileService.deleteFileById(fileId);
-            // 或者，我们暂时可以直接在这里实现逻辑
-            
             // 1. 从数据库查找文件记录
             ProjectFile fileRecord = projectFileMapper.selectById(fileId);
             if (fileRecord == null) {
@@ -186,7 +206,6 @@ public class FileController {
                 Files.deleteIfExists(filePath);
                 log.info("成功删除物理文件: {}", filePath);
             } catch (IOException e) {
-                // 即使物理文件删除失败，也继续删除数据库记录，但要记录错误
                 log.error("删除物理文件失败: {}", filePath, e);
             }
             
@@ -201,10 +220,6 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除文件时发生服务器内部错误。");
         }
     }
-
-        // 注入 StatisticsService
-    @Autowired
-    private StatisticsService statisticsService;
 
     // 新增 API
     @GetMapping("/{fileId}/statistics")
