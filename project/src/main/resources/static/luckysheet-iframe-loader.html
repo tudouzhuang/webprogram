@@ -4,7 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Luckysheet Iframe Loader</title>
-    <!-- 引入 Luckysheet 的 CSS -->
     <link rel='stylesheet' href='/luckysheet/plugins/css/pluginsCss.css' />
     <link rel='stylesheet' href='/luckysheet/plugins/plugins.css' />
     <link rel='stylesheet' href='/luckysheet/css/luckysheet.css' />
@@ -39,7 +38,6 @@
         <div class="loader">等待父窗口指令...</div>
     </div>
 
-    <!-- 引入 JS 库 -->
     <script src="/luckysheet/plugins/js/plugin.js"></script>
     <script src="/luckysheet/luckysheet.umd.js"></script>
     <script src="/luckysheet/luckyexcel.umd.js"></script>
@@ -53,6 +51,7 @@
         const container = document.getElementById('luckysheet-container');
         let originalDataValidation = {};
         let originalRowlen = {};
+        
         // --- [3. 辅助函数定义] ---
         function restoreRowHeight(startRow, rowCount) {
             // 确保 luckysheet 实例存在
@@ -72,8 +71,9 @@
                 }
             }
         }
+        
         /**
-         * Debounce 防抖函数: 防止函数在短时间内被高频触发。
+         * Debounce 防抖函数
          */
         function debounce(func, wait) {
             let timeout;
@@ -85,7 +85,7 @@
         }
 
         /**
-         * 核心统计与汇报函数: 计算表格数据并发送回父窗口。
+         * 核心统计与汇报函数
          */
         function calculateAndReportStats() {
             if (!window.luckysheet) return; // 安全检查
@@ -132,143 +132,152 @@
         }
 
         /**
-         * 【【【 新增：自动标红函数 】】】
-         * 当单元格的值变为 "×" 时，自动将其背景设置为红色。
-         * 当值变为其他时，清除背景色。
-         * @param {number} r - 单元格的行索引
-         * @param {number} c - 单元格的列索引
-         * @param {object} cell - 单元格的完整数据对象
+         * 自动标红函数
          */
         function autoHighlightCell(r, c, cell) {
-            // 【探头 A】: 确认函数是否被调用
-            console.log(`[Highlight-Debug] autoHighlightCell 被调用！坐标: (r=${r}, c=${c})`);
-
-            if (!window.luckysheet || !cell) {
-                console.log('[Highlight-Debug] Luckysheet 实例或 cell 对象为空，已终止。');
-                return;
-            }
+            if (!window.luckysheet || !cell) return;
 
             const cellValue = cell.v ? String(cell.v).trim() : '';
-            // 【探头 B】: 确认获取到的值是什么
-            console.log(`[Highlight-Debug] 获取到的单元格值: "${cellValue}"`);
-
             const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E=4, F=5, ..., K=10
 
-            // 【探头 C】: 确认列坐标是否在目标范围内
             if (targetColumns.includes(c)) {
-                console.log(`[Highlight-Debug] ✅ 列 ${c} 在目标范围 [${targetColumns.join(',')}] 内，继续判断...`);
-
                 if (cellValue === '×') {
-                    // 【探头 D-1】: 确认是否匹配 "×"
-                    console.log('[Highlight-Debug] 匹配到 "×"！准备设置红色背景...');
                     luckysheet.setCellFormat(r, c, 'bg', '#ffdddd');
                     luckysheet.setCellFormat(r, c, 'fc', '#9c0006');
                 } else {
-                    // 【探头 D-2】: 确认是否进入“清除颜色”的逻辑
                     if (cell.bg === '#ffdddd') {
-                        console.log('[Highlight-Debug] 值不再是 "×"，且检测到旧的红色背景。准备清除颜色...');
                         luckysheet.setCellFormat(r, c, 'bg', null);
                         luckysheet.setCellFormat(r, c, 'fc', null);
                     }
                 }
-            } else {
-                console.log(`[Highlight-Debug] ❌ 列 ${c} 不在目标范围内，已忽略。`);
             }
         }
 
         /**
-         * 创建防抖函数的实例，延迟500ms执行。
+         * 创建防抖函数的实例
          */
         const debouncedCalculate = debounce(calculateAndReportStats, 500);
 
         // --- [4. 核心功能函数] ---
 
-        /**
-         * 渲染 Luckysheet 实例。
+/**
+         * 渲染 Luckysheet 实例 (API 兼容性修复版)
          */
-        /**
-         * 渲染 Luckysheet 实例。
-         * 【最终修正版】：在保留所有原有功能的基础上，增加了 cellUpdated 钩子来实现自动标红和实时统计。
-         */
-        /**
-                 * 渲染 Luckysheet 实例。
-                 * 【最终修正版】：改用 luckysheet.setHook() 手动设置钩子，以确保注册成功。
-                 */
-        /**
-                 * 渲染 Luckysheet 实例。
-                 * 【最终修正版】：使用官方推荐的 luckysheet.refresh() API，并结合钩子函数实现“双保险”。
-                 */
-        function renderSheet(luckysheetData, fileName, options) {
-            // 步骤 1: 销毁旧实例 (您的原有逻辑)
+         function renderSheet(luckysheetData, fileName, options) {
+            console.group("【Iframe Debug】开始渲染流程");
+            
+            // 步骤 1: 销毁旧实例
             if (window.luckysheet) {
-                luckysheet.destroy();
+                try {
+                    luckysheet.destroy();
+                } catch (e) { console.warn("销毁旧实例出错:", e); }
             }
             container.innerHTML = '';
 
-            // 步骤 2: 备份原始数据 (您的原有逻辑 + 新增行高备份)
-            originalDataValidation = {};
-            if (Array.isArray(luckysheetData)) {
-                luckysheetData.forEach(sheet => {
-                    if (sheet && sheet.order != null && sheet.dataVerification) {
-                        originalDataValidation[sheet.order] = sheet.dataVerification;
-                    }
-                });
-                // 【【【 新增：备份原始行高 】】】
-                if (luckysheetData[0] && luckysheetData[0].config && luckysheetData[0].config.rowlen) {
-                    originalRowlen = { ...luckysheetData[0].config.rowlen };
-                    console.log("[Iframe] 原始行高已备份:", originalRowlen);
-                } else {
-                    originalRowlen = {};
-                }
+            // --- [阶段 A: 数据清洗] ---
+            let validData = luckysheetData;
+            
+            // 基础校验
+            if (!Array.isArray(validData) || validData.length === 0) {
+                console.warn("⚠️ 数据为空，初始化默认页");
+                validData = [{ name: "Sheet1", status: 1, order: 0, celldata: [], config: {} }];
+            } else {
+                try { validData = JSON.parse(JSON.stringify(validData)); } catch(e) {}
             }
 
-            // 步骤 3: 组装配置对象 (移除 autoFormatw 和错误的 setLuckysheetfile)
+            // 确保激活状态
+            let hasActive = false;
+            validData.forEach((sheet) => {
+                if (!sheet.celldata) sheet.celldata = [];
+                if (!sheet.config) sheet.config = {};
+                if (sheet.status === 1) hasActive = true;
+            });
+
+            if (!hasActive) {
+                console.warn("⚠️ 强制激活第 0 个 Sheet");
+                validData[0].status = 1;
+            }
+
+            // 步骤 2: 备份配置
+            originalDataValidation = {};
+            if (validData[0] && validData[0].config && validData[0].config.rowlen) {
+                originalRowlen = { ...validData[0].config.rowlen };
+            } else {
+                originalRowlen = {};
+            }
+
+            // 步骤 3: 创建实例
             const finalOptions = {
                 container: 'luckysheet-container',
-                data: luckysheetData,
+                data: validData,
                 title: fileName,
+                lang: 'zh',
                 ...options
             };
 
-            // 步骤 4: 异步创建实例并应用配置
+            try {
+                luckysheet.create(finalOptions);
+                console.log("✅ luckysheet.create 执行完毕");
+            } catch (createError) {
+                console.error("🔥 Create 失败:", createError);
+                return;
+            }
+
+            // 步骤 4: 安全的后续处理 (移除 getFlowdata 依赖)
             setTimeout(() => {
+                console.group("【Iframe Debug】配置与钩子设置");
                 try {
-                    console.log(`[Iframe] 准备创建实例...`, finalOptions);
-                    luckysheet.create(finalOptions);
-                    console.log(`[Iframe] 创建实例成功！`);
+                    // 1. 设置配置
+                    if (luckysheet) {
+                        luckysheet.luckysheetautofixrowlen = false;
+                        console.log("配置 luckysheetautofixrowlen = false");
+                    }
 
-                    // 【【【 核心修正：将 refresh 调用放入下一个事件循环 】】】
-                    // 使用一个微小的 setTimeout(..., 0) 延迟，确保在 create 完成所有内部初始化后才执行 refresh
-                    setTimeout(() => {
-                        try {
-                            luckysheet.luckysheetautofixrowlen = false;
-                            console.log("[Iframe] 全局配置 luckysheetautofixrowlen 已设置为 false。");
+                    // 2. 尝试 Refresh (直接用 try-catch 包裹，不依赖 API 检查)
+                    // 如果 luckysheet 内部没准备好，这里会报错，但被我们拦截，不会影响界面
+                    try {
+                        console.log("尝试执行 refresh()...");
+                        luckysheet.refresh();
+                        console.log("✅ refresh() 执行成功");
+                    } catch (refreshErr) {
+                        console.warn("⚠️ refresh() 未执行 (这通常不影响使用):", refreshErr.message);
+                    }
 
-                            luckysheet.refresh();
-                            console.log("[Iframe] 已调用 luckysheet.refresh() 使配置生效。");
-                        } catch (refreshError) {
-                            console.error("[Iframe] 在执行 refresh 或设置全局配置时失败:", refreshError);
-                        }
-                    }, 0); // 延迟 0 毫秒，足以将其推入下一个事件循环
-
-                    // --- 全局覆盖 hooks 的逻辑 (保持不变，立即执行) ---
-                    console.log('%c[Hooks-Debug] 准备通过全局覆盖方式设置钩子...', 'color: orange; font-weight: bold;');
+                    // --- [关键修复] 重写 Hooks ---
+                    // 不再使用 luckysheet.getFlowdata()
                     if (window.luckysheet && !window.luckysheet.hooks) {
                         window.luckysheet.hooks = {};
                     }
                     window.luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
-                        // ... (hooks 内部逻辑不变) ...
+                        try {
+                            // 替代方案：通过 getAllSheets 查找当前激活的 sheet
+                            const allSheets = luckysheet.getAllSheets();
+                            // 找到 status 为 1 的 sheet，找不到就用第 0 个
+                            const currentSheet = allSheets.find(s => s.status === 1) || allSheets[0];
+                            
+                            // 防御性获取单元格数据
+                            if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
+                                const cell = currentSheet.data[r][c];
+                                autoHighlightCell(r, c, cell);
+                                debouncedCalculate();
+                            }
+                        } catch(hookError) {
+                            console.error("Hook 内部错误 (已拦截):", hookError);
+                        }
                     };
-                    console.log('%c[Hooks-Debug] 已成功通过全局覆盖方式设置钩子！', 'color: green; font-weight: bold;');
+                    console.log("Hooks 设置完成 (已移除 getFlowdata 依赖)");
 
                 } catch (e) {
-                    console.error(`[Iframe] 创建实例或设置钩子时失败:`, e);
+                    console.error("🔥 配置阶段严重错误:", e);
                 }
-            }, 50);
+                console.groupEnd();
+            }, 300); // 延迟 300ms
+            
+            console.groupEnd();
         }
 
         /**
-         * 从文件URL加载数据，并智能判断是JSON还是二进制文件。
+         * 从文件URL加载数据
          */
         function loadSheetFromFile(fileUrl, fileName, options) {
             container.innerHTML = `<div class="loader">正在加载数据...</div>`;
@@ -281,7 +290,9 @@
                     return response.json()
                         .then(jsonData => {
                             console.log("[Iframe] ✅ 成功将响应解析为JSON！");
-                            renderSheet(jsonData, fileName, options);
+                            // JSON 可能是直接的 sheets 数组，也可能是包含 sheets 的对象
+                            let dataToRender = Array.isArray(jsonData) ? jsonData : (jsonData.sheets || []);
+                            renderSheet(dataToRender, fileName, options);
                         })
                         .catch(jsonError => {
                             console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
@@ -291,7 +302,10 @@
                                 LuckyExcel.transformExcelToLucky(fileBlob,
                                     exportJson => {
                                         console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
-                                        renderSheet(exportJson.sheets, fileName || exportJson.info.name, options);
+                                        // 【修复 3】：LuckyExcel 返回的 exportJson.sheets 可能是 undefined
+                                        const sheets = exportJson.sheets || [];
+                                        const name = (exportJson.info && exportJson.info.name) || fileName;
+                                        renderSheet(sheets, name, options);
                                     },
                                     excelError => {
                                         console.error("[Iframe] ❌ LuckyExcel 解析失败:", excelError);
@@ -361,12 +375,8 @@
 
         // --- [5. 事件监听器] ---
 
-        /**
-         * 统一的消息监听器，处理所有来自父窗口的指令。
-         */
         window.addEventListener('message', function (event) {
             if (event.origin !== window.location.origin) return;
-            console.log('【iframe】收到了来自父窗口的消息！类型是:', event.data.type);
             const { type, payload } = event.data;
             console.log(`[Iframe] 收到消息: type=${type}`, payload);
 
@@ -381,8 +391,7 @@
                     const liveSheets = luckysheet.getAllSheets();
                     const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
 
-                    console.log(`[Iframe] ✅ 成功融合实时数据。准备回发...`);
-                    console.log('【iframe】准备将 SHEET_DATA_WITH_IMAGES_RESPONSE 消息回发给父窗口！'); // <-- 新增日志
+                    console.log('【iframe】准备将 SHEET_DATA_WITH_IMAGES_RESPONSE 消息回发给父窗口！');
                     window.parent.postMessage({
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
                         payload: {
@@ -400,9 +409,6 @@
             }
         });
 
-        /**
-         * 监听 iframe 内的点击事件，通知父窗口。
-         */
         document.body.addEventListener('mousedown', () => {
             window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
         }, true);

@@ -29,7 +29,6 @@ Vue.component('dashboard-panel', {
                 <ul class="nav nav-tabs" role="tablist">
                   <li class="nav-item"><a class="nav-link active ps-0" id="home-tab" data-bs-toggle="tab" href="#overview" role="tab" aria-selected="true">工作概览</a></li>
                   <li class="nav-item">
-                    <!-- 【【【 核心修改 1：在 a 标签上绑定 @click 事件 】】】 -->
                     <a class="nav-link" id="contact-tab" data-bs-toggle="tab" href="#demographics" role="tab" aria-selected="false" @click="fetchUserTasks">
                       事务提醒
                       <el-badge :value="userTasks.length" class="ml-2" type="warning" :hidden="userTasks.length === 0"></el-badge>
@@ -131,12 +130,8 @@ Vue.component('dashboard-panel', {
                   </div>
                 </div>
                 
-                <!-- 【【【 核心修改：事务提醒 Tab 的内容 】】】 -->
+                <!-- 事务提醒 Tab 的内容 -->
                 <div class="tab-pane fade" id="demographics" role="tabpanel" aria-labelledby="contact-tab">
-                  <!-- 
-                    我们将对这个外层 div 进行“装修”，而不是对 el-table 本身。
-                    p-0: 移除 Bootstrap 的内边距，因为我们将用自己的样式。
-                  -->
                   <div class="p-0"> 
                       <!-- 状态一：加载中 -->
                       <div v-if="isTasksLoading" class="text-center p-5">
@@ -150,10 +145,7 @@ Vue.component('dashboard-panel', {
                         <p class="text-muted">您当前没有需要处理的任务。</p>
                       </div>
 
-                      <!-- 
-                        状态三：有任务，显示表格
-                        【【【 核心修改：用一个带自定义样式的 div 包裹 el-table 】】】
-                      -->
+                      <!-- 状态三：有任务，显示表格 -->
                       <div v-else 
                            class="table-container-with-style" 
                            style="border-radius: 10px; 
@@ -187,14 +179,34 @@ Vue.component('dashboard-panel', {
           </div>
         </div>
       </div>
-      <style>
-      .modern-table.el-table--border,
-      .modern-table.el-table--group {
-          border-radius: 10px; /* 从 8px 改为 10px */
-          overflow: hidden; 
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); 
-          border: 1px solid #EBEEF5; 
-      }
+    </div>
+  </div>
+`,
+data() {
+  return {
+    isLoading: true,
+    dashboardData: null,
+    performanceChart: null,
+    isTasksLoading: false,
+    userTasks: []
+  };
+},
+methods: {
+  // 【核心修复】: 动态注入样式，解决 Vue 模板中不能包含 <style> 的问题
+  injectStyles() {
+      const styleId = 'dashboard-modern-table-styles';
+      if (document.getElementById(styleId)) return;
+
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = `
+          .modern-table.el-table--border,
+          .modern-table.el-table--group {
+              border-radius: 10px; /* 从 8px 改为 10px */
+              overflow: hidden; 
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); 
+              border: 1px solid #EBEEF5; 
+          }
           .modern-table .el-table__header-wrapper th {
               background-color: #f5f7fa !important; color: #606266; font-weight: 600;
           }
@@ -207,135 +219,126 @@ Vue.component('dashboard-panel', {
           .modern-table.el-table--border::after, .modern-table.el-table--group::after, .modern-table::before {
               background-color: transparent;
           }
-      </style>
-    </div>
-  `,
-  data() {
-    return {
-      isLoading: true,
-      dashboardData: null,
-      performanceChart: null,
-      isTasksLoading: false,
-      userTasks: []
-    };
+      `;
+      document.head.appendChild(style);
   },
-  methods: {
-    formatDuration(totalSeconds) {
-      if (totalSeconds == null || isNaN(totalSeconds) || totalSeconds < 0) return 'N/A';
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      return `${hours}h ${minutes}m`;
-    },
-    async fetchDashboardData() {
-      this.isLoading = true;
-      try {
-        const [dashboardRes, tasksRes] = await Promise.all([
-          axios.get('/api/stats/dashboard'),
-          axios.get('/api/stats/user-tasks')
-        ]);
-        
-        this.dashboardData = dashboardRes.data;
-        this.userTasks = tasksRes.data;
-        console.log("仪表盘及待办数据一次性加载成功！", { dashboard: this.dashboardData, tasks: this.userTasks });
-
-        this.$nextTick(() => {
-          this.initLineChart();
-        });
-      } catch (error) {
-        this.$message.error("加载仪表盘数据失败！");
-        this.dashboardData = null;
-        this.userTasks = [];
-      } finally {
-        this.isLoading = false;
-      }
-    },
-    
-    // 【【【 新增：独立获取用户任务的方法 】】】
-    async fetchUserTasks() {
-        // 防止重复点击
-        if (this.isTasksLoading) return;
-        
-        this.isTasksLoading = true;
-        console.log("正在刷新待办列表...");
-        try {
-            const response = await axios.get('/api/stats/user-tasks');
-            this.userTasks = response.data;
-            this.$message.success('待办列表已刷新！');
-        } catch (error) {
-            this.$message.error('刷新待办列表失败！');
-        } finally {
-            this.isTasksLoading = false;
-        }
-    },
-
-    initLineChart() {
-      const canvasElement = document.getElementById("performaneLine");
-      if (!canvasElement || !this.dashboardData || !this.dashboardData.reviewWorkload) return;
-      if (this.performanceChart) return;
+  formatDuration(totalSeconds) {
+    if (totalSeconds == null || isNaN(totalSeconds) || totalSeconds < 0) return 'N/A';
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  },
+  async fetchDashboardData() {
+    this.isLoading = true;
+    try {
+      const [dashboardRes, tasksRes] = await Promise.all([
+        axios.get('/api/stats/dashboard'),
+        axios.get('/api/stats/user-tasks')
+      ]);
       
-      const workload = this.dashboardData.reviewWorkload;
-      const labels = workload.map(d => d.date);
-      const data = workload.map(d => d.count);
-      const ctx = canvasElement.getContext("2d");
-      const saleGradientBg = ctx.createLinearGradient(5, 0, 5, 100);
-      saleGradientBg.addColorStop(0, "rgba(26, 115, 232, 0.18)");
-      saleGradientBg.addColorStop(1, "rgba(26, 115, 232, 0.02)");
-      const salesTopData = {
-          labels: labels,
-          datasets: [{
-              label: "已审核数", data: data, backgroundColor: saleGradientBg, borderColor: "#1F3BB3", borderWidth: 1.5,
-              fill: true, pointRadius: 4, pointBackgroundColor: "#1F3BB3", pointBorderColor: "#fff",
-          }]
-      };
-      const salesTopOptions = {
-          responsive: true, maintainAspectRatio: false,
-          scales: {
-            yAxes: [{ gridLines: { color: "#F0F0F0", zeroLineColor: "#F0F0F0" }, ticks: { beginAtZero: true, fontColor: "#6B778C" } }],
-            xAxes: [{ gridLines: { display: false }, ticks: { fontColor: "#6B778C" } }]
-          },
-          legend: { display: false }, elements: { line: { tension: 0.4 } }, tooltips: { backgroundColor: "rgba(31, 59, 179, 1)" },
-      };
-      this.performanceChart = new Chart(ctx, { type: "line", data: salesTopData, options: salesTopOptions });
-      console.log("审批工作量折线图已成功初始化。");
-    },
+      this.dashboardData = dashboardRes.data;
+      this.userTasks = tasksRes.data;
+      console.log("仪表盘及待办数据一次性加载成功！", { dashboard: this.dashboardData, tasks: this.userTasks });
 
-    handleTaskClick(task) {
-        console.log("用户点击了任务:", task);
-        if (this.currentUser && this.currentUser.identity) {
-            const role = this.currentUser.identity.toUpperCase();
-            if (task.taskType === '待审核' && (role === 'REVIEWER' || role === 'MANAGER')) {
-                this.$root.navigateTo('record-review-panel', { recordId: task.recordId });
-            } else {
-                this.$root.navigateTo('record-workspace-panel', { recordId: task.recordId });
-            }
-        } else {
-            console.warn("无法确定用户角色，跳转失败。");
-            this.$message.warning("无法确定您的角色，无法进行跳转。");
-        }
-    },
-    getTaskTagType(taskType) {
-        const typeMap = {
-            '待审核': 'warning', '待修改': 'primary', '草稿': 'info'
-        };
-        return typeMap[taskType] || '';
+      this.$nextTick(() => {
+        this.initLineChart();
+      });
+    } catch (error) {
+      this.$message.error("加载仪表盘数据失败！");
+      this.dashboardData = null;
+      this.userTasks = [];
+    } finally {
+      this.isLoading = false;
     }
   },
   
-  mounted() {
-    console.log("Dashboard Panel 组件已挂载 (mounted)。");
-    this.fetchDashboardData();
+  async fetchUserTasks() {
+      if (this.isTasksLoading) return;
+      
+      this.isTasksLoading = true;
+      console.log("正在刷新待办列表...");
+      try {
+          const response = await axios.get('/api/stats/user-tasks');
+          this.userTasks = response.data;
+          this.$message.success('待办列表已刷新！');
+      } catch (error) {
+          this.$message.error('刷新待办列表失败！');
+      } finally {
+          this.isTasksLoading = false;
+      }
   },
-  updated() {
-    console.log("Dashboard Panel 组件已更新 (updated)。尝试初始化图表...");
-    this.$nextTick(() => {
-        this.initLineChart();
-    });
+
+  initLineChart() {
+    const canvasElement = document.getElementById("performaneLine");
+    if (!canvasElement || !this.dashboardData || !this.dashboardData.reviewWorkload) return;
+    if (this.performanceChart) return;
+    
+    const workload = this.dashboardData.reviewWorkload;
+    const labels = workload.map(d => d.date);
+    const data = workload.map(d => d.count);
+    const ctx = canvasElement.getContext("2d");
+    const saleGradientBg = ctx.createLinearGradient(5, 0, 5, 100);
+    saleGradientBg.addColorStop(0, "rgba(26, 115, 232, 0.18)");
+    saleGradientBg.addColorStop(1, "rgba(26, 115, 232, 0.02)");
+    const salesTopData = {
+        labels: labels,
+        datasets: [{
+            label: "已审核数", data: data, backgroundColor: saleGradientBg, borderColor: "#1F3BB3", borderWidth: 1.5,
+            fill: true, pointRadius: 4, pointBackgroundColor: "#1F3BB3", pointBorderColor: "#fff",
+        }]
+    };
+    const salesTopOptions = {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          yAxes: [{ gridLines: { color: "#F0F0F0", zeroLineColor: "#F0F0F0" }, ticks: { beginAtZero: true, fontColor: "#6B778C" } }],
+          xAxes: [{ gridLines: { display: false }, ticks: { fontColor: "#6B778C" } }]
+        },
+        legend: { display: false }, elements: { line: { tension: 0.4 } }, tooltips: { backgroundColor: "rgba(31, 59, 179, 1)" },
+    };
+    this.performanceChart = new Chart(ctx, { type: "line", data: salesTopData, options: salesTopOptions });
+    console.log("审批工作量折线图已成功初始化。");
   },
-  beforeDestroy() {
-    if (this.performanceChart) {
-      console.log("正在销毁 Chart.js 实例...");
-      this.performanceChart.destroy();
-      this.performanceChart = null;
-    }
+
+  handleTaskClick(task) {
+      console.log("用户点击了任务:", task);
+      if (this.currentUser && this.currentUser.identity) {
+          const role = this.currentUser.identity.toUpperCase();
+          if (task.taskType === '待审核' && (role === 'REVIEWER' || role === 'MANAGER')) {
+              this.$root.navigateTo('record-review-panel', { recordId: task.recordId });
+          } else {
+              this.$root.navigateTo('record-workspace-panel', { recordId: task.recordId });
+          }
+      } else {
+          console.warn("无法确定用户角色，跳转失败。");
+          this.$message.warning("无法确定您的角色，无法进行跳转。");
+      }
+  },
+  getTaskTagType(taskType) {
+      const typeMap = {
+          '待审核': 'warning', '待修改': 'primary', '草稿': 'info'
+      };
+      return typeMap[taskType] || '';
   }
+},
+
+mounted() {
+  // 1. 注入样式
+  this.injectStyles();
+  // 2. 加载数据
+  console.log("Dashboard Panel 组件已挂载 (mounted)。");
+  this.fetchDashboardData();
+},
+updated() {
+  console.log("Dashboard Panel 组件已更新 (updated)。尝试初始化图表...");
+  this.$nextTick(() => {
+      this.initLineChart();
+  });
+},
+beforeDestroy() {
+  if (this.performanceChart) {
+    console.log("正在销毁 Chart.js 实例...");
+    this.performanceChart.destroy();
+    this.performanceChart = null;
+  }
+}
 });

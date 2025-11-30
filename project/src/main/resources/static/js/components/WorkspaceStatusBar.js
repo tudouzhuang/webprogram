@@ -27,7 +27,7 @@ const WorkspaceStatusBar = {
             return this.liveStats || this.savedStats;
         },
 
-        // 逻辑保持不变：动态计算一致性
+        // 动态全量匹配算法
         processedStats() {
             const rawStats = (this.displayData && this.displayData.stats) ? this.displayData.stats : [];
             if (rawStats.length === 0) return [];
@@ -123,6 +123,7 @@ const WorkspaceStatusBar = {
         fileId: {
             immediate: true,
             handler(newId) {
+                // Watcher 也加上保护，虽然这里已有判断，但双重保险更好
                 if (newId && Number(newId) > 0) {
                     this.fetchSavedStats();
                 }
@@ -138,6 +139,12 @@ const WorkspaceStatusBar = {
     },
     methods: {
         fetchSavedStats() {
+            // 【核心修复】防止 fileId 为 null/undefined/'null' 时发起请求
+            if (!this.fileId || this.fileId === 'null' || Number(this.fileId) <= 0) {
+                // console.log("跳过无效 fileId:", this.fileId);
+                return;
+            }
+
             this.isLoading = true;
             axios.get(`/api/files/${this.fileId}/statistics`)
                 .then(response => {
@@ -192,6 +199,7 @@ const WorkspaceStatusBar = {
     template: `
         <div class="card">
             <div class="card-body p-3">
+                <!-- 区域一：顶部KPI -->
                 <el-row :gutter="20" class="mb-3">
                     <el-col :span="8">
                         <div class="kpi-card">
@@ -220,8 +228,10 @@ const WorkspaceStatusBar = {
 
                 <el-divider class="my-3"></el-divider>
 
+                <!-- 区域二：底部详细信息 -->
                 <el-row type="flex" :gutter="20" class="d-flex flex-wrap align-items-stretch">
                     
+                    <!-- 左侧：项目基本信息 -->
                     <el-col :span="9" class="d-flex flex-column">
                         <h6 class="text-muted small font-weight-bold mb-2">项目信息</h6>
                         <div class="flex-grow-1 d-flex flex-column">
@@ -261,6 +271,7 @@ const WorkspaceStatusBar = {
                         </div>
                     </el-col>
                     
+                    <!-- 右侧：数据统计 -->
                     <el-col :span="15" v-if="shouldShowStatisticsTable" class="d-flex flex-column">
                         <div v-if="isLoading && !savedStats" class="text-center text-muted pt-4"><i class="el-icon-loading"></i> 加载中...</div>
                         <div v-else class="d-flex flex-column h-100">

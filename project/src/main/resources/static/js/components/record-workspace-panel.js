@@ -211,6 +211,14 @@ Vue.component('record-workspace-panel', {
                                 </div>
                             </el-tab-pane>
         
+                            <el-tab-pane label="问题记录" name="problemRecord" lazy>
+                                <problem-record-table
+                                    v-if="activeTab === 'problemRecord'"
+                                    :record-id="Number(recordId)"
+                                    mode="designer">
+                                </problem-record-table>
+                            </el-tab-pane>
+
                             <!-- 使用 v-for 动态生成所有检查项文件的 Tab 页 -->
                             <el-tab-pane
                                 v-for="file in excelFiles"
@@ -224,14 +232,6 @@ Vue.component('record-workspace-panel', {
                                     @load="() => loadSheetInIframe(file)"
                                     style="width: 100%; height: 80vh; border: none;">
                                 </iframe>
-                            </el-tab-pane>
-
-                            <el-tab-pane label="问题记录" name="problemRecord" lazy>
-                                <problem-record-table
-                                    v-if="activeTab === 'problemRecord'"
-                                    :record-id="Number(recordId)"
-                                    mode="designer">
-                                </problem-record-table>
                             </el-tab-pane>
             
                             <div v-if="!metaFile && excelFiles.length === 0" class="text-center text-muted p-5">

@@ -618,7 +618,7 @@ Vue.component('record-review-panel', {
             // 对于Excel文件Tab，loadSheetIntoIframe 会在iframe的 @load 事件中自动触发
         },
         goBack() {
-            this.$emit('back-to-list');
+            this.$emit('back-to-review-tasks');
         },
         handleIframeBlur() {
             // 我们不需要记录和恢复滚动位置，因为那太复杂了。

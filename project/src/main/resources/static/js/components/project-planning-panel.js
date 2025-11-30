@@ -20,8 +20,8 @@ Vue.component('project-planning-panel', {
                     <div v-else-if="loadError" class="alert alert-danger">{{ loadError }}</div>
                     <div v-else-if="projectInfo">
                         <el-descriptions title="项目基本信息" :column="1" border>
-                            <el-descriptions-item label="项目名称">{{ projectInfo.projectName }}</el-descriptions-item>
-                            <el-descriptions-item label="项目号">{{ projectInfo.projectNumber }}</el-descriptions-item>
+                            <el-descriptions-item label="项目名称">{{ projectInfo.projectNumber }}</el-descriptions-item>
+                            <el-descriptions-item label="项目号">{{ projectInfo.id }}</el-descriptions-item>
                         </el-descriptions>
                     </div>
                 </div>
