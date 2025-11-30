@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam; 
-
+import org.springframework.core.io.ByteArrayResource; // 【新增】用于返回内存中的文件流
 // --- 日志、实体和Mapper依赖 ---
 import org.example.project.entity.ProjectFile;
 import org.example.project.mapper.ProjectFileMapper;
@@ -111,39 +111,43 @@ public class FileController {
                 return ResponseEntity.notFound().build();
             }
 
-            // 2. 【核心判断】根据 format 参数决定执行哪个逻辑分支
+            // 2. 根据 format 参数决定执行哪个逻辑分支
             if ("json".equalsIgnoreCase(format)) {
-                // --- 分支A: 用户需要JSON数据 (Luckysheet 加载用) ---
+                // --- 分支A: 用户需要JSON数据 (前端已弃用此分支，但为了兼容性保留) ---
                 log.info("【JSON模式】开始将文件转换为JSON: {}", filePath);
-                
-                // 2.1 解析 Excel 为 Luckysheet 数据结构
                 List<LuckySheetJsonDTO.SheetData> sheets = excelSplitterService.convertExcelToLuckysheetJson(filePath.toString());
-                
+                // 旧的自动填充入口 (现已转移到下方文件流模式)
+                if (fileRecord.getFileName().contains("设计重大风险排查表")) {
+                    processRecordService.autoFillRiskSheetData(fileRecord.getRecordId(), sheets);
+                }
+                return ResponseEntity.ok(sheets); 
+
+            } else {
+                // --- 分支B: 用户需要原始文件 (Luckysheet 前端解析模式) ---
+                log.info("【文件流模式】准备处理文件: {}", fileRecord.getFileName());
+
                 // =================================================================================
-                // 【自动化逻辑植入点】: 如果是“重大风险清单”，则尝试自动注入前序表格的结论
+                // 【核心修改】: 拦截“设计重大风险排查表”，进行动态 POI 处理
                 // =================================================================================
-                // 这里的判断条件: documentType 包含 "风险" 或者是特定的文件名
-                // 你可以根据实际数据库中的 document_type 字段值来调整这个 if 条件
-                if (fileRecord.getDocumentType() != null && 
-                   (fileRecord.getDocumentType().contains("风险") || fileRecord.getFileName().contains("风险"))) {
-                    
-                    log.info("检测到正在打开风险清单文件 (ID: {})，开始执行自动填充逻辑...", fileId);
+                if (fileRecord.getFileName().contains("设计重大风险排查表")) {
+                    log.info(">>> 拦截到风险表流请求，执行 POI 动态注入...");
                     try {
-                        // 调用 Service 层方法，修改 sheets 中的数据
-                        processRecordService.autoFillRiskSheetData(fileRecord.getRecordId(), sheets);
-                        log.info("自动填充逻辑执行完毕。");
+                        // 1. 调用 Service 方法，获取经过修改（自动填充）后的文件字节流
+                        byte[] modifiedBytes = processRecordService.processRiskSheetStream(fileId);
+                        
+                        // 2. 返回内存中的流，而不是磁盘文件
+                        return ResponseEntity.ok()
+                                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                                .contentLength(modifiedBytes.length)
+                                .body(new ByteArrayResource(modifiedBytes));
                     } catch (Exception e) {
-                        // 即使自动填充失败，也不要阻断文件打开，记录错误即可
-                        log.error("自动填充风险清单数据时发生错误，将返回原始数据。", e);
+                        log.error("POI 动态注入失败，降级返回原文件", e);
+                        // 如果注入失败，不抛出错误，而是继续向下执行，返回磁盘上的原始文件作为兜底
                     }
                 }
                 // =================================================================================
 
-                return ResponseEntity.ok(sheets); 
-
-            } else {
-                // --- 分支B: 用户需要原始文件 (默认行为) ---
-                log.info("【文件流模式】准备提供原始文件下载: {}", filePath);
+                log.info("【文件流模式】提供原始文件下载: {}", filePath);
                 Resource resource = new UrlResource(filePath.toUri());
                 String contentType = determineContentType(filePath, fileRecord.getFileName());
                 return ResponseEntity.ok()

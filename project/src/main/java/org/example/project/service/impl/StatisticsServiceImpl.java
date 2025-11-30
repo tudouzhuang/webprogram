@@ -71,15 +71,21 @@ public class StatisticsServiceImpl implements StatisticsService {
 
                     int okCount = 0, ngCount = 0, naCount = 0;
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
+                        // 判断是否在扫描范围内
                         if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol
                                 && cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
                             if (cell.getV() != null && cell.getV().getV() != null) {
-                                String cellValue = cell.getV().getV().trim();
+                                String cellValue = String.valueOf(cell.getV().getV()).trim();
+                                
+                                if (cellValue.isEmpty()) continue; // 跳过空单元格
+
                                 if (Objects.equals(cellValue, rule.getOkSymbol())) {
                                     okCount++; 
-                                }else if (Objects.equals(cellValue, rule.getNgSymbol())) {
+                                } else if (Objects.equals(cellValue, rule.getNgSymbol())) {
                                     ngCount++; 
-                                }else if (Objects.equals(cellValue, rule.getNaSymbol())) {
+                                } else {
+                                    // 【核心修改 1】: 如果不是勾(OK)，也不是×(NG)，且非空，则记为 NA
+                                    // 之前是判断 Objects.equals(cellValue, rule.getNaSymbol())
                                     naCount++;
                                 }
                             }
@@ -87,6 +93,8 @@ public class StatisticsServiceImpl implements StatisticsService {
                     }
 
                     int totalCount;
+                    // 如果配置了独立的 totalCountRange (如序号列)，则以那个范围的非空行数为准
+                    // 否则 Total = OK + NG + NA
                     if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
                         Range totalRange = parseRange(rule.getTotalCountRange());
                         if (totalRange == null) {
@@ -96,12 +104,9 @@ public class StatisticsServiceImpl implements StatisticsService {
                             for (LuckySheetJsonDTO.CellData cell : celldata) {
                                 if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol
                                         && cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
-                                    if (cell.getV() != null && cell.getV().getV() != null && !cell.getV().getV().trim().isEmpty()) {
-                                        try {
-                                            Double.parseDouble(cell.getV().getV().trim());
-                                            count++;
-                                        } catch (NumberFormatException e) {
-                                            /* ignore */ }
+                                    if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
+                                        // 尝试解析为数字，或者是有效的序号
+                                        count++;
                                     }
                                 }
                             }
@@ -118,47 +123,37 @@ public class StatisticsServiceImpl implements StatisticsService {
             }
         }
 
-        // --- [第二部分：【【【 新增 】】】 检查并执行“重大风险”特殊规则] ---
+        // --- [第二部分：特殊统计逻辑] ---
+        // 保持原有逻辑不变
         if (luckysheetData != null && luckysheetData.getSheets() != null && !luckysheetData.getSheets().isEmpty()) {
             LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
             if (sheet.getName() != null && sheet.getName().contains("重大风险")) {
                 log.info(">>> 检测到 '重大风险' Sheet，开始执行特殊统计...");
 
                 List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
-                if (celldata == null || celldata.isEmpty()) {
-                    log.warn("'重大风险' Sheet 中没有任何单元格数据，跳过特殊统计。");
-                } else {
-                    // 定义特殊规则
-                    final int TARGET_COLUMN_I = 8; // I列是第9列，0-based索引是8
+                if (celldata != null && !celldata.isEmpty()) {
+                    final int TARGET_COLUMN_I = 8; // I列
                     final String okSymbol = "OK";
                     final String ngSymbol = "NG";
-                    final String naSymbol = "NA";
-
-                    int okCount = 0;
-                    int ngCount = 0;
-                    int naCount = 0;
+                    
+                    int okCount = 0, ngCount = 0, naCount = 0;
 
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
-                        // 只关心第 I 列
                         if (cell.getC() == TARGET_COLUMN_I) {
                             if (cell.getV() != null && cell.getV().getV() != null) {
-                                String cellValue = cell.getV().getV().trim();
+                                String cellValue = String.valueOf(cell.getV().getV()).trim();
                                 if (okSymbol.equalsIgnoreCase(cellValue)) {
                                     okCount++; 
-                                }else if (ngSymbol.equalsIgnoreCase(cellValue)) {
+                                } else if (ngSymbol.equalsIgnoreCase(cellValue)) {
                                     ngCount++; 
-                                }else if (naSymbol.equalsIgnoreCase(cellValue)) {
+                                } else if (!cellValue.isEmpty()) {
+                                    // 同样应用新逻辑：非OK非NG且非空 -> NA
                                     naCount++;
                                 }
                             }
                         }
                     }
-
                     int totalCount = okCount + ngCount + naCount;
-
-                    log.info("特殊规则 '重大风险统计' 计算结果: OK={}, NG={}, NA={}, Total={}", okCount, ngCount, naCount, totalCount);
-
-                    // 将结果保存到数据库，使用一个固定的 category 名
                     saveOrUpdateStatistic(fileId, "重大风险", okCount, ngCount, naCount, totalCount);
                 }
             }

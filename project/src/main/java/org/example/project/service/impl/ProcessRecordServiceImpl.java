@@ -31,18 +31,21 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import java.util.Comparator;
 // --- Java IO, NIO, 和 Stream 依赖 ---
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+
+
+import java.util.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Objects;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 import org.example.project.entity.ProcessRecordStatus;
 
@@ -51,8 +54,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.StatisticsResultDTO;
 import org.example.project.mapper.ProjectFileMapper;
-import java.util.HashMap;
-import java.util.Map;
+
 import java.util.regex.Pattern;
 
 /**
@@ -809,14 +811,15 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
     }
 
-    /**
-     * 【新增实现 2】: 启动审核流程
+/**
+     * 【新增实现 2】: 启动审核流程 (智能负载均衡版)
+     * 策略：自动寻找当前工作量最小的审核员进行分配
      */
     @Override
     @Transactional
     public void startReviewProcess(Long recordId) {
         // 1. 验证记录是否存在
-        ProcessRecord record = processRecordMapper.selectById(recordId);
+        ProcessRecord record = this.getById(recordId); // 使用 MyBatis-Plus 的 getById
         if (record == null) {
             throw new IllegalArgumentException("ID为 " + recordId + " 的过程记录不存在。");
         }
@@ -827,23 +830,30 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new IllegalStateException("当前记录状态为 " + currentStatus + "，无法提交审核。");
         }
 
-        // 3. 智能分配审核员 (这里的逻辑可以根据你的需求调整)
-        // 简单策略：找到第一个角色为 'MANAGER' 的用户
-        // 复杂策略：可以查询每个审核员的待办任务数，分配给最少的那个
-        List<User> reviewers = userMapper.findByRole("MANAGER"); // 假设审核员角色是 MANAGER
-        if (reviewers.isEmpty()) {
-            throw new IllegalStateException("系统中没有可用的审核员！");
+        // 3. 【智能分配策略】: 负载均衡 (Load Balancing)
+        // 查询当前持有 'PENDING_REVIEW' 任务最少的 MANAGER
+        // 注意：需要先在 UserMapper 中定义 findLeastLoadedUserByRole 方法
+        User assignee = userMapper.findLeastLoadedUserByRole("MANAGER");
+
+        // 兜底逻辑：万一智能查询没查到（例如没有任何 MANAGER），尝试用普通方法查一次
+        if (assignee == null) {
+            log.warn("智能分配未找到合适的审核员，尝试降级查询...");
+            List<User> managers = userMapper.findByRole("MANAGER");
+            if (managers == null || managers.isEmpty()) {
+                throw new IllegalStateException("提交失败：系统中未找到任何拥有 'MANAGER' 角色的审核员账号，请联系管理员添加。");
+            }
+            assignee = managers.get(0); // 降级：分配给列表里的第一个人
         }
-        User assignee = reviewers.get(0); // 简单地分配给第一个找到的审核员
 
         // 4. 更新记录状态和负责人
         record.setStatus(ProcessRecordStatus.PENDING_REVIEW);
         record.setAssigneeId(assignee.getId());
-        // record.setUpdatedAt(LocalDateTime.now()); // 可选：更新修改时间
+        record.setUpdatedAt(LocalDateTime.now()); // 记录提交时间
 
-        processRecordMapper.updateById(record);
+        this.updateById(record); // 使用 MyBatis-Plus 的 updateById
 
-        System.out.println("成功将 recordId=" + recordId + " 提交审核，分配给 assigneeId=" + assignee.getId());
+        log.info("【审核提交】记录 #{} 已成功提交，智能分配给审核员: {} (ID: {}, 当前待办数最少)", 
+                recordId, assignee.getUsername(), assignee.getId());
     }
 
 /**
@@ -863,6 +873,12 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         List<ProjectFile> currentFiles = projectFileMapper.selectList(query);
 
         if (sheets == null || sheets.isEmpty()) return;
+
+        // 【植入点】逻辑分支 A: 针对 "设计重大风险排查表"
+        if (sheet.getName() != null && sheet.getName().contains("设计重大风险排查表")) {
+            log.info(">>> 命中特殊规则：设计重大风险排查表");
+            applyMajorRiskSpecificLogic(recordId, grid, cellDataList, currentFiles);
+        }
 
         for (LuckySheetJsonDTO.SheetData sheet : sheets) {
             List<LuckySheetJsonDTO.CellData> cellDataList = sheet.getCelldata();
@@ -985,4 +1001,423 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         }
         return null;
     }
+
+
+    private void applyMajorRiskSpecificLogic(Long recordId, 
+                                           Map<Integer, Map<Integer, LuckySheetJsonDTO.CellData>> grid,
+                                           List<LuckySheetJsonDTO.CellData> cellDataList,
+                                           List<ProjectFile> currentFiles) {
+        
+        // --- 坐标定义 (0-based index) ---
+        // E21: Row=20, Col=4
+        final int SOURCE_ROW = 20;
+        final int SOURCE_COL = 4;
+
+        // K3: Row=2, Col=10
+        final int TARGET_ROW = 2;
+        final int TARGET_COL = 10;
+
+        log.info(">>> [AutoFill-Debug] 开始执行点对点映射: FMC(E21/r20,c4) -> 风险表(K3/r2,c10)");
+
+        // --- 1. 寻找源文件 ---
+        ProjectFile sourceFile = null;
+        for (ProjectFile f : currentFiles) {
+            // 打印所有文件名，看看是否匹配失败
+            log.info(">>> [AutoFill-Debug] 检查文件: Name={}, Type={}", f.getFileName(), f.getDocumentType());
+            String fName = (f.getDocumentType() + f.getFileName());
+            if (fName.contains("结构FMC审核记录表")) {
+                sourceFile = f;
+                log.info(">>> [AutoFill-Debug] ✅ 成功匹配源文件: {}", f.getFileName());
+                break;
+            }
+        }
+
+        String finalResult = "NG"; // 默认 NG
+
+        if (sourceFile != null) {
+            try {
+                // --- 2. 解析源文件 ---
+                Path sourcePath = Paths.get(uploadDir, sourceFile.getFilePath());
+                log.info(">>> [AutoFill-Debug] 读取物理文件: {}", sourcePath);
+                
+                List<LuckySheetJsonDTO.SheetData> sourceSheets = excelSplitterService.convertExcelToLuckysheetJson(sourcePath.toString());
+                
+                if (sourceSheets != null && !sourceSheets.isEmpty()) {
+                    LuckySheetJsonDTO.SheetData srcSheet = sourceSheets.get(0);
+                    log.info(">>> [AutoFill-Debug] 源文件解析成功，Sheet名: {}, 单元格数量: {}", 
+                            srcSheet.getName(), srcSheet.getCelldata() == null ? 0 : srcSheet.getCelldata().size());
+                    
+                    // --- 3. 读取 E21 ---
+                    boolean foundCell = false;
+                    if (srcSheet.getCelldata() != null) {
+                        for (LuckySheetJsonDTO.CellData c : srcSheet.getCelldata()) {
+                            // 打印前几个非空单元格，确认坐标系
+                            // if (c.getR() < 2 && c.getC() < 2) log.info("Sample Cell: r={}, c={}, v={}", c.getR(), c.getC(), c.getV());
+
+                            if (c.getR() == SOURCE_ROW && c.getC() == SOURCE_COL) {
+                                foundCell = true;
+                                // 获取原始值对象
+                                Object rawV = c.getV(); 
+                                String valStr = "null";
+                                
+                                if (rawV != null) {
+                                    if (rawV instanceof LuckySheetJsonDTO.CellValue) {
+                                        LuckySheetJsonDTO.CellValue cv = (LuckySheetJsonDTO.CellValue) rawV;
+                                        valStr = String.valueOf(cv.getV());
+                                        log.info(">>> [AutoFill-Debug] E21 是对象类型, v={}, m={}", cv.getV(), cv.getM());
+                                    } else if (rawV instanceof Map) {
+                                         // 有时候 Jackson 会解析成 Map
+                                         Map<?,?> mapV = (Map<?,?>) rawV;
+                                         valStr = String.valueOf(mapV.get("v"));
+                                         log.info(">>> [AutoFill-Debug] E21 是Map类型, v={}", valStr);
+                                    } else {
+                                        valStr = String.valueOf(rawV);
+                                        log.info(">>> [AutoFill-Debug] E21 是基础类型, val={}", valStr);
+                                    }
+                                } else {
+                                    log.info(">>> [AutoFill-Debug] E21 的值对象是 NULL");
+                                }
+                                
+                                // 规范化值
+                                valStr = valStr.trim();
+                                log.info(">>> [AutoFill-Debug] E21 最终识别值: [{}] (长度: {})", valStr, valStr.length());
+
+                                if (isCheckMark(c)) {
+                                    finalResult = "OK";
+                                    log.info(">>> [AutoFill-Debug] ✅ 判定结果: 合格 (OK)");
+                                } else {
+                                    log.info(">>> [AutoFill-Debug] ❌ 判定结果: 不合格 (值不匹配 OK/ok/√)");
+                                }
+                                break; 
+                            }
+                        }
+                    }
+                    if (!foundCell) {
+                        log.warn(">>> [AutoFill-Debug] ❌ 警告: 在源文件中完全没找到 r=20, c=4 的单元格对象 (可能是空行)");
+                    }
+                } else {
+                    log.warn(">>> [AutoFill-Debug] 源文件 Sheet 为空");
+                }
+            } catch (Exception e) {
+                log.error(">>> [AutoFill-Debug] 解析源文件异常", e);
+            }
+        } else {
+            log.warn(">>> [AutoFill-Debug] ❌ 未找到文件名包含 '结构FMC审核记录表' 的文件！");
+        }
+
+        // --- 4. 写入 K3 ---
+        Map<Integer, LuckySheetJsonDTO.CellData> targetRowMap = grid.get(TARGET_ROW);
+        if (targetRowMap == null) {
+             targetRowMap = new HashMap<>();
+             grid.put(TARGET_ROW, targetRowMap);
+        }
+        
+        LuckySheetJsonDTO.CellData targetCell = targetRowMap.get(TARGET_COL);
+        if (targetCell == null) {
+            targetCell = new LuckySheetJsonDTO.CellData();
+            targetCell.setR(TARGET_ROW);
+            targetCell.setC(TARGET_COL);
+            cellDataList.add(targetCell); 
+            targetRowMap.put(TARGET_COL, targetCell);
+        }
+
+        LuckySheetJsonDTO.CellValue val = new LuckySheetJsonDTO.CellValue();
+        val.setV(finalResult);
+        val.setM(finalResult);
+        
+        if ("OK".equals(finalResult)) {
+            val.setBg("#00FF00"); 
+            val.setFc("#000000"); 
+            val.setBl(1);         
+        } else {
+            val.setBg(null);      
+            val.setFc("#FF0000"); 
+            val.setBl(1);         
+        }
+        
+        targetCell.setV(val);
+        log.info(">>> [AutoFill-Debug] 写入操作完成: K3 (r=2, c=10) = {}", finalResult);
+    }
+
+    /**
+     * 辅助判断：是否为打勾符号
+     */
+    private boolean isCheckMark(LuckySheetJsonDTO.CellData cell) {
+        if (cell == null || cell.getV() == null) return false;
+        String v = String.valueOf(cell.getV().getV()).trim();
+        return "√".equals(v) || "OK".equalsIgnoreCase(v) || "ok".equals(v);
+    }
+
+/**
+     * 【新增实现】处理风险表的二进制流，进行动态注入
+     * 使用 Apache POI 直接修改 Excel 文件流
+     * 升级：支持多条规则配置
+     */
+/**
+     * 【新增实现】处理风险表的二进制流，进行动态注入 (POI 操作)
+     * 包含：一票否决逻辑 + 重量对比逻辑 + 差异化判定(只查NG)
+     */
+/**
+     * 【新增实现】处理风险表的二进制流，进行动态注入 (POI 操作)
+     * 包含：一票否决逻辑 + 重量对比逻辑 + 差异化判定(只查NG)
+     */
+    @Override
+    public byte[] processRiskSheetStream(Long fileId) throws IOException {
+        // 1. 获取当前文件信息
+        ProjectFile currentFile = projectFileMapper.selectById(fileId);
+        if (currentFile == null) throw new IOException("文件记录不存在");
+        
+        Path path = Paths.get(uploadDir, currentFile.getFilePath());
+        if (!Files.exists(path)) throw new IOException("物理文件不存在");
+
+        // ---------------------------------------------------------
+        // 配置区域：定义检查规则
+        // ---------------------------------------------------------
+        List<RiskFillRule> rules = new ArrayList<>();
+        
+        rules.add(new RiskFillRule("结构FMC审核记录表", 20, 4, "1", 10));
+        rules.add(new RiskFillRule("结构FMC审核记录表", 35, 4, "2", 10));
+
+        for (int r = 7; r <= 22; r++) {
+            rules.add(new RiskFillRule("机床参数检查表", r, 7, "3", 10));
+        }
+
+        rules.add(new RiskFillRule("结构FMC审核记录表", 49, 4, "4", 10));
+        rules.add(new RiskFillRule("结构FMC审核记录表", 63, 4, "5", 10));
+        rules.add(new RiskFillRule("结构FMC审核记录表", 77, 4, "6", 10));
+        rules.add(new RiskFillRule(" 机床参数检查表", 1, 13, "7", 10));
+        for (int r = 31; r <= 51; r++) {
+            rules.add(new RiskFillRule("废料滑落检查表", r, 13, "8", 10));
+        }
+
+        for (int r = 31; r <= 51; r++) {
+            rules.add(new RiskFillRule("机床参数检查", r, 13, "9", 10));
+        }
+                // 规则 4：[筋厚检查报告] O列 (Index 14) -> 风险表 序号"4" K列
+        // 【特殊逻辑】：此项为"只查NG"模式
+        for (int r = 3; r <= 50; r++) {
+            rules.add(new RiskFillRule("筋厚检查报告", r, 14, "10", 10));
+        }
+
+        rules.add(new RiskFillRule("结构FMC审核记录表", 1, 4, "11", 10));
+
+        // 规则 12：[后序压力控制专项检查表] G52 -> 风险表 序号"12" K列
+        rules.add(new RiskFillRule("后序压力控制专项检查表", 51, 6, "12", 10));
+
+        // 规则 13：[安全部件检查表] H5:H19 -> 风险表 序号"13" K列
+        for (int r = 4; r <= 18; r++) {
+            rules.add(new RiskFillRule("安全部件检查表", r, 7, "13", 10));
+        }
+        // ---------------------------------------------------------
+
+        // 2. 准备结果集 (TargetID_TargetCol -> List<Result>)
+        Map<String, List<String>> fillResults = new HashMap<>();
+        
+        QueryWrapper<ProjectFile> query = new QueryWrapper<>();
+        query.eq("record_id", currentFile.getRecordId());
+        List<ProjectFile> allFiles = projectFileMapper.selectList(query);
+
+        Map<String, List<RiskFillRule>> rulesBySource = rules.stream()
+            .collect(Collectors.groupingBy(r -> r.sourceKeyword));
+
+        // 3. 批量读取源文件数据
+        for (Map.Entry<String, List<RiskFillRule>> entry : rulesBySource.entrySet()) {
+            String keyword = entry.getKey();
+            List<RiskFillRule> fileRules = entry.getValue();
+            
+            ProjectFile sourceFile = null;
+            for (ProjectFile f : allFiles) {
+                if ((f.getDocumentType() + f.getFileName()).contains(keyword)) {
+                    sourceFile = f;
+                    break;
+                }
+            }
+            
+            // 【关键逻辑】区分判定模式
+            // 如果是 "筋厚检查报告"，采用 "只查NG" 模式 (默认OK，有NG才挂)
+            boolean isCheckNgOnly = keyword.contains("筋厚检查报告");
+
+            if (sourceFile != null) {
+                try (InputStream is = Files.newInputStream(Paths.get(uploadDir, sourceFile.getFilePath()));
+                     Workbook wb = WorkbookFactory.create(is)) {
+                    Sheet sheet = wb.getSheetAt(0);
+                    
+                    for (RiskFillRule rule : fileRules) {
+                        Row r = sheet.getRow(rule.sourceRow);
+                        String result;
+                        String val = "";
+
+                        if (r != null) {
+                            Cell c = r.getCell(rule.sourceCol);
+                            val = getCellValueAsString(c);
+                        }
+
+                        if (isCheckNgOnly) {
+                            // --- 模式 A: 只查 NG (筋厚) ---
+                            // 默认 OK，只有明确出现 NG/× 才记为 NG
+                            result = "OK";
+                            if ("NG".equalsIgnoreCase(val) || "×".equals(val)) {
+                                result = "NG";
+                            }
+                        } else {
+                            // --- 模式 B: 严格检查 (FMC/机床/废料/安全部件) ---
+                            // 默认 NG，只有明确出现 OK/√ 才记为 OK
+                            result = "NG";
+                            if ("OK".equalsIgnoreCase(val) || "√".equals(val) || "ok".equals(val)) {
+                                result = "OK";
+                            }
+                        }
+
+                        // 存入结果
+                        String key = rule.targetId + "_" + rule.targetCol;
+                        fillResults.computeIfAbsent(key, k -> new ArrayList<>()).add(result);
+                    }
+                } catch (Exception e) {
+                    log.error(">>> [POI] 读取源文件 {} 失败", keyword, e);
+                    // 读取失败处理: 根据模式决定兜底值
+                    String failRes = isCheckNgOnly ? "OK" : "NG"; 
+                    for (RiskFillRule rule : fileRules) {
+                        String key = rule.targetId + "_" + rule.targetCol;
+                        fillResults.computeIfAbsent(key, k -> new ArrayList<>()).add(failRes);
+                    }
+                }
+            } else {
+                // 文件未找到处理: 根据模式决定兜底值
+                // 筋厚没传文件暂且算过，其他没传文件算NG
+                String missingRes = isCheckNgOnly ? "OK" : "NG"; 
+                for (RiskFillRule rule : fileRules) {
+                    String key = rule.targetId + "_" + rule.targetCol;
+                    fillResults.computeIfAbsent(key, k -> new ArrayList<>()).add(missingRes);
+                }
+            }
+        }
+
+        // 4. 获取项目重量数据 (用于重量检查)
+        ProcessRecord currentRecord = processRecordMapper.selectById(currentFile.getRecordId());
+        Project project = projectMapper.selectById(currentRecord.getProjectId());
+        Double actualWeight = null;
+        Double quoteWeight = null;
+        if (project != null) {
+            if (project.getActualWeight() != null) {
+                actualWeight = project.getActualWeight().doubleValue();
+            }
+            if (project.getQuoteWeight() != null) {
+                quoteWeight = project.getQuoteWeight().doubleValue();
+            }
+        }
+
+        // 5. 修改当前文件 (风险表)
+        try (InputStream is = Files.newInputStream(path);
+             Workbook workbook = WorkbookFactory.create(is);
+             ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            
+            Sheet sheet = workbook.getSheetAt(0);
+            
+            // 遍历前 100 行
+            for (int i = 0; i <= sheet.getLastRowNum() && i < 100; i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                
+                Cell cellA = row.getCell(0); // A列: 序号
+                Cell cellC = row.getCell(2); // C列: 内容
+                
+                String valA = getCellValueAsString(cellA).trim().replace(".0", "");
+                String valC = getCellValueAsString(cellC).trim();
+
+                // --- 逻辑 A: 规则填充 (一票否决) ---
+                String resultKey = valA + "_10"; // K列
+                if (fillResults.containsKey(resultKey)) {
+                    List<String> results = fillResults.get(resultKey);
+                    // 【一票否决】只要有一个 NG，就是 NG
+                    boolean allOk = results.stream().allMatch(r -> "OK".equals(r));
+                    String finalResult = allOk ? "OK" : "NG";
+                    
+                    updateTargetCell(workbook, row, 10, finalResult);
+                    log.info(">>> [POI] 序号[{}] 判定: {} (源结果: {})", valA, finalResult, results);
+                }
+
+                // --- 逻辑 B: 重量检查 ---
+                if ((valC.contains("重量") || valC.contains("吨位")) && actualWeight != null && quoteWeight != null) {
+                    String weightResult = "OK";
+                    if (actualWeight > quoteWeight) {
+                        weightResult = "NG";
+                    }
+                    updateTargetCell(workbook, row, 10, weightResult);
+                    log.info(">>> [POI] 重量检查: 实际{} vs 报价{} -> {}", actualWeight, quoteWeight, weightResult);
+                }
+            }
+            
+            workbook.write(bos);
+            return bos.toByteArray();
+        }
+    }
+
+
+    private static class RiskFillRule {
+        String sourceKeyword; // 源文件名关键字 (如 "结构FMC")
+        int sourceRow;        // 源行号 (0-based)
+        int sourceCol;        // 源列号 (0-based)
+        String targetId;      // 目标表A列的值 (如 "1", "2")
+        int targetCol;        // 目标列号 (0-based)
+        
+        public RiskFillRule(String sourceKeyword, int sourceRow, int sourceCol, String targetId, int targetCol) {
+            this.sourceKeyword = sourceKeyword;
+            this.sourceRow = sourceRow;
+            this.sourceCol = sourceCol;
+            this.targetId = targetId;
+            this.targetCol = targetCol;
+        }
+    }
+    /**
+     * 辅助方法：安全获取单元格字符串值
+     */
+    private String getCellValueAsString(Cell cell) {
+        if (cell == null) return "";
+        switch (cell.getCellType()) {
+            case STRING: return cell.getStringCellValue().trim();
+            case NUMERIC: 
+                if (DateUtil.isCellDateFormatted(cell)) return cell.getLocalDateTimeCellValue().toString();
+                double val = cell.getNumericCellValue();
+                if (val == (long) val) return String.valueOf((long) val);
+                return String.valueOf(val);
+            case BOOLEAN: return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA: 
+                try { return cell.getStringCellValue(); } catch(Exception e) { return ""; }
+            default: return "";
+        }
+    }
+
+    /**
+     * 辅助：更新目标单元格并设置样式 (红/绿)
+     */
+    private void updateTargetCell(Workbook workbook, Row row, int colIndex, String result) {
+        Cell targetCell = row.getCell(colIndex);
+        if (targetCell == null) targetCell = row.createCell(colIndex);
+        
+        targetCell.setCellValue(result);
+        
+        CellStyle style = workbook.createCellStyle();
+        // 复制原有样式避免破坏边框
+        if (targetCell.getCellStyle() != null) {
+            style.cloneStyleFrom(targetCell.getCellStyle());
+        }
+        
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        if ("OK".equals(result)) {
+            style.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
+            style.setFont(createFont(workbook, IndexedColors.BLACK.getIndex()));
+        } else {
+            style.setFillForegroundColor(IndexedColors.RED.getIndex());
+            style.setFont(createFont(workbook, IndexedColors.WHITE.getIndex())); // 红底白字更清晰
+        }
+        targetCell.setCellStyle(style);
+    }
+
+    private Font createFont(Workbook wb, short color) {
+        Font font = wb.createFont();
+        font.setColor(color);
+        font.setBold(true);
+        return font;
+    }
+
 }

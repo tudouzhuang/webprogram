@@ -393,7 +393,7 @@ Vue.component('record-workspace-panel', {
                 // 【【【 核心修改在这里 】】】
                 // 我们在原有的 URL 后面，加上了 &format=json 这个参数。
                 // 注意：因为前面已经有了一个 '?' (用于时间戳)，所以我们用 '&' 来连接新的参数。
-                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}&format=json`;
+                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
 
                 console.log(`[Workspace] 准备向 iframe 发送加载指令, URL: ${fileUrl}`); // 增加一条日志，方便调试
 

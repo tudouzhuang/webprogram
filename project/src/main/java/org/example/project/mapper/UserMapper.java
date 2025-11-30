@@ -38,4 +38,13 @@ public interface UserMapper extends BaseMapper<User> {
 
     @Select("SELECT * FROM users WHERE username = #{username}")
     User selectByUsername(@Param("username") String username);
+
+    @Select("SELECT u.*, COUNT(pr.id) as workload " +
+        "FROM users u " +
+        "LEFT JOIN process_records pr ON u.id = pr.assignee_id AND pr.status = 'PENDING_REVIEW' " +
+        "WHERE u.role = #{role} " +
+        "GROUP BY u.id " +
+        "ORDER BY workload ASC, u.id ASC " +
+        "LIMIT 1")
+    User findLeastLoadedUserByRole(@Param("role") String role);
 }
