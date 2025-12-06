@@ -20,7 +20,7 @@ public class ProcessRecord {
     private String partName;  // The name of the part associated with this process.
 
     private String processName;  // The name of the process.
-
+    private String subEquipment;
     private Long createdByUserId;  // The ID of the user who created this record.
 
     private LocalDateTime createdAt;  // The timestamp when the record was created.

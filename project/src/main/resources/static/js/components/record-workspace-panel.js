@@ -116,7 +116,19 @@ Vue.component('record-workspace-panel', {
                                             <el-col :span="12"><el-form-item label="客户名称"><el-input :value="metaDataContent.customerName" disabled></el-input></el-form-item></el-col>
                                         </el-row>
                                         <el-form-item label="模具图号"><el-input :value="metaDataContent.moldDrawingNumber" type="textarea" :rows="2" disabled></el-input></el-form-item>
-                                        <el-form-item label="使用设备 (主线)"><el-input :value="metaDataContent.equipment" disabled></el-input></el-form-item>
+                                        <el-row :gutter="20">
+                                            <el-col :span="12">
+                                                <el-form-item label="使用设备 (主线)">
+                                                    <el-input :value="metaDataContent.equipment" disabled></el-input>
+                                                </el-form-item>
+                                            </el-col>
+                                            <el-col :span="12">
+                                                <el-form-item label="使用设备 (副线)">
+                                                    <!-- 如果没有副线信息，显示“无” -->
+                                                    <el-input :value="metaDataContent.subEquipment || '无'" disabled></el-input>
+                                                </el-form-item>
+                                            </el-col>
+                                        </el-row>
                                         
                                         <el-divider>人员信息</el-divider>
                             

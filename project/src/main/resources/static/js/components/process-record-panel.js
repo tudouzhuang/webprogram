@@ -1,3 +1,10 @@
+// public/js/components/process-record-panel.js
+
+// 【缓存机制 1】: 初始化全局缓存对象
+if (!window._ProcessRecordDrafts) {
+    window._ProcessRecordDrafts = {};
+}
+
 Vue.component('process-record-panel', {
     props: {
         projectId: {
@@ -41,8 +48,22 @@ Vue.component('process-record-panel', {
                                     <el-col :span="12"><el-form-item label="抗拉强度" prop="tensileStrength"><el-input v-model="recordForm.tensileStrength" placeholder="例如: 350"></el-input></el-form-item></el-col>
                                     <el-col :span="12"><el-form-item label="客户名称" prop="customerName"><el-input v-model="recordForm.customerName"></el-input></el-form-item></el-col>
                                 </el-row>
+                                
                                 <el-form-item label="模具图号" prop="moldDrawingNumber"><el-input v-model="recordForm.moldDrawingNumber" type="textarea" :rows="2"></el-input></el-form-item>
-                                <el-form-item label="使用设备 (主线)" prop="equipment"><el-input v-model="recordForm.equipment"></el-input></el-form-item>
+                                
+                                <!-- 【修改】将设备分为主线和副线，使用两列布局 -->
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="使用设备 (主线)" prop="equipment">
+                                            <el-input v-model="recordForm.equipment" placeholder="必填"></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="使用设备 (副线)" prop="subEquipment">
+                                            <el-input v-model="recordForm.subEquipment" placeholder="选填，无则留空"></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
                                 
                                 <el-divider>人员信息</el-divider>
 
@@ -133,7 +154,6 @@ Vue.component('process-record-panel', {
                                                 <!-- 默认项选择区域 -->
                                                 <el-col :span="12">
                                                     <div class="d-flex align-items-center">
-                                                        <!-- 【修改】改为多选下拉框 -->
                                                         <el-select 
                                                             v-model="selectedTemplateKeys" 
                                                             multiple 
@@ -149,7 +169,6 @@ Vue.component('process-record-panel', {
                                                                 :disabled="isItemAlreadyAdded(item.key)">
                                                             </el-option>
                                                         </el-select>
-                                                        <!-- 【修改】按钮改为批量添加 -->
                                                         <el-button @click="addSelectedTemplates" type="primary" size="small" icon="el-icon-plus" :loading="isTemplateLoading">批量添加</el-button>
                                                     </div>
                                                 </el-col>
@@ -170,7 +189,6 @@ Vue.component('process-record-panel', {
                                             </el-row>
                                 
                                             <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
-                                                <!-- 列1: 检查项名称 -->
                                                 <el-table-column prop="name" label="检查项名称" min-width="180">
                                                     <template slot-scope="scope">
                                                         <span style="color: #F56C6C;">* </span>
@@ -178,7 +196,6 @@ Vue.component('process-record-panel', {
                                                     </template>
                                                 </el-table-column>
                                                 
-                                                <!-- 列2: 上传状态 -->
                                                 <el-table-column label="上传状态" min-width="250">
                                                     <template slot-scope="scope">
                                                         <div v-if="scope.row.file">
@@ -200,7 +217,6 @@ Vue.component('process-record-panel', {
                                                     </template>
                                                 </el-table-column>
                                                 
-                                                <!-- 列3: 上传操作 -->
                                                 <el-table-column label="上传操作" width="150" align="center">
                                                     <template slot-scope="scope">
                                                         <el-upload
@@ -217,7 +233,6 @@ Vue.component('process-record-panel', {
                                                     </template>
                                                 </el-table-column>
                                 
-                                                <!-- 列4: 删除操作 -->
                                                 <el-table-column label="删除" width="100" align="center">
                                                     <template slot-scope="scope">
                                                         <el-button @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
@@ -269,8 +284,8 @@ Vue.component('process-record-panel', {
 
         return {
             isSubmitting: false,
-            isTemplateLoading: false, // 控制添加模板按钮的 loading 状态
-            selectedTemplateKeys: [], // 【修改】改为数组，用于多选
+            isTemplateLoading: false, 
+            selectedTemplateKeys: [],
             customSheetName: '', 
             recordForm: {
                 partName: '',
@@ -281,6 +296,7 @@ Vue.component('process-record-panel', {
                 customerName: '',
                 moldDrawingNumber: '',
                 equipment: '',
+                subEquipment: '', // 【新增】副线设备
                 quoteSize: { length: '', width: '', height: '' },
                 quoteWeight: '',
                 actualSize: { length: '', width: '', height: '' },
@@ -293,7 +309,6 @@ Vue.component('process-record-panel', {
                 auditorDate: null,
                 sheetFiles: []
             },
-            // 【修改】更新为所有可用的模板文件列表
             availableSheetTemplates: [
                 { key: '减重问题清单', name: '减重问题清单' },
                 { key: '动态干涉检查', name: '动态干涉检查' },
@@ -321,7 +336,7 @@ Vue.component('process-record-panel', {
                 tensileStrength: [{ required: true, message: '抗拉强度不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
                 customerName: [{ required: true, message: '客户名称不能为空', trigger: 'blur' }],
                 moldDrawingNumber: [{ required: true, message: '模具图号不能为空', trigger: 'blur' }],
-                equipment: [{ required: true, message: '使用设备不能为空', trigger: 'blur' }],
+                equipment: [{ required: true, message: '使用设备(主线)不能为空', trigger: 'blur' }],
                 designerName: [{ required: true, message: '设计人员姓名不能为空', trigger: 'blur' }],
                 designerDate: [{ type: 'date', required: true, message: '请选择设计日期', trigger: 'change' }],
                 'quoteSize.length': [{ required: true, message: '长度不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
@@ -334,14 +349,41 @@ Vue.component('process-record-panel', {
                 actualWeight: [{ required: true, message: '实际重量不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
                 sheetFiles: [
                     { type: 'array', required: true },
-                    { validator: validateSheetFiles, trigger: 'change' } // 使用自定义验证器
+                    { validator: validateSheetFiles, trigger: 'change' } 
                 ]
             }
         }
     },
+    
+    // 【缓存机制 2】: 在组件挂载时尝试恢复数据
+    mounted() {
+        console.log("[Cache v3] Mounted. ProjectID:", this.projectId);
+        
+        // 从 window 全局对象获取缓存
+        const draft = window._ProcessRecordDrafts[this.projectId];
+        
+        if (draft) {
+            console.log("[Cache v3] 发现项目[" + this.projectId + "]的草稿，正在恢复...", draft);
+            
+            // 恢复表单数据 (注意：这里使用解构赋值来确保响应式更新)
+            this.recordForm = { ...draft.recordForm };
+            this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
+            this.customSheetName = draft.customSheetName || '';
+            
+            this.$message.info('已恢复上次未提交的编辑内容。');
+        } else {
+            console.log("[Cache v3] No draft found for projectId:", this.projectId);
+        }
+    },
+
+    // 【缓存机制 3】: 在组件销毁前保存数据 (处理路由切换/页面关闭)
+    beforeDestroy() {
+        console.log("[Cache v3] beforeDestroy triggered. ProjectID:", this.projectId);
+        this.saveToCache(this.projectId);
+    },
+
     computed: {
         isReadyToSubmit() {
-            // 只有在至少有一个检查项，并且所有检查项都上传了文件时才可提交
             if (this.recordForm.sheetFiles.length === 0) {
                 return false;
             }
@@ -349,24 +391,71 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
+    // 【新增】: 提取保存逻辑
+    saveToCache(pid) {
+        if (!pid) return;
+        // 无论内容多少，强制缓存当前状态
+        window._ProcessRecordDrafts[pid] = {
+            recordForm: this.recordForm, 
+            selectedTemplateKeys: this.selectedTemplateKeys,
+            customSheetName: this.customSheetName
+        };
+        console.log(`[Cache v3] Saved draft for Project ${pid}`, window._ProcessRecordDrafts[pid]);
+    },
+
+    // 【新增】: 提取加载逻辑
+    loadFromCache(pid) {
+        if (!pid) return;
+        const draft = window._ProcessRecordDrafts[pid];
+        if (draft) {
+            console.log(`[Cache v3] Loading draft for Project ${pid}...`);
+            // 使用解构赋值触发响应式更新
+            this.recordForm = { ...draft.recordForm };
+            this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
+            this.customSheetName = draft.customSheetName || '';
+            this.$message.info(`已恢复项目 ${pid} 的草稿。`);
+        } else {
+            console.log(`[Cache v3] No draft found for Project ${pid}.`);
+        }
+    },
+
+    // 【新增】: 仅清空状态，不删缓存
+    clearFormState() {
+        // 重置为 data() 中的初始状态（除了 sheetFiles，需要显式清空）
+        this.recordForm = {
+            partName: '', processName: '', material: '', thickness: '',
+            tensileStrength: '', customerName: '', moldDrawingNumber: '', 
+            equipment: '', subEquipment: '', // 【新增】重置 subEquipment
+            quoteSize: { length: '', width: '', height: '' }, quoteWeight: '',
+            actualSize: { length: '', width: '', height: '' }, actualWeight: '',
+            designerName: '', designerDate: new Date(),
+            checkerName: null, checkerDate: null, auditorName: null, auditorDate: null,
+            sheetFiles: []
+        };
+        this.selectedTemplateKeys = [];
+        this.customSheetName = '';
+        // 清除校验结果
+        if (this.$refs.recordForm) {
+            this.$nextTick(() => this.$refs.recordForm.clearValidate());
+        }
+    },
+
     isItemAlreadyAdded(keyOrName) {
         const trimmedValue = keyOrName.trim();
         return this.recordForm.sheetFiles.some(item => item.key.trim() === trimmedValue);
     },
     
-    // 【核心修改】: 支持批量异步加载服务器端模板文件
     async addSelectedTemplates() {
         if (!this.selectedTemplateKeys || this.selectedTemplateKeys.length === 0) {
             this.$message.warning('请至少勾选一个模板。');
             return;
         }
         
-        // 过滤掉已经添加的
         const keysToAdd = this.selectedTemplateKeys.filter(key => !this.isItemAlreadyAdded(key));
         
         if (keysToAdd.length === 0) {
             this.$message.warning('所选模板均已添加。');
-            this.selectedTemplateKeys = []; // 清空选择
+            this.selectedTemplateKeys = []; 
             return;
         }
 
@@ -375,30 +464,24 @@ Vue.component('process-record-panel', {
         let failCount = 0;
 
         try {
-            // 并行处理所有选中的模板
             await Promise.all(keysToAdd.map(async (key) => {
                 const template = this.availableSheetTemplates.find(t => t.key === key);
                 if (!template) return;
 
                 try {
-                    // 1. 尝试从服务器静态资源目录获取文件
-                    // 假设后端静态资源映射是默认的，文件存放在 src/main/resources/static/templates/
-                    // 浏览器访问路径通常为 /templates/文件名.xlsx
-                    const fileName = template.name + '.xlsx'; // 假设文件后缀为 .xlsx
-                    const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`; // URL编码防止中文乱码
+                    const fileName = template.name + '.xlsx'; 
+                    const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`; 
 
                     const response = await axios.get(fileUrl, { 
-                        responseType: 'blob', // 关键：告诉 axios 返回二进制流
-                        validateStatus: status => status === 200 // 只接受 200 OK
+                        responseType: 'blob', 
+                        validateStatus: status => status === 200 
                     });
 
-                    // 2. 将 Blob 转换为 File 对象
                     const file = new File([response.data], fileName, { 
                         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                         lastModified: new Date().getTime()
                     });
 
-                    // 3. 添加到列表
                     this.recordForm.sheetFiles.push({
                         key: template.key,
                         name: template.name,
@@ -410,7 +493,6 @@ Vue.component('process-record-panel', {
                 } catch (error) {
                     console.error(`加载模板 "${template.name}" 失败:`, error);
                     failCount++;
-                    // 加载失败时添加一个空项，让用户知道这个模板有问题
                     this.recordForm.sheetFiles.push({
                         key: template.key,
                         name: template.name,
@@ -427,7 +509,7 @@ Vue.component('process-record-panel', {
                 this.$message.warning(`${failCount} 个模板文件加载失败，已添加空项请手动上传。`);
             }
 
-            this.selectedTemplateKeys = []; // 清空选择
+            this.selectedTemplateKeys = []; 
             this.$refs.recordForm.validateField('sheetFiles');
 
         } catch (error) {
@@ -438,7 +520,6 @@ Vue.component('process-record-panel', {
         }
     },
     
-    // 添加自定义项 (保持手动上传逻辑)
     addCustomSheetItem() {
         const name = this.customSheetName.trim();
         if (!name) {
@@ -454,7 +535,6 @@ Vue.component('process-record-panel', {
         this.$refs.recordForm.validateField('sheetFiles');
     },
 
-    // 移除检查项
     removeSheetFileItem(sheetKeyToRemove) {
         this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
             confirmButtonText: '确定',
@@ -470,23 +550,20 @@ Vue.component('process-record-panel', {
         }).catch(() => {});
     },
         
-    // 文件选择
     handleFileChange(file, sheetKey) {
         const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
         if (index !== -1) {
-            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw, isTemplate: false }; // 手动上传覆盖后，取消模板标记
+            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw, isTemplate: false }; 
             this.$set(this.recordForm.sheetFiles, index, updatedSheet);
             this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
             this.$refs.recordForm.validateField('sheetFiles');
         }
     },
 
-    // 文件超出限制
     handleFileExceed(sheetKey) {
         this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
     },
 
-    // 提交记录
     submitRecord() {
         this.$refs.recordForm.validate((valid) => {
             if (valid) {
@@ -497,8 +574,6 @@ Vue.component('process-record-panel', {
                 formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
                 this.recordForm.sheetFiles.forEach(sheetFile => {
                     if (sheetFile.file) {
-                        // 使用检查项名称作为 key，这样后端可以识别是哪个Sheet
-                        // 如果是自动加载的模板，file.name 也是对的
                         formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
                     }
                 });
@@ -506,6 +581,11 @@ Vue.component('process-record-panel', {
                 .then(() => {
                     this.$message.success('提交成功！');
                     this.$emit('record-created');
+                    
+                    // 【缓存机制 4】: 提交成功后，删除当前项目的缓存
+                    console.log("[Cache v3] Submission success, clearing cache for project:", this.projectId);
+                    delete window._ProcessRecordDrafts[this.projectId];
+                    
                     this.resetForm();
                 }).catch(error => {
                     this.$message.error(error.response?.data?.message || '提交失败');
@@ -518,13 +598,16 @@ Vue.component('process-record-panel', {
         });
     },
 
-        // 更新 resetForm 方法
-        resetForm() {
-            this.$refs.recordForm.resetFields();
-            this.recordForm.sheetFiles = [];
-            this.selectedTemplateKeys = []; // 【修改】重置数组
-            this.customSheetName = ''; // 确保自定义输入框也被清空
-            this.recordForm.designerDate = new Date();
-        },
+    resetForm() {
+        this.$refs.recordForm.resetFields();
+        this.recordForm.sheetFiles = [];
+        this.selectedTemplateKeys = []; 
+        this.customSheetName = ''; 
+        this.recordForm.designerDate = new Date();
+        
+        // 【缓存机制 5】: 用户手动重置时，删除缓存
+        console.log("[Cache v3] Resetting form, clearing cache for project:", this.projectId);
+        delete window._ProcessRecordDrafts[this.projectId];
+    },
     }
 });

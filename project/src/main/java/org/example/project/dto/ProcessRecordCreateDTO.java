@@ -25,7 +25,7 @@ public class ProcessRecordCreateDTO {
     private String customerName;
     private String moldDrawingNumber;
     private String equipment;
-
+    private String subEquipment;
     // 人员信息
     private String designerName;
     private LocalDate designerDate;
