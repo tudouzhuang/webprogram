@@ -40,10 +40,7 @@ public class StatisticsServiceImpl implements StatisticsService {
     private ProcessRecordMapper processRecordMapper;
 
     /**
-     * 【核心】计算并保存指定文件的统计数据。 【已升级】：增加了对“重大风险”Sheet的特殊统计逻辑。
-     *
-     * @param fileId 文件的数据库ID
-     * @param luckysheetData 从前端传来的完整 Luckysheet JSON 数据
+     * 【核心】计算并保存指定文件的统计数据。
      */
     @Override
     @Transactional
@@ -52,119 +49,156 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         // --- [第一部分：执行所有数据库中定义的常规规则] ---
         List<StatisticRule> rules = statisticRuleMapper.selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
+        
         if (rules.isEmpty()) {
             log.warn("系统中没有配置任何有效的统计规则，跳过常规计算。");
         } else {
+            // 安全检查
+            if (luckysheetData == null || luckysheetData.getSheets() == null || luckysheetData.getSheets().isEmpty()) {
+                log.warn("Luckysheet 数据为空，无法统计。");
+                return;
+            }
+
             LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
             List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
+            
             if (celldata == null || celldata.isEmpty()) {
                 log.warn("Sheet '{}' 中没有任何单元格数据，跳过常规计算。", sheet.getName());
             } else {
                 for (StatisticRule rule : rules) {
-                    log.info(">>> 正在应用常规规则: '{}', 范围: {}", rule.getRuleName(), rule.getRangeToScan());
-
                     Range valueRange = parseRange(rule.getRangeToScan());
-                    if (valueRange == null) {
-                        log.error("规则 '{}' 的扫描范围 '{}' 格式不正确，已跳过。", rule.getRuleName(), rule.getRangeToScan());
-                        continue;
-                    }
+                    if (valueRange == null) continue;
 
-                    int okCount = 0, ngCount = 0, naCount = 0;
-                    for (LuckySheetJsonDTO.CellData cell : celldata) {
-                        // 判断是否在扫描范围内
-                        if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol
-                                && cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
-                            if (cell.getV() != null && cell.getV().getV() != null) {
-                                String cellValue = String.valueOf(cell.getV().getV()).trim();
-                                
-                                if (cellValue.isEmpty()) continue; // 跳过空单元格
-
-                                if (Objects.equals(cellValue, rule.getOkSymbol())) {
-                                    okCount++; 
-                                } else if (Objects.equals(cellValue, rule.getNgSymbol())) {
-                                    ngCount++; 
-                                } else {
-                                    // 【核心修改 1】: 如果不是勾(OK)，也不是×(NG)，且非空，则记为 NA
-                                    // 之前是判断 Objects.equals(cellValue, rule.getNaSymbol())
-                                    naCount++;
-                                }
-                            }
-                        }
-                    }
-
-                    int totalCount;
-                    // 如果配置了独立的 totalCountRange (如序号列)，则以那个范围的非空行数为准
-                    // 否则 Total = OK + NG + NA
+                    // 1. 先计算总数 (Total)
+                    int totalCount = 0;
+                    Range totalRange = null;
+                    
                     if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
-                        Range totalRange = parseRange(rule.getTotalCountRange());
-                        if (totalRange == null) {
-                            totalCount = 0;
-                        } else {
-                            int count = 0;
+                        totalRange = parseRange(rule.getTotalCountRange());
+                        if (totalRange != null) {
                             for (LuckySheetJsonDTO.CellData cell : celldata) {
                                 if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol
                                         && cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
                                     if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
-                                        // 尝试解析为数字，或者是有效的序号
-                                        count++;
+                                        totalCount++;
                                     }
                                 }
                             }
-                            totalCount = count;
                         }
+                    }
+
+                    // 2. 统计 OK 和 NG
+                    int okCount = 0;
+                    int ngCount = 0;
+                    int explicitNaCount = 0;
+                    
+                    for (LuckySheetJsonDTO.CellData cell : celldata) {
+                        if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol
+                                && cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
+                            
+                            if (cell.getV() != null && cell.getV().getV() != null) {
+                                String cellValue = String.valueOf(cell.getV().getV()).trim();
+                                if (cellValue.isEmpty()) continue; 
+
+                                // 【这里调用了 isOkSymbol 和 isNgSymbol】
+                                if (isOkSymbol(cellValue, rule.getOkSymbol())) {
+                                    okCount++; 
+                                } else if (isNgSymbol(cellValue, rule.getNgSymbol())) {
+                                    ngCount++; 
+                                } else {
+                                    explicitNaCount++;
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. 计算最终的 NA 和 Total
+                    int naCount;
+                    if (totalRange != null) {
+                        naCount = Math.max(0, totalCount - okCount - ngCount);
                     } else {
+                        naCount = explicitNaCount;
                         totalCount = okCount + ngCount + naCount;
                     }
 
-                    log.info("常规规则 '{}' 计算结果: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
-
+                    log.info("规则 '{}' 统计: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
                     saveOrUpdateStatistic(fileId, rule.getCategory(), okCount, ngCount, naCount, totalCount);
                 }
             }
         }
 
-        // --- [第二部分：特殊统计逻辑] ---
-        // 保持原有逻辑不变
+        // --- [第二部分：特殊统计逻辑 (重大风险)] ---
         if (luckysheetData != null && luckysheetData.getSheets() != null && !luckysheetData.getSheets().isEmpty()) {
             LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
             if (sheet.getName() != null && sheet.getName().contains("重大风险")) {
-                log.info(">>> 检测到 '重大风险' Sheet，开始执行特殊统计...");
-
                 List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
                 if (celldata != null && !celldata.isEmpty()) {
-                    final int TARGET_COLUMN_I = 8; // I列
-                    final String okSymbol = "OK";
-                    final String ngSymbol = "NG";
+                    final int TARGET_COLUMN_I = 8; // I列 (结果列)
                     
-                    int okCount = 0, ngCount = 0, naCount = 0;
+                    int totalRiskItems = 0;
+                    for (LuckySheetJsonDTO.CellData cell : celldata) {
+                        if (cell.getC() == 0) { // A列
+                             if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
+                                 String val = String.valueOf(cell.getV().getV()).trim();
+                                 if (val.matches("^[0-9]+(\\.0)?$")) {
+                                     totalRiskItems++;
+                                 }
+                             }
+                        }
+                    }
+                    if (totalRiskItems == 0) totalRiskItems = 13;
+
+                    int okCount = 0;
+                    int ngCount = 0;
 
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
-                        if (cell.getC() == TARGET_COLUMN_I) {
+                        if (cell.getC() == TARGET_COLUMN_I) { // I列
                             if (cell.getV() != null && cell.getV().getV() != null) {
                                 String cellValue = String.valueOf(cell.getV().getV()).trim();
-                                if (okSymbol.equalsIgnoreCase(cellValue)) {
+                                if (cellValue.isEmpty()) continue;
+
+                                // 【这里也调用了 isOkSymbol 和 isNgSymbol】
+                                if (isOkSymbol(cellValue, "OK")) {
                                     okCount++; 
-                                } else if (ngSymbol.equalsIgnoreCase(cellValue)) {
+                                } else if (isNgSymbol(cellValue, "NG")) {
                                     ngCount++; 
-                                } else if (!cellValue.isEmpty()) {
-                                    // 同样应用新逻辑：非OK非NG且非空 -> NA
-                                    naCount++;
-                                }
+                                } 
                             }
                         }
                     }
-                    int totalCount = okCount + ngCount + naCount;
-                    saveOrUpdateStatistic(fileId, "重大风险", okCount, ngCount, naCount, totalCount);
+                    
+                    int naCount = Math.max(0, totalRiskItems - okCount - ngCount);
+                    saveOrUpdateStatistic(fileId, "重大风险", okCount, ngCount, naCount, totalRiskItems);
                 }
             }
         }
-
-        log.info("fileId: {} 的统计数据计算并保存完毕。", fileId);
+        log.info("统计完成 fileId: {}", fileId);
     }
 
     /**
-     * 【【【 新增：辅助方法，用于保存或更新一条统计记录 】】】 将重复的数据库操作逻辑提取出来。
+     * 【补全】宽松的 OK 判定逻辑
      */
+    private boolean isOkSymbol(String value, String dbSymbol) {
+        if (value == null) return false;
+        if (dbSymbol != null && value.equals(dbSymbol)) return true;
+        
+        String v = value.toUpperCase();
+        return v.equals("OK") || v.equals("√") || v.equals("TRUE") || v.equals("PASS") || v.equals("YES");
+    }
+
+    /**
+     * 【补全】宽松的 NG 判定逻辑
+     */
+    private boolean isNgSymbol(String value, String dbSymbol) {
+        if (value == null) return false;
+        if (dbSymbol != null && value.equals(dbSymbol)) return true;
+        
+        String v = value.toUpperCase();
+        return v.equals("NG") || v.equals("×") || v.equals("X") || v.equals("FALSE") || v.equals("FAIL") || v.equals("NO");
+    }
+
+    // =================================================================================
+
     private void saveOrUpdateStatistic(Long fileId, String category, int okCount, int ngCount, int naCount, int totalCount) {
         SheetStatistic statisticRecord = new SheetStatistic();
         statisticRecord.setFileId(fileId);
