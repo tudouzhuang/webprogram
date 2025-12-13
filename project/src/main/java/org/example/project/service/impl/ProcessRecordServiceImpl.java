@@ -1373,4 +1373,163 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("用户 {} 成功撤回了记录 #{}", currentUser.getUsername(), recordId);
     }
 
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void splitLargeExcelFile(Long fileId) throws IOException {
+        log.info(">>> 开始处理大文件分割任务, FileID: {}", fileId);
+
+        // 1. 获取源文件信息
+        ProjectFile sourceFileRecord = projectFileMapper.selectById(fileId);
+        if (sourceFileRecord == null) throw new NoSuchElementException("文件不存在");
+
+        Path sourcePath = Paths.get(uploadDir, sourceFileRecord.getFilePath());
+        if (!Files.exists(sourcePath)) throw new IOException("物理文件丢失");
+
+        // 2. 准备分割参数
+        final int MAX_ROWS_PER_FILE = 3000; // 每个小文件包含的最大行数（可根据需求调整为 2000 或 5000）
+        String baseName = sourceFileRecord.getFileName().replace(".xlsx", "").replace(".xls", "");
+        String originalExt = sourceFileRecord.getFileName().substring(sourceFileRecord.getFileName().lastIndexOf("."));
+        
+        // 3. 使用 POI 读取源文件
+        try (InputStream is = Files.newInputStream(sourcePath);
+             Workbook sourceWorkbook = WorkbookFactory.create(is)) {
+            
+            int partCounter = 1;
+            
+            // 遍历源文件的每一个 Sheet
+            for (int s = 0; s < sourceWorkbook.getNumberOfSheets(); s++) {
+                Sheet sourceSheet = sourceWorkbook.getSheetAt(s);
+                int totalRows = sourceSheet.getLastRowNum();
+                
+                // 如果 Sheet 是空的，跳过
+                if (totalRows <= 0) continue;
+
+                log.info("正在处理 Sheet: {} (共 {} 行)", sourceSheet.getSheetName(), totalRows);
+                
+                // 开始切分行
+                int currentRowIndex = 0; // 源文件的当前行指针
+                
+                while (currentRowIndex <= totalRows) {
+                    // 3.1 创建一个新的 Workbook 作为分卷
+                    try (Workbook targetWorkbook = new XSSFWorkbook()) {
+                        Sheet targetSheet = targetWorkbook.createSheet(sourceSheet.getSheetName() + "_Part" + partCounter);
+                        
+                        // 复制表头（通常第0行是表头）
+                        // 这里简单处理：总是把源文件的第一行复制到每个分卷的头部，方便查看
+                        int targetRowIndex = 0;
+                        if (currentRowIndex > 0) {
+                             Row sourceHeader = sourceSheet.getRow(0);
+                             if (sourceHeader != null) {
+                                 Row targetHeader = targetSheet.createRow(targetRowIndex++);
+                                 copyRow(sourceHeader, targetHeader, targetWorkbook);
+                             }
+                        }
+
+                        // 复制数据行
+                        int rowsInThisPart = 0;
+                        while (rowsInThisPart < MAX_ROWS_PER_FILE && currentRowIndex <= totalRows) {
+                            Row sourceRow = sourceSheet.getRow(currentRowIndex);
+                            if (sourceRow != null) {
+                                Row targetRow = targetSheet.createRow(targetRowIndex++);
+                                copyRow(sourceRow, targetRow, targetWorkbook);
+                            }
+                            currentRowIndex++;
+                            rowsInThisPart++;
+                        }
+
+                        // 如果这个分卷有数据，则保存
+                        if (rowsInThisPart > 0) {
+                            String newFileName = String.format("%s_part%d%s", baseName, partCounter, originalExt);
+                            saveSplitFile(sourceFileRecord, targetWorkbook, newFileName);
+                            partCounter++;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("文件分割失败", e);
+            throw new IOException("文件分割过程中发生错误: " + e.getMessage());
+        }
+        
+        log.info(">>> 大文件分割完成。");
+    }
+
+        /**
+     * 辅助方法：保存分割后的 Workbook 到磁盘和数据库
+     */
+    private void saveSplitFile(ProjectFile originalRecord, Workbook workbook, String newFileName) throws IOException {
+        // 1. 构建物理路径
+        String storedName = System.currentTimeMillis() + "_" + newFileName;
+        // 存放在与原文件相同的目录下
+        Path parentDir = Paths.get(uploadDir, originalRecord.getFilePath()).getParent();
+        if (parentDir == null) parentDir = Paths.get(uploadDir); 
+        
+        Path newFilePath = parentDir.resolve(storedName);
+        
+        // 2. 写入磁盘
+        try (java.io.OutputStream os = Files.newOutputStream(newFilePath)) {
+            workbook.write(os);
+        }
+        
+        // 3. 写入数据库
+        ProjectFile newRecord = new ProjectFile();
+        newRecord.setProjectId(originalRecord.getProjectId());
+        newRecord.setRecordId(originalRecord.getRecordId()); // 如果原文件属于某个记录，新文件也属于它
+        
+        // 【关键】保持 documentType 一致，这样前端列表的 filter 才能把它们显示出来
+        newRecord.setDocumentType(originalRecord.getDocumentType()); 
+        
+        newRecord.setFileName(newFileName);
+        newRecord.setFileType(originalRecord.getFileType());
+        
+        // 计算相对路径
+        String relativePath = Paths.get(uploadDir).relativize(newFilePath).toString().replace("\\", "/");
+        newRecord.setFilePath(relativePath);
+        
+        newRecord.setCreatedAt(LocalDateTime.now());
+        
+        projectFileMapper.insert(newRecord);
+        log.info("已生成分卷: {}", newFileName);
+    }
+
+    /**
+     * 辅助方法：复制行数据 (简化版，只复制值，不深度复制复杂样式以节省内存)
+     */
+    private void copyRow(Row sourceRow, Row targetRow, Workbook targetWorkbook) {
+        // 设置行高
+        targetRow.setHeight(sourceRow.getHeight());
+
+        for (int i = 0; i < sourceRow.getLastCellNum(); i++) {
+            Cell sourceCell = sourceRow.getCell(i);
+            if (sourceCell == null) continue;
+
+            Cell targetCell = targetRow.createCell(i);
+            
+            // 复制单元格类型和值
+            switch (sourceCell.getCellType()) {
+                case STRING:
+                    targetCell.setCellValue(sourceCell.getStringCellValue());
+                    break;
+                case NUMERIC:
+                    if (DateUtil.isCellDateFormatted(sourceCell)) {
+                        targetCell.setCellValue(sourceCell.getLocalDateTimeCellValue());
+                    } else {
+                        targetCell.setCellValue(sourceCell.getNumericCellValue());
+                    }
+                    break;
+                case BOOLEAN:
+                    targetCell.setCellValue(sourceCell.getBooleanCellValue());
+                    break;
+                case FORMULA:
+                    targetCell.setCellFormula(sourceCell.getCellFormula());
+                    break;
+                case BLANK:
+                    targetCell.setBlank();
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
 }

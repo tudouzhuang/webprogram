@@ -1,14 +1,14 @@
 package org.example.project.controller;
 
 // --- 基础 Spring 依赖 ---
-import org.example.project.dto.LuckySheetJsonDTO; 
+import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.StatisticsResultDTO;
 import org.example.project.service.ExcelSplitterService;
 import org.example.project.service.ProcessRecordService; // 【新增】导入 ProcessRecordService
 import org.example.project.service.StatisticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource; 
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -18,9 +18,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestParam; 
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.core.io.ByteArrayResource; // 【新增】用于返回内存中的文件流
 // --- 日志、实体和Mapper依赖 ---
 import org.example.project.entity.ProjectFile;
@@ -34,11 +35,10 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List; 
+import java.util.List;
 
 /**
- * 文件控制器 (File Controller)
- * 负责处理所有与文件获取、下载、预览相关的API请求。
+ * 文件控制器 (File Controller) 负责处理所有与文件获取、下载、预览相关的API请求。
  */
 @RestController
 @RequestMapping("/api/files")
@@ -86,11 +86,9 @@ public class FileController {
         }
     }
 
-
     // =======================================================
     //  ↓↓↓ 【已有功能】: 获取文件内容 (核心修改点) ↓↓↓
     // =======================================================
-
     @GetMapping("/content/{fileId}")
     public ResponseEntity<?> getFileContentById(
             @PathVariable Long fileId,
@@ -120,7 +118,7 @@ public class FileController {
                 if (fileRecord.getFileName().contains("设计重大风险排查表")) {
                     processRecordService.autoFillRiskSheetData(fileRecord.getRecordId(), sheets);
                 }
-                return ResponseEntity.ok(sheets); 
+                return ResponseEntity.ok(sheets);
 
             } else {
                 // --- 分支B: 用户需要原始文件 (Luckysheet 前端解析模式) ---
@@ -134,7 +132,7 @@ public class FileController {
                     try {
                         // 1. 调用 Service 方法，获取经过修改（自动填充）后的文件字节流
                         byte[] modifiedBytes = processRecordService.processRiskSheetStream(fileId);
-                        
+
                         // 2. 返回内存中的流，而不是磁盘文件
                         return ResponseEntity.ok()
                                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
@@ -164,7 +162,6 @@ public class FileController {
         }
     }
 
-    
     // determineContentType 方法保持原样
     private String determineContentType(Path path, String fileName) {
         try {
@@ -190,7 +187,7 @@ public class FileController {
                 return "image/jpeg";
             }
         }
-        
+
         return "application/octet-stream";
     }
 
@@ -212,7 +209,7 @@ public class FileController {
             } catch (IOException e) {
                 log.error("删除物理文件失败: {}", filePath, e);
             }
-            
+
             // 3. 从数据库删除记录
             projectFileMapper.deleteById(fileId);
             log.info("成功从数据库删除文件记录, ID: {}", fileId);
@@ -230,5 +227,21 @@ public class FileController {
     public ResponseEntity<StatisticsResultDTO> getFileStatistics(@PathVariable Long fileId) {
         StatisticsResultDTO stats = statisticsService.getSavedStats(fileId);
         return ResponseEntity.ok(stats);
+    }
+
+    @PostMapping("/{fileId}/split")
+    public ResponseEntity<?> splitLargeFile(@PathVariable Long fileId) {
+        log.info("接收到文件分割请求, fileId: {}", fileId);
+        try {
+            // 调用 Service 执行分割逻辑
+            processRecordService.splitLargeExcelFile(fileId);
+            return ResponseEntity.ok("文件分割成功");
+        } catch (IOException e) {
+            log.error("文件分割 IO 异常", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("文件读写失败: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("文件分割未知异常", e);
+            return ResponseEntity.badRequest().body("分割失败: " + e.getMessage());
+        }
     }
 }
