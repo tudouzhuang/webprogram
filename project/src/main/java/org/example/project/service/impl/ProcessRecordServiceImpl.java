@@ -1209,6 +1209,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
                 quoteWeight = project.getQuoteWeight().doubleValue();
             }
         }
+        // 【手术刀修改结束】--------------------------------------------------------
 
         // 5. 修改当前文件 (风险表)
         try (InputStream is = Files.newInputStream(path); Workbook workbook = WorkbookFactory.create(is); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
@@ -1339,6 +1340,37 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         font.setColor(color);
         font.setBold(true);
         return font;
+    }
+
+    @Override
+    @Transactional
+    public void withdrawRecord(Long recordId) {
+        ProcessRecord record = this.getById(recordId);
+        if (record == null) {
+            throw new NoSuchElementException("记录不存在");
+        }
+
+        // 1. 权限校验：只有创建者自己可以撤回
+        User currentUser = getCurrentUser();
+        if (!record.getCreatedByUserId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("您无权撤回他人的提交记录。");
+        }
+
+        // 2. 状态校验：只有 PENDING_REVIEW (待审核) 状态可以撤回
+        // 如果已经是 APPROVED (已通过) 或其他状态，则不允许撤回
+        if (record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
+            throw new IllegalStateException("当前状态无法撤回，只能撤回[待审核]的任务。");
+        }
+
+        // 3. 执行撤回：状态变回 DRAFT，负责人变回创建者
+        record.setStatus(ProcessRecordStatus.DRAFT);
+        record.setAssigneeId(record.getCreatedByUserId()); // 重新把任务分配给自己
+        
+        // 可选：清空之前的审核日志或保留
+        // record.setRejectionComment(null); 
+
+        this.updateById(record);
+        log.info("用户 {} 成功撤回了记录 #{}", currentUser.getUsername(), recordId);
     }
 
 }

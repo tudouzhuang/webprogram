@@ -353,4 +353,10 @@ public class ProcessRecordController {
         processRecordService.approveRecord(recordId); // 假设Service中有此方法
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/{recordId}/withdraw")
+    public ResponseEntity<Void> withdrawRecord(@PathVariable Long recordId) {
+        processRecordService.withdrawRecord(recordId);
+        return ResponseEntity.ok().build();
+    }
 }

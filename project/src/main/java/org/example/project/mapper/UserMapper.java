@@ -2,6 +2,7 @@
 package org.example.project.mapper;
 
 import java.util.List;
+import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -39,12 +40,26 @@ public interface UserMapper extends BaseMapper<User> {
     @Select("SELECT * FROM users WHERE username = #{username}")
     User selectByUsername(@Param("username") String username);
 
+    /**
+     * 【修正】智能负载均衡查询
+     * 修正点：WHERE u.role -> WHERE u.identity
+     */
     @Select("SELECT u.*, COUNT(pr.id) as workload " +
-        "FROM users u " +
-        "LEFT JOIN process_records pr ON u.id = pr.assignee_id AND pr.status = 'PENDING_REVIEW' " +
-        "WHERE u.role = #{role} " +
-        "GROUP BY u.id " +
-        "ORDER BY workload ASC, u.id ASC " +
-        "LIMIT 1")
+            "FROM users u " +
+            "LEFT JOIN process_records pr ON u.id = pr.assignee_id AND pr.status = 'PENDING_REVIEW' " +
+            "WHERE u.identity = #{role} " + // <--- 关键修改：role 改为 identity
+            "GROUP BY u.id " +
+            "ORDER BY workload ASC, u.id ASC " +
+            "LIMIT 1")
     User findLeastLoadedUserByRole(@Param("role") String role);
+
+    // 统计待办任务数 (供 saveReviewSheet 中的智能分配使用)
+    @Select("<script>" +
+            "SELECT assignee_id as assigneeId, COUNT(*) as taskCount " +
+            "FROM process_records " +
+            "WHERE status = 'PENDING_REVIEW' AND assignee_id IN " +
+            "<foreach item='id' collection='userIds' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "GROUP BY assignee_id" +
+            "</script>")
+    List<Map<String, Object>> countPendingTasksByAssignees(@Param("userIds") List<Long> userIds);
 }

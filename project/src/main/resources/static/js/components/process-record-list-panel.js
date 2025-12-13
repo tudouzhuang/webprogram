@@ -91,19 +91,31 @@ Vue.component('process-record-list-panel', {
                                 </el-table-column>
 
                                 <el-table-column label="操作" width="180" fixed="right">
-                                    <template slot-scope="scope">
-                                        <!-- 状态: 草稿 (DRAFT) -> 可编辑和删除 -->
-                                        <template v-if="scope.row.status === 'DRAFT'">
-                                            <el-button @click="editRecord(scope.row)" type="primary" size="small">编辑</el-button>
-                                            <el-button @click="deleteRecord(scope.row)" type="text" size="small" style="color: #F56C6C; margin-left: 10px;">删除</el-button>
-                                        </template>
-                                        
-                                        <!-- 状态: 已打回 (CHANGES_REQUESTED) -> 可修改 -->
-                                        <el-button v-else-if="scope.row.status === 'CHANGES_REQUESTED'" @click="editRecord(scope.row)" type="danger" size="small">修改并重提</el-button>
-
-                                        <!-- 其他状态 -> 只能查看 -->
-                                        <el-button v-else @click="viewRecordDetails(scope.row)" type="text" size="small">查看详情</el-button>
+                                <template slot-scope="scope">
+                                    <!-- 状态: 草稿 (DRAFT) -> 可编辑和删除 -->
+                                    <template v-if="scope.row.status === 'DRAFT'">
+                                        <el-button @click="editRecord(scope.row)" type="primary" size="small">编辑</el-button>
+                                        <el-button @click="deleteRecord(scope.row)" type="text" size="small" style="color: #F56C6C; margin-left: 10px;">删除</el-button>
                                     </template>
+                                    
+                                    <!-- 状态: 已打回 (CHANGES_REQUESTED) -> 可修改 -->
+                                    <el-button v-else-if="scope.row.status === 'CHANGES_REQUESTED'" @click="editRecord(scope.row)" type="danger" size="small">修改并重提</el-button>
+
+                                    <!-- 【新增】状态: 待审核 (PENDING_REVIEW) -> 可撤回 -->
+                                    <!-- 只有当前用户是该记录的创建者时，才显示撤回按钮 -->
+                                    <el-button 
+                                        v-else-if="scope.row.status === 'PENDING_REVIEW' && currentUser && scope.row.createdByUserId === currentUser.id" 
+                                        @click="withdrawRecord(scope.row)" 
+                                        type="warning" 
+                                        size="small" 
+                                        plain
+                                        icon="el-icon-refresh-left">
+                                        撤回
+                                    </el-button>
+
+                                    <!-- 其他状态 -> 只能查看 -->
+                                    <el-button v-else @click="viewRecordDetails(scope.row)" type="text" size="small">查看详情</el-button>
+                                </template>
                                 </el-table-column>
                             </el-table>
                             
@@ -282,6 +294,26 @@ Vue.component('process-record-list-panel', {
                 'REJECTED': 'danger', 'CHANGES_REQUESTED': 'primary'
             };
             return typeMap[status] || 'primary';
+        },
+        withdrawRecord(record) {
+            this.$confirm(`确定要撤回 "${record.partName}" 的提交吗？\n撤回后记录将变回“草稿”状态，您可以继续编辑。`, '撤回确认', {
+                confirmButtonText: '确定撤回',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+                // 调用后端撤回接口
+                axios.post(`/api/process-records/${record.id}/withdraw`)
+                    .then(() => {
+                        this.$message.success('撤回成功！');
+                        // 刷新列表以更新状态
+                        this.fetchRecordList();
+                    })
+                    .catch(error => {
+                        this.$message.error('撤回失败: ' + (error.response?.data?.message || '未知错误'));
+                    });
+            }).catch(() => {
+                // 用户点击取消
+            });
         },
 
     },

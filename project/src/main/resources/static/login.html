@@ -1,73 +1,98 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
-    <title>登录</title>
+    <title>登录 - 系统入口</title>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Portal - Bootstrap 5 Admin Dashboard Template For Developers" />
+    <meta name="description" content="Portal Admin Dashboard" />
     <meta name="author" content="Xiaoying Riley at 3rd Wave Media" />
     <link rel="shortcut icon" href="favicon.ico" />
-    <script defer src="assets/plugins/fontawesome/js/all.min.js"></script>
+    <script src="assets/plugins/fontawesome/js/all.min.js"></script>
     <link id="theme-style" rel="stylesheet" href="assets/css/portal.css" />
 
-    <!-- 【新增】为 Bootstrap Toast 添加自定义样式 -->
     <style>
       .toast-container {
-        z-index: 1090; /* 确保 Toast 在最顶层 */
+        z-index: 9999;
       }
-      /* 增强Toast头部的视觉效果 */
+      /* 成功提示样式 */
       .toast.bg-success .toast-header {
-        background-color: #157347; /* 更深的成功色 */
+        background-color: #198754;
         color: white;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
       }
+      /* 错误提示样式 */
       .toast.bg-danger .toast-header {
-        background-color: #b02a37; /* 更深的危险色 */
+        background-color: #dc3545;
         color: white;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
       }
-      /* 关闭按钮样式适配深色背景 */
       .toast-header .btn-close {
         filter: invert(1) grayscale(100%) brightness(200%);
+      }
+      /* 加载中遮罩层 (防止重复点击) */
+      .loading-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(255, 255, 255, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 0.25rem;
+        display: none;
+      }
+      .form-control:focus {
+        border-color: #15a362;
+        box-shadow: 0 0 0 0.2rem rgba(21, 163, 98, 0.25);
       }
     </style>
   </head>
 
   <body class="app app-login p-0">
-    <!-- ========================================================== -->
-    <!--     ↓↓↓ 第一步：修改 Toast 的 HTML 结构和位置 ↓↓↓         -->
-    <!-- ========================================================== -->
-    <!--  【位置修改】将 'end-0' (右侧) 修改为 'start-0' (左侧) -->
-    <div class="toast-container position-fixed top-0 start-0 p-3">
-      <div id="login-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+    <!-- 全局 Toast 通知容器 -->
+    <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
+      <div id="login-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="4000">
         <div class="toast-header">
           <strong class="me-auto" id="toast-header-title">系统提示</strong>
+          <small id="toast-time">刚刚</small>
           <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
         <div class="toast-body" id="toast-body-content">
-          <!-- 消息内容将由 JavaScript 动态填充 -->
+          <!-- JS 填充 -->
         </div>
       </div>
     </div>
-    
+
     <div class="row g-0 app-auth-wrapper">
       <div class="col-12 col-md-7 col-lg-6 auth-main-col text-center p-5">
         <div class="d-flex flex-column align-content-end">
-          <div class="app-auth-body mx-auto">
+          <div class="app-auth-body mx-auto position-relative">
+            
+            <!-- 加载遮罩 -->
+            <div id="form-loading" class="loading-overlay">
+                <div class="spinner-border text-success" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+
             <div class="app-auth-branding mb-4">
               <a class="app-logo" href="index.html">
                 <img class="logo-icon me-2" src="assets/images/app-logo.svg" alt="logo" />
               </a>
             </div>
-            <h2 class="auth-heading text-center mb-5">登录</h2>
+            <h2 class="auth-heading text-center mb-5">账号登录</h2>
+            
             <div class="auth-form-container text-start">
               <form class="auth-form login-form" id="login-form">
                 <div class="email mb-3">
                   <label class="sr-only" for="username">用户名</label>
-                  <input id="username" name="username" type="text" class="form-control signin-username" placeholder="请输入您的用户名" required="required"/>
+                  <input id="username" name="username" type="text" class="form-control signin-username" placeholder="用户名" required="required" autocomplete="username"/>
                 </div>
                 <div class="password mb-3">
                   <label class="sr-only" for="password">密码</label>
-                  <input id="password" name="password" type="password" class="form-control signin-password" placeholder="请输入密码" required="required"/>
+                  <input id="password" name="password" type="password" class="form-control signin-password" placeholder="密码" required="required" autocomplete="current-password"/>
+                  
                   <div class="extra mt-3 row justify-content-between">
                     <div class="col-6">
                       <div class="form-check">
@@ -77,20 +102,29 @@
                     </div>
                     <div class="col-6">
                       <div class="forgot-password text-end">
-                        <a href="reset-password.html" style="text-decoration: none">忘记密码？</a>
+                        <a href="reset-password.html" class="text-decoration-none">忘记密码？</a>
                       </div>
                     </div>
                   </div>
                 </div>
+                
                 <div class="text-center">
-                  <button type="submit" class="btn app-btn-primary w-100 theme-btn mx-auto">
+                  <button type="submit" class="btn app-btn-primary w-100 theme-btn mx-auto" id="submit-btn">
                     登录
                   </button>
                 </div>
               </form>
+              
               <div class="auth-option text-center pt-5">
-                没有账户？ <a class="text-link" href="/signup">注册一个</a>
+                没有账户？ <a class="text-link" href="/signup">立即注册</a>
               </div>
+              
+              <!-- 调试信息展示区 (默认隐藏，出错时显示，方便用户截图反馈) -->
+              <div id="debug-area" class="mt-4 p-2 bg-light border rounded text-danger" style="display:none; font-size: 12px; text-align: left; word-break: break-all;">
+                  <strong>出错信息 (请截图反馈给管理员):</strong><br>
+                  <span id="debug-msg"></span>
+              </div>
+
             </div>
           </div>
         </div>
@@ -106,116 +140,162 @@
       </div>
     </div>
 
-    <!-- 依赖库 -->
+    <!-- 引入库 -->
     <script src="/material/axios.min.js"></script>
-    <!-- 【重要】确保引入了 Bootstrap 的 JS 文件 -->
     <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 
-    <!-- ========================================================== -->
-    <!--     ↓↓↓ 第二步：优化 JS 逻辑以控制 Bootstrap Toast ↓↓↓     -->
-    <!-- ========================================================== -->
     <script>
-      // 获取需要操作的 DOM 元素
+      // DOM 元素引用
       const loginForm = document.getElementById('login-form');
-      const usernameInput = document.getElementById('username');
-      const passwordInput = document.getElementById('password');
-      const submitButton = loginForm.querySelector('button[type="submit"]');
+      const submitBtn = document.getElementById('submit-btn');
+      const debugArea = document.getElementById('debug-area');
+      const debugMsg = document.getElementById('debug-msg');
+      const loadingOverlay = document.getElementById('form-loading');
 
-      // 初始化 Bootstrap Toast
-      const toastElement = document.getElementById('login-toast');
-      const toastHeaderTitle = document.getElementById('toast-header-title');
-      const toastBodyContent = document.getElementById('toast-body-content');
-      // 注意：这里我们创建一个Toast实例，但不在此时设置延迟，而是在调用showToast时动态设置
-      const bsToast = new bootstrap.Toast(toastElement); 
+      // 初始化 Toast
+      const toastEl = document.getElementById('login-toast');
+      const toastInstance = new bootstrap.Toast(toastEl);
+      const toastTitle = document.getElementById('toast-header-title');
+      const toastBody = document.getElementById('toast-body-content');
 
       /**
-       * 【新增】封装一个显示 Toast 的函数
-       * @param {string} type - 'success' 或 'error'
-       * @param {string} title - 提示框的标题
-       * @param {string} message - 提示框的主体内容 (支持HTML)
-       * @param {number} delay - 自动关闭的延迟时间 (毫秒)
+       * 显示 Toast 提示
        */
-      function showToast(type, title, message, delay = 3000) {
-          // 清除可能存在的旧样式
-          toastElement.classList.remove('bg-success', 'bg-danger', 'text-white');
-
-          let icon = '';
-          if (type === 'success') {
-              toastElement.classList.add('bg-success', 'text-white');
-              icon = '<i class="fas fa-check-circle me-2"></i>'; // 成功图标
-          } else { // 默认为 error
-              toastElement.classList.add('bg-danger', 'text-white');
-              icon = '<i class="fas fa-exclamation-triangle me-2"></i>'; // 失败/警告图标
-          }
-
-          toastHeaderTitle.textContent = title;
-          toastBodyContent.innerHTML = icon + message;
-          
-          // 更新Toast的延迟设置并显示
-          bsToast._config.delay = delay;
-          bsToast.show();
+      function showToast(type, title, message) {
+        toastEl.className = `toast ${type === 'success' ? 'bg-success' : 'bg-danger'} text-white`;
+        toastTitle.textContent = title;
+        toastBody.innerHTML = message;
+        toastInstance.show();
       }
 
-      loginForm.addEventListener('submit', function(event) {
-          event.preventDefault();
-          
-          submitButton.disabled = true;
-          submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 登录中...';
-
-          const username = usernameInput.value.trim();
-          const password = passwordInput.value.trim();
-  
-          if (!username || !password) {
-              showToast('error', '输入错误', '用户名和密码不能为空！');
-              submitButton.disabled = false;
-              submitButton.textContent = '登录';
-              return;
+      /**
+       * 显示调试信息
+       */
+      function showDebugInfo(error) {
+          debugArea.style.display = 'block';
+          let msg = new Date().toLocaleString() + ' - ';
+          if (error.response) {
+              // 后端有返回，但状态码不对
+              msg += `Status: ${error.response.status} | Data: ${JSON.stringify(error.response.data)}`;
+          } else if (error.request) {
+              // 请求已发出，无响应
+              msg += `Network Error: 无响应 (请检查网络或服务器IP)`;
+          } else {
+              // 设置请求时发生错误
+              msg += `Error: ${error.message}`;
           }
-  
-          const params = new URLSearchParams();
-          params.append('username', username);
-          params.append('password', password);
-  
-          axios.post('/api/users/login', params)
-              .then(function(response) {
-                  if (response.data && response.data.success) {
-                      const userRole = response.data.role;
-                      if (userRole) {
-                          sessionStorage.setItem('userRole', userRole);
-                      }
+          debugMsg.textContent = msg;
+      }
 
-                      let roleText = '用户';
-                      switch(userRole) {
-                          case 'student': roleText = '学生'; break;
-                          case 'designer': roleText = '设计员'; break;
-                          case 'manager': roleText = '管理员'; break;
-                      }
-                      
-                      const welcomeMessage = `欢迎您，<strong>${roleText}</strong>！即将进入系统...`;
-                      showToast('success', '登录成功', welcomeMessage, 2000);
+      // 配置 Axios 全局默认值
+      axios.defaults.timeout = 8000; // 8秒超时，防止无限等待
 
-                      setTimeout(() => {
-                          window.location.href = response.data.redirectUrl || '/index';
-                      }, 2000);
-  
-                  } else {
-                      // 业务失败
-                      showToast('error', '登录失败', response.data.message || '未知错误。');
-                      submitButton.disabled = false;
-                      submitButton.textContent = '登录';
-                  }
-              })
-              .catch(function(error) {
-                  // 网络或认证失败
-                  let errorMessage = '用户名或密码不正确，请重试。';
-                  if (error.response && error.response.data && error.response.data.message) {
-                      errorMessage = error.response.data.message;
-                  }
-                  showToast('error', '认证失败', errorMessage);
-                  submitButton.disabled = false;
-                  submitButton.textContent = '登录';
-              });
+      /**
+       * 登录请求逻辑 (带重试机制)
+       * @param {Object} params - 表单数据
+       * @param {number} retries - 剩余重试次数
+       */
+      async function attemptLogin(params, retries = 1) {
+          try {
+              // 模拟 API 路径，如果这里是 localhost，请务必改为相对路径或服务器真实IP
+              const response = await axios.post('/api/users/login', params);
+              return response; // 成功直接返回
+          } catch (error) {
+              // 如果还有重试次数，并且是网络错误（不是账号密码错误），则重试
+              // 401/400 通常是账号密码错，不需要重试
+              if (retries > 0 && (!error.response || error.response.status >= 500)) {
+                  console.warn(`请求失败，正在重试... 剩余次数: ${retries}`);
+                  showToast('error', '网络波动', `连接不稳定，正在自动重试 (${retries})...`);
+                  // 等待 1 秒后重试
+                  await new Promise(r => setTimeout(r, 1000));
+                  return attemptLogin(params, retries - 1);
+              } else {
+                  throw error; // 抛出错误给主逻辑处理
+              }
+          }
+      }
+
+      // 表单提交事件
+      loginForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        // 1. 获取并验证输入
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+
+        if (!username || !password) {
+            showToast('error', '提示', '请填写完整的账号和密码');
+            return;
+        }
+
+        // 2. 锁定 UI
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 登录中...';
+        loadingOverlay.style.display = 'flex'; // 显示遮罩
+        debugArea.style.display = 'none'; // 隐藏旧的报错
+
+        // 3. 准备数据
+        const params = new URLSearchParams();
+        params.append('username', username);
+        params.append('password', password);
+
+        // 4. 发起请求 (使用封装的带重试函数)
+        attemptLogin(params)
+          .then(function (response) {
+            if (response.data && response.data.success) {
+              // --- 登录成功 ---
+              const userRole = response.data.role;
+              if (userRole) sessionStorage.setItem('userRole', userRole);
+
+              let roleName = '用户';
+              if(userRole === 'manager') roleName = '管理员';
+              if(userRole === 'designer') roleName = '设计员';
+              if(userRole === 'student') roleName = '学生';
+
+              showToast('success', '登录成功', `欢迎回来，<b>${roleName}</b>！正在跳转...`);
+              
+              // 延迟跳转
+              setTimeout(() => {
+                window.location.href = response.data.redirectUrl || '/index';
+              }, 1500);
+            } else {
+              // --- 业务逻辑失败 (如密码错误) ---
+              throw new Error(response.data.message || '未知业务错误');
+            }
+          })
+          .catch(function (error) {
+            // --- 捕获所有错误 ---
+            console.error(error);
+            let userMsg = '登录遇到问题，请重试';
+
+            if (error.response) {
+                // 服务器返回了错误状态码
+                if (error.response.status === 401 || error.response.data?.message) {
+                    userMsg = error.response.data.message || '用户名或密码错误';
+                } else if (error.response.status === 404) {
+                    userMsg = '登录接口不存在 (404)，请联系管理员';
+                } else if (error.response.status >= 500) {
+                    userMsg = '服务器内部错误 (500)，请稍后再试';
+                }
+            } else if (error.request) {
+                // 请求发出但无响应
+                userMsg = '无法连接到服务器，请检查网络或防火墙设置';
+            } else {
+                // 代码逻辑错误
+                userMsg = error.message;
+            }
+
+            showToast('error', '登录失败', userMsg);
+            
+            // 显示底部的调试信息，方便用户截图
+            showDebugInfo(error);
+
+            // 恢复 UI
+            submitBtn.disabled = false;
+            submitBtn.textContent = '登录';
+            loadingOverlay.style.display = 'none';
+          });
       });
-  </script>
+    </script>
   </body>
 </html>

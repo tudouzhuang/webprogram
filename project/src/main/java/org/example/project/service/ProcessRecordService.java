@@ -39,4 +39,8 @@ public interface ProcessRecordService {
      */
     void autoFillRiskSheetData(Long recordId, List<LuckySheetJsonDTO.SheetData> sheets);
     byte[] processRiskSheetStream(Long fileId) throws IOException;
+    /**
+     * 设计员主动撤回审核申请
+     */
+    void withdrawRecord(Long recordId);
 }

@@ -67,7 +67,17 @@ Vue.component('record-workspace-panel', {
                                     <el-button v-if="canEdit" type="success" icon="el-icon-s-promotion" @click="handleTriggerReview" :loading="isSubmitting" style="width: 100%;">
                                         提交审核
                                     </el-button>
-                                    
+
+                                    <el-button 
+                                        v-if="canWithdraw" 
+                                        type="warning" 
+                                        plain 
+                                        icon="el-icon-refresh-left" 
+                                        @click="handleWithdraw" 
+                                        :loading="isWithdrawing"
+                                        style="width: 100%;">
+                                        撤回提交
+                                    </el-button>
                                 </div>
                                 
                             </div>
@@ -273,9 +283,9 @@ Vue.component('record-workspace-panel', {
             workSessionId: null,
             heartbeatInterval: null,
             isPaused: false,
-            currentSessionSeconds: 0, 
+            currentSessionSeconds: 0,
             sessionTimer: null,
-            currentLiveStats: null, 
+            currentLiveStats: null,
             personnelCache: null // 【保留】用于“挪用”和缓存人员信息
         }
     },
@@ -318,11 +328,11 @@ Vue.component('record-workspace-panel', {
                     axios.get(`/api/process-records/${this.recordId}`),
                     axios.get(`/api/process-records/${this.recordId}/files`)
                 ]);
-                
+
                 let baseRecordInfo = recordResponse.data;
                 const files = (filesResponse.data || []);
                 const excelFiles = files.filter(file => file.fileType && (file.fileType.includes('spreadsheetml') || file.fileType.includes('excel')));
-                
+
                 let finalRecordInfo = baseRecordInfo;
 
                 // 步骤 2: 如果有Excel文件，用它来获取人员姓名
@@ -341,8 +351,8 @@ Vue.component('record-workspace-panel', {
                             };
                         }
                     } catch (e) {
-                         console.error("通过 statistics 接口获取人员信息失败，将使用默认值:", e);
-                         finalRecordInfo = { ...baseRecordInfo, designerName: '（未知）', proofreaderName: '（未知）', auditorName: '（未知）' };
+                        console.error("通过 statistics 接口获取人员信息失败，将使用默认值:", e);
+                        finalRecordInfo = { ...baseRecordInfo, designerName: '（未知）', proofreaderName: '（未知）', auditorName: '（未知）' };
                     }
                 } else {
                     finalRecordInfo = { ...baseRecordInfo, designerName: '（未知）', proofreaderName: '（未知）', auditorName: '（未知）' };
@@ -358,7 +368,7 @@ Vue.component('record-workspace-panel', {
                 } else if (this.excelFiles.length > 0) {
                     this.activeTab = this.excelFiles[0].documentType;
                 }
-                
+
                 // 启动工作会话
                 this.startWorkSession();
 
@@ -419,34 +429,34 @@ Vue.component('record-workspace-panel', {
             }
         },
 
-// 【修改后】
-handleTabClick(tab) {
-    console.log(`[Workspace] 切换到 Tab: ${tab.name}`);
+        // 【修改后】
+        handleTabClick(tab) {
+            console.log(`[Workspace] 切换到 Tab: ${tab.name}`);
 
-    // 1. 【核心修复】: 立即清除上一份文件的实时统计残留！
-    // 否则状态栏会优先显示上一个文件的 liveStats，导致数据不刷新
-    this.currentLiveStats = null;
+            // 1. 【核心修复】: 立即清除上一份文件的实时统计残留！
+            // 否则状态栏会优先显示上一个文件的 liveStats，导致数据不刷新
+            this.currentLiveStats = null;
 
-    // 2. 正常加载逻辑
-    if (tab.name === 'recordMeta') {
-        this.fetchAndDisplayMetaData();
-    } else if (tab.name === 'problemRecord') {
-        // 问题记录页无需特殊加载
-    } else {
-        const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
-        // 确保 DOM 更新后再加载 iframe
-        this.$nextTick(() => {
-            this.loadSheetInIframe(fileToLoad);
-        });
-    }
+            // 2. 正常加载逻辑
+            if (tab.name === 'recordMeta') {
+                this.fetchAndDisplayMetaData();
+            } else if (tab.name === 'problemRecord') {
+                // 问题记录页无需特殊加载
+            } else {
+                const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
+                // 确保 DOM 更新后再加载 iframe
+                this.$nextTick(() => {
+                    this.loadSheetInIframe(fileToLoad);
+                });
+            }
 
-    // 3. 【双重保险】: 强制状态栏组件重新获取“已保存”的数据
-    this.$nextTick(() => {
-        if (this.$refs.statusBarRef && typeof this.$refs.statusBarRef.fetchSavedStats === 'function') {
-            this.$refs.statusBarRef.fetchSavedStats();
-        }
-    });
-},
+            // 3. 【双重保险】: 强制状态栏组件重新获取“已保存”的数据
+            this.$nextTick(() => {
+                if (this.$refs.statusBarRef && typeof this.$refs.statusBarRef.fetchSavedStats === 'function') {
+                    this.$refs.statusBarRef.fetchSavedStats();
+                }
+            });
+        },
 
         // --- 【第4步】: 新增在线保存和提交的核心逻辑 ---
 
@@ -583,10 +593,10 @@ handleTabClick(tab) {
                 //  ↓↓↓ 分支 2: 【【【 新增 】】】 处理实时统计更新的消息 ↓↓↓
                 // =================================================================
             } else if (type === 'STATS_UPDATE') {
-                
+
                 // 1. 获取当前激活的 Excel 文件信息
                 const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
-                
+
                 // 2. 【核心修复】: 只有当消息来源看起来像是当前激活的文件时，才更新 UI
                 // (由于 Luckysheet 没发 ID，我们只能做简单的防御：确认当前确实在看 Excel)
                 if (activeFile) {
@@ -705,6 +715,27 @@ handleTabClick(tab) {
             }
         },
 
+        // 【核心新增】撤回提交逻辑
+        handleWithdraw() {
+            this.$confirm('确定要撤回提交吗？\n撤回后记录将变回“草稿”状态，您可以继续编辑。', '撤回确认', {
+                confirmButtonText: '确定撤回',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(async () => {
+                this.isWithdrawing = true;
+                try {
+                    await axios.post(`/api/process-records/${this.recordId}/withdraw`);
+                    this.$message.success('撤回成功，您现在可以继续编辑了。');
+                    // 重新加载数据以更新界面状态（从 待审核 -> 草稿）
+                    await this.fetchData();
+                } catch (e) {
+                    this.$message.error('撤回失败: ' + (e.response?.data?.message || '未知错误'));
+                } finally {
+                    this.isWithdrawing = false;
+                }
+            }).catch(() => { });
+        },
+
     },
 
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
@@ -789,7 +820,7 @@ handleTabClick(tab) {
                 );
             }
         });
-    
+
         // =======================================================
     },
 
@@ -813,7 +844,7 @@ handleTabClick(tab) {
         window.removeEventListener('wheel', this.handleWheel);
         // =======================================================
     },
-watch: {
+    watch: {
         recordId: {
             immediate: true,
             handler(newId) {
@@ -827,7 +858,7 @@ watch: {
                 }
             }
         },
-        
+
         activeTab(newTabName, oldTabName) {
             // 【新增步骤 0】：在切换瞬间，尝试从旧Tab的状态栏中捕获数据
             // 这作为一个保险，防止 mounted 中的 watcher 没抓到
