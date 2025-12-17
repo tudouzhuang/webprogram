@@ -254,16 +254,14 @@ Vue.component('record-review-panel', {
             allFiles: [],
             activeTab: '',
             isSaving: false,
-            metaData: null,
             scrollTopBeforeClick: 0,
             currentLiveStats: null,
-            isMetaDataLoading: false, // <-- 修复错误一
-            metaData: null,          // 用于存储 metaFile 的内容
-            // 【【【确保这里没有 scrollTopBeforeFocus, _scrollLock, iframeIsActive 等任何东西】】】
-            metaDataContent: null,       // 修复 "metaDataContent" is not defined
-            currentSessionSeconds: 0,    // 修复 "currentSessionSeconds" is not defined
-            currentLiveStats: null,      // 用于状态栏显示统计
-            isMetaDataLoading: false,    // 元数据加载状态
+            currentSessionSeconds: 0,
+            
+            // --- 修正部分 ---
+            isMetaDataLoading: false, 
+            metaDataContent: null, // 统一使用这个变量存储元数据
+            // 移除了重复的 metaData
         }
     },
     // 修改后
@@ -377,31 +375,48 @@ Vue.component('record-review-panel', {
         },
 
         async fetchMetaData() {
+            // 1. 安全检查：如果没有元数据文件记录，直接返回
             if (!this.metaFile) {
-                console.warn("No meta file found to fetch.");
+                console.warn("[Review Panel] 未找到元数据文件记录 (recordMeta)，无法加载。");
                 return;
             }
-
-            // 如果已经加载过，就不再重复请求
-            if (this.metaData) return;
-
-            console.log("Fetching meta data from:", this.metaFile.filePath);
+        
+            // 2. 缓存检查：如果已经有数据了，就不重复请求 (除非你想强制刷新)
+            if (this.metaDataContent) return;
+        
+            this.isMetaDataLoading = true;
+            console.log("[Review Panel] 正在加载元数据...", this.metaFile.filePath);
+        
             try {
-                // 直接使用文件ID构造内容获取URL
+                // 3. 发起请求
                 const fileUrl = `/api/files/content/${this.metaFile.id}`;
-                const response = await axios.get(fileUrl);
-
-                // 后端返回的可能是JSON字符串，也可能是对象，我们做兼容处理
+                // 添加时间戳防止浏览器缓存 GET 请求
+                const response = await axios.get(`${fileUrl}?t=${new Date().getTime()}`);
+        
+                // 4. 数据解析与赋值 【核心修正点】
+                let parsedData = null;
                 if (typeof response.data === 'string') {
-                    this.metaData = JSON.parse(response.data);
+                    try {
+                        parsedData = JSON.parse(response.data);
+                    } catch (e) {
+                        console.error("元数据 JSON 解析失败:", e);
+                        throw new Error("元数据格式错误");
+                    }
                 } else {
-                    this.metaData = response.data;
+                    parsedData = response.data;
                 }
-                console.log("Meta data loaded and parsed:", this.metaData);
-
+        
+                // 赋值给模板正在使用的变量
+                this.metaDataContent = parsedData;
+                console.log("[Review Panel] 元数据加载成功:", this.metaDataContent);
+        
             } catch (error) {
-                console.error("Failed to fetch or parse meta data:", error);
-                this.$message.error("加载表单元数据失败！");
+                console.error("加载元数据失败:", error);
+                this.$message.error("加载表单元数据失败：" + (error.message || "网络错误"));
+                // 设置一个空对象或错误提示对象，避免页面 v-if 报错
+                this.metaDataContent = null; 
+            } finally {
+                this.isMetaDataLoading = false;
             }
         },
 
@@ -643,11 +658,9 @@ Vue.component('record-review-panel', {
             return result.trim();
         },
         handleTabClick(tab) {
-            // 当用户点击 "表单元数据" Tab时，触发数据加载
             if (tab.name === 'recordMeta') {
-                this.fetchMetaData();
+                this.fetchMetaData(); // 调用修正后的方法
             }
-            // 对于Excel文件Tab，loadSheetIntoIframe 会在iframe的 @load 事件中自动触发
         },
         goBack() {
             this.$emit('back-to-review-tasks');
@@ -674,25 +687,6 @@ Vue.component('record-review-panel', {
                     focusCatcher.focus();
                     console.log('Iframe lost focus. Focus returned to focus-catcher.');
                 }
-            }
-        },
-
-
-        async fetchAndDisplayMetaData() {
-            if (!this.metaFile) return;
-            this.isMetaDataLoading = true;
-            try {
-                const res = await axios.get(`/api/files/content/${this.metaFile.id}`);
-                
-                // 确保赋值给 this.metaDataContent
-                this.metaDataContent = (typeof res.data === 'string') ? JSON.parse(res.data) : res.data;
-                console.log("Meta data loaded:", this.metaDataContent);
-                
-            } catch (e) {
-                console.error("加载元数据失败", e);
-                this.metaDataContent = { partName: "加载失败" };
-            } finally {
-                this.isMetaDataLoading = false;
             }
         },
 
@@ -787,13 +781,12 @@ Vue.component('record-review-panel', {
                 }
             }
         },
-        // 【【【新增】】】
+
         activeTab(newTabName, oldTabName) {
             if (newTabName && newTabName !== oldTabName) {
                 if (newTabName === 'recordMeta') {
-                    this.fetchMetaData();
+                    this.fetchMetaData(); // 调用修正后的方法
                 }
-                // 对于Excel Tab，加载会在 iframe 的 @load 事件中自动触发，所以这里不需要额外操作
             }
         }
     }
