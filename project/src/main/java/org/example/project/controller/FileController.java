@@ -37,7 +37,9 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 文件控制器 (File Controller) 负责处理所有与文件获取、下载、预览相关的API请求。
@@ -242,11 +244,15 @@ public class FileController {
 
         // 1. 基础校验 & 路径准备
         ProjectFile fileRecord = projectFileMapper.selectById(fileId);
-        if (fileRecord == null) return ResponseEntity.badRequest().body("数据库中找不到该文件记录");
+        if (fileRecord == null) {
+            return ResponseEntity.badRequest().body("数据库中找不到该文件记录");
+        }
 
         File uploadRootDir = new File(uploadDir);
         File sourceFile = new File(uploadRootDir, fileRecord.getFilePath());
-        if (!sourceFile.exists()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("服务器上找不到物理文件");
+        if (!sourceFile.exists()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("服务器上找不到物理文件");
+        }
 
         // 准备输出目录
         Path relativeParentPath = Paths.get(fileRecord.getFilePath()).getParent();
@@ -261,27 +267,27 @@ public class FileController {
 
                 // A. 调用 Service 执行分割 (传入 fileId 用于更新进度)
                 nativeSplitterService.splitExcelAsync(
-                    fileId, 
-                    sourceFile.getAbsolutePath(), 
-                    outputDirFile.getAbsolutePath()
+                        fileId,
+                        sourceFile.getAbsolutePath(),
+                        outputDirFile.getAbsolutePath()
                 );
 
                 // B. 分割完成，扫描文件并入库
                 File[] splitFiles = outputDirFile.listFiles((dir, name) -> name.toLowerCase().endsWith(".xlsx"));
-                
+
                 if (splitFiles != null && splitFiles.length > 0) {
                     int count = 0;
                     for (File f : splitFiles) {
                         String fileName = f.getName();
                         String newRelativePath = relativeOutputDirPath.resolve(fileName).toString().replace("\\", "/");
-                        
+
                         ProjectFile newFile = new ProjectFile();
                         newFile.setProjectId(fileRecord.getProjectId());
                         newFile.setRecordId(fileRecord.getRecordId());
                         newFile.setFileName(fileName);
                         newFile.setFilePath(newRelativePath);
                         newFile.setFileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                        newFile.setDocumentType("SPLIT_CHILD_SHEET"); 
+                        newFile.setDocumentType("SPLIT_CHILD_SHEET");
                         newFile.setParentId(fileId); // 关联父ID
 
                         projectFileMapper.insert(newFile);
@@ -305,11 +311,20 @@ public class FileController {
         return ResponseEntity.ok("任务已启动，请轮询进度");
     }
 
-@GetMapping("/{fileId}/split-progress")
-    public ResponseEntity<?> getSplitProgress(@PathVariable("fileId") Long fileId) {
-        // 确保这里的类名 NativeExcelSplitterServiceImpl 是正确的，并且已经 Import 了
+    @GetMapping("/{fileId}/split-progress")
+    public ResponseEntity<Map<String, Object>> getSplitProgress(@PathVariable("fileId") Long fileId) {
+        Map<String, Object> result = new HashMap<>();
+
         Integer progress = NativeExcelSplitterServiceImpl.PROGRESS_MAP.getOrDefault(fileId, 0);
-        return ResponseEntity.ok().body(java.util.Collections.singletonMap("progress", progress));
+        result.put("progress", progress);
+
+        // 【核心】获取跳过的 Sheet 列表
+        List<String> skippedSheets = NativeExcelSplitterServiceImpl.SKIPPED_SHEETS_MAP.get(fileId);
+        if (skippedSheets != null && !skippedSheets.isEmpty()) {
+            result.put("skipped_sheets", skippedSheets); // 返回列表
+        }
+
+        return ResponseEntity.ok(result);
     }
 
 }

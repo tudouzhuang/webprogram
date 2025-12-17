@@ -67,130 +67,146 @@ Vue.component('record-review-panel', {
                         
                         <!-- 1. 表单元数据 Tab (UI已升级为el-form) -->
                         <el-tab-pane v-if="metaFile" label="表单元数据" name="recordMeta" lazy>
-                            <div v-if="isMetaDataLoading" class="p-4 text-center">
-                                <i class="el-icon-loading"></i> 正在加载元数据...
-                            </div>
-                            
-                            <!-- 【核心UI改造】: 使用与设计端一致的只读 el-form 来展示数据 -->
-                            <div v-else-if="metaData && !metaData.error" class="p-4">
-                                <el-alert title="原始表单数据" type="info" class="mb-3" :closable="false" description="这是创建此记录时提交的所有表单信息的备份。此内容为只读。"></el-alert>
-                                
-                                <el-form :model="metaData" label-width="120px" label-position="right">
-                                    <!-- 零件和工序信息 -->
-                                    <el-row :gutter="20">
-                                        <el-col :span="12">
-                                            <el-form-item label="零件名称">
-                                                <el-input :value="metaData.partName" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                        <el-col :span="12">
-                                            <el-form-item label="工序名称">
-                                                <el-input :value="metaData.processName" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                    </el-row>
-                                    
-                                    <el-divider>详细规格信息</el-divider>
-                                    
-                                    <!-- 基础信息部分 -->
-                                    <el-row :gutter="20">
-                                        <el-col :span="12"><el-form-item label="制件材质"><el-input :value="metaData.material" disabled></el-input></el-form-item></el-col>
-                                        <el-col :span="12"><el-form-item label="制件料厚"><el-input :value="metaData.thickness" disabled></el-input></el-form-item></el-col>
-                                    </el-row>
-                                    <el-row :gutter="20">
-                                        <el-col :span="12"><el-form-item label="抗拉强度"><el-input :value="metaData.tensileStrength" disabled></el-input></el-form-item></el-col>
-                                        <el-col :span="12"><el-form-item label="客户名称"><el-input :value="metaData.customerName" disabled></el-input></el-form-item></el-col>
-                                    </el-row>
-                                    <el-form-item label="模具图号"><el-input :value="metaData.moldDrawingNumber" type="textarea" :rows="2" disabled></el-input></el-form-item>
-                                    <el-row :gutter="20">
-                                        <el-col :span="12">
-                                            <el-form-item label="使用设备 (主线)">
-                                                <el-input :value="metaDataContent.equipment" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                        <el-col :span="12">
-                                            <el-form-item label="使用设备 (副线)">
-                                                <!-- 如果没有副线信息，显示“无” -->
-                                                <el-input :value="metaDataContent.subEquipment || '无'" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                    </el-row>
-                                    
-                                    <el-divider>人员信息</el-divider>
+                        <div v-if="isMetaDataLoading" class="text-center p-5">正在加载元数据...</div>
                         
-                                    <!-- 设计人员信息 -->
-                                    <el-row :gutter="20">
-                                        <el-col :span="12">
-                                            <el-form-item label="设计人员">
-                                                <el-input :value="metaData.designerName" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                        <el-col :span="12">
-                                            <el-form-item label="日期">
-                                                <el-date-picker type="date" :value="metaData.designerDate" style="width: 100%;" disabled></el-date-picker>
-                                            </el-form-item>
-                                        </el-col>
+                        <!-- 【核心UI改造】: 使用只读的 el-form 来展示数据 -->
+                        <div v-else-if="metaDataContent">
+                            <el-alert title="原始表单数据" type="info" class="mb-3" :closable="false" description="这是创建此记录时提交的所有表单信息的备份。此内容为只读。"></el-alert>
+                            
+                            <!-- 我们复用 el-form 结构，但所有 input 都设为 disabled -->
+                            <el-form :model="metaDataContent" label-width="120px" label-position="right">
+                                <!-- 1. 零件和工序信息 -->
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="零件名称">
+                                            <el-input :value="metaDataContent.partName" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="工序名称">
+                                            <el-input :value="metaDataContent.processName" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                                
+                                <el-divider>详细规格信息</el-divider>
+                                
+                                <!-- 基础信息部分 -->
+                                <el-row :gutter="20">
+                                    <el-col :span="12"><el-form-item label="制件材质"><el-input :value="metaDataContent.material" disabled></el-input></el-form-item></el-col>
+                                    <el-col :span="12"><el-form-item label="制件料厚"><el-input :value="metaDataContent.thickness" disabled></el-input></el-form-item></el-col>
+                                </el-row>
+                                <el-row :gutter="20">
+                                    <el-col :span="12"><el-form-item label="抗拉强度"><el-input :value="metaDataContent.tensileStrength" disabled></el-input></el-form-item></el-col>
+                                    <el-col :span="12"><el-form-item label="客户名称"><el-input :value="metaDataContent.customerName" disabled></el-input></el-form-item></el-col>
+                                </el-row>
+                                <el-form-item label="模具图号"><el-input :value="metaDataContent.moldDrawingNumber" type="textarea" :rows="2" disabled></el-input></el-form-item>
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="使用设备 (主线)">
+                                            <el-input :value="metaDataContent.equipment" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="使用设备 (副线)">
+                                            <!-- 如果没有副线信息，显示“无” -->
+                                            <el-input :value="metaDataContent.subEquipment || '无'" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                                
+                                <el-divider>人员信息</el-divider>
+                    
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="设计人员">
+                                            <el-input :value="metaDataContent.designerName" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="日期">
+                                            <el-date-picker type="date" :value="metaDataContent.designerDate" style="width: 100%;" disabled></el-date-picker>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                                <!-- 校对人员信息 -->
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="校对人员">
+                                            <!-- 使用 v-if 判断，如果数据不存在则显示占位符 -->
+                                            <el-input v-if="metaDataContent.checkerName" :value="metaDataContent.checkerName" disabled></el-input>
+                                            <el-input v-else placeholder="待校对" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="日期">
+                                            <el-date-picker 
+                                                v-if="metaDataContent.checkerDate" 
+                                                type="date" 
+                                                :value="metaDataContent.checkerDate" 
+                                                style="width: 100%;" 
+                                                disabled>
+                                            </el-date-picker>
+                                            <el-input v-else placeholder="待校对" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+
+                                <!-- 审核人员信息 -->
+                                <el-row :gutter="20">
+                                    <el-col :span="12">
+                                        <el-form-item label="审核人员">
+                                            <el-input v-if="metaDataContent.auditorName" :value="metaDataContent.auditorName" disabled></el-input>
+                                            <el-input v-else placeholder="待审核" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12">
+                                        <el-form-item label="日期">
+                                            <el-date-picker 
+                                                v-if="metaDataContent.auditorDate" 
+                                                type="date" 
+                                                :value="metaDataContent.auditorDate" 
+                                                style="width: 100%;" 
+                                                disabled>
+                                            </el-date-picker>
+                                            <el-input v-else placeholder="待审核" disabled></el-input>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+                                
+                                <el-divider>尺寸与重量</el-divider>
+                                
+                                <el-form-item label="报价 尺寸">
+                                    <el-row :gutter="10" v-if="metaDataContent.quoteSize">
+                                        <el-col :span="7"><el-input :value="metaDataContent.quoteSize.length" placeholder="长度(mm)" disabled></el-input></el-col>
+                                        <el-col :span="1" class="text-center">X</el-col>
+                                        <el-col :span="7"><el-input :value="metaDataContent.quoteSize.width" placeholder="宽度(mm)" disabled></el-input></el-col>
+                                        <el-col :span="1" class="text-center">X</el-col>
+                                        <el-col :span="7"><el-input :value="metaDataContent.quoteSize.height" placeholder="高度(mm)" disabled></el-input></el-col>
                                     </el-row>
-                                    <!-- 校对人员信息 -->
-                                    <el-row :gutter="20">
-                                        <el-col :span="12">
-                                            <el-form-item label="校对人员">
-                                                <el-input v-if="metaData.checkerName" :value="metaData.checkerName" disabled></el-input>
-                                                <el-input v-else placeholder="待校对" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                        <el-col :span="12">
-                                            <el-form-item label="日期">
-                                                <el-date-picker v-if="metaData.checkerDate" type="date" :value="metaData.checkerDate" style="width: 100%;" disabled></el-date-picker>
-                                                <el-input v-else placeholder="待校对" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
+                                </el-form-item>
+                                
+                                <el-form-item label="报价 重量">
+                                    <el-input :value="metaDataContent.quoteWeight" placeholder="重量" disabled><template slot="append">T</template></el-input>
+                                </el-form-item>
+                    
+                                <el-form-item label="实际 尺寸">
+                                    <el-row :gutter="10" v-if="metaDataContent.actualSize">
+                                        <el-col :span="7"><el-input :value="metaDataContent.actualSize.length" placeholder="长度(mm)" disabled></el-input></el-col>
+                                        <el-col :span="1" class="text-center">X</el-col>
+                                        <el-col :span="7"><el-input :value="metaDataContent.actualSize.width" placeholder="宽度(mm)" disabled></el-input></el-col>
+                                        <el-col :span="1" class="text-center">X</el-col>
+                                        <el-col :span="7"><el-input :value="metaDataContent.actualSize.height" placeholder="高度(mm)" disabled></el-input></el-col>
                                     </el-row>
-                                    <!-- 审核人员信息 -->
-                                    <el-row :gutter="20">
-                                        <el-col :span="12">
-                                            <el-form-item label="审核人员">
-                                                <el-input v-if="metaData.auditorName" :value="metaData.auditorName" disabled></el-input>
-                                                <el-input v-else placeholder="待审核" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                        <el-col :span="12">
-                                            <el-form-item label="日期">
-                                                <el-date-picker v-if="metaData.auditorDate" type="date" :value="metaData.auditorDate" style="width: 100%;" disabled></el-date-picker>
-                                                <el-input v-else placeholder="待审核" disabled></el-input>
-                                            </el-form-item>
-                                        </el-col>
-                                    </el-row>
-                                    
-                                    <el-divider>尺寸与重量</el-divider>
-                                    
-                                    <el-form-item label="报价 尺寸">
-                                        <el-row :gutter="10" v-if="metaData.quoteSize">
-                                            <el-col :span="7"><el-input :value="metaData.quoteSize.length" placeholder="长度(mm)" disabled></el-input></el-col>
-                                            <el-col :span="1" class="text-center">X</el-col>
-                                            <el-col :span="7"><el-input :value="metaData.quoteSize.width" placeholder="宽度(mm)" disabled></el-input></el-col>
-                                            <el-col :span="1" class="text-center">X</el-col>
-                                            <el-col :span="7"><el-input :value="metaData.quoteSize.height" placeholder="高度(mm)" disabled></el-input></el-col>
-                                        </el-row>
-                                    </el-form-item>
-                                    <el-form-item label="报价 重量"><el-input :value="metaData.quoteWeight" placeholder="重量" disabled><template slot="append">T</template></el-input></el-form-item>
-                                    <el-form-item label="实际 尺寸">
-                                        <el-row :gutter="10" v-if="metaData.actualSize">
-                                            <el-col :span="7"><el-input :value="metaData.actualSize.length" placeholder="长度(mm)" disabled></el-input></el-col>
-                                            <el-col :span="1" class="text-center">X</el-col>
-                                            <el-col :span="7"><el-input :value="metaData.actualSize.width" placeholder="宽度(mm)" disabled></el-input></el-col>
-                                            <el-col :span="1" class="text-center">X</el-col>
-                                            <el-col :span="7"><el-input :value="metaData.actualSize.height" placeholder="高度(mm)" disabled></el-input></el-col>
-                                        </el-row>
-                                    </el-form-item>
-                                    <el-form-item label="实际 重量"><el-input :value="metaData.actualWeight" placeholder="重量" disabled><template slot="append">T</template></el-input></el-form-item>
-                                </el-form>
-                            </div>
-                            <div v-else class="p-4 text-center text-muted">
-                                <p>未能加载元数据。</p>
-                                <el-button size="mini" @click="fetchMetaData">重试</el-button>
-                            </div>
-                        </el-tab-pane>
+                                </el-form-item>
+                                
+                                <el-form-item label="实际 重量">
+                                    <el-input :value="metaDataContent.actualWeight" placeholder="重量" disabled><template slot="append">T</template></el-input>
+                                </el-form-item>
+                    
+                            </el-form>
+                        </div>
+                    </el-tab-pane>
                         
                         <!-- 2. 动态Excel文件 Tab -->
                         <el-tab-pane
@@ -244,6 +260,10 @@ Vue.component('record-review-panel', {
             isMetaDataLoading: false, // <-- 修复错误一
             metaData: null,          // 用于存储 metaFile 的内容
             // 【【【确保这里没有 scrollTopBeforeFocus, _scrollLock, iframeIsActive 等任何东西】】】
+            metaDataContent: null,       // 修复 "metaDataContent" is not defined
+            currentSessionSeconds: 0,    // 修复 "currentSessionSeconds" is not defined
+            currentLiveStats: null,      // 用于状态栏显示统计
+            isMetaDataLoading: false,    // 元数据加载状态
         }
     },
     // 修改后
@@ -657,6 +677,25 @@ Vue.component('record-review-panel', {
             }
         },
 
+
+        async fetchAndDisplayMetaData() {
+            if (!this.metaFile) return;
+            this.isMetaDataLoading = true;
+            try {
+                const res = await axios.get(`/api/files/content/${this.metaFile.id}`);
+                
+                // 确保赋值给 this.metaDataContent
+                this.metaDataContent = (typeof res.data === 'string') ? JSON.parse(res.data) : res.data;
+                console.log("Meta data loaded:", this.metaDataContent);
+                
+            } catch (e) {
+                console.error("加载元数据失败", e);
+                this.metaDataContent = { partName: "加载失败" };
+            } finally {
+                this.isMetaDataLoading = false;
+            }
+        },
+
     },
     // 在 record-review-panel.js 中
 
@@ -722,6 +761,7 @@ Vue.component('record-review-panel', {
         // --- 您已有的其他 mounted 逻辑 ---
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
+
     },
 
     beforeDestroy() {
