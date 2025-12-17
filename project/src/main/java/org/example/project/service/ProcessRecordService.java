@@ -43,5 +43,4 @@ public interface ProcessRecordService {
      * 设计员主动撤回审核申请
      */
     void withdrawRecord(Long recordId);
-    void splitLargeExcelFile(Long fileId) throws IOException;
 }

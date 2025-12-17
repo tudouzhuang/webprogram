@@ -56,4 +56,6 @@ public class ProjectFile {
      * 文件记录的创建时间
      */
     private LocalDateTime createdAt;
+
+    private Long parentId; // <--- 新增这行
 }

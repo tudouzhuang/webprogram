@@ -6,6 +6,7 @@ import org.example.project.dto.StatisticsResultDTO;
 import org.example.project.service.ExcelSplitterService;
 import org.example.project.service.ProcessRecordService; // 【新增】导入 ProcessRecordService
 import org.example.project.service.StatisticsService;
+import org.example.project.service.impl.NativeExcelSplitterServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -30,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 // --- Java IO 和 NIO 依赖 ---
+import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
@@ -55,6 +57,8 @@ public class FileController {
     @Autowired
     private StatisticsService statisticsService;
 
+    @Autowired
+    private NativeExcelSplitterServiceImpl nativeSplitterService;
     // 【新增】注入 ProcessRecordService，用于处理自动填充逻辑
     @Autowired
     private ProcessRecordService processRecordService;
@@ -229,19 +233,83 @@ public class FileController {
         return ResponseEntity.ok(stats);
     }
 
-    @PostMapping("/{fileId}/split")
-    public ResponseEntity<?> splitLargeFile(@PathVariable Long fileId) {
-        log.info("接收到文件分割请求, fileId: {}", fileId);
-        try {
-            // 调用 Service 执行分割逻辑
-            processRecordService.splitLargeExcelFile(fileId);
-            return ResponseEntity.ok("文件分割成功");
-        } catch (IOException e) {
-            log.error("文件分割 IO 异常", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("文件读写失败: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("文件分割未知异常", e);
-            return ResponseEntity.badRequest().body("分割失败: " + e.getMessage());
-        }
+// =======================================================
+    //  ↓↓↓ 【修复版】异步分割接口 ↓↓↓
+    // =======================================================
+    @PostMapping("/{fileId}/split-by-sheet")
+    public ResponseEntity<?> splitBySheet(@PathVariable("fileId") Long fileId) {
+        log.info("收到大文件分割请求: fileId={}", fileId);
+
+        // 1. 基础校验 & 路径准备
+        ProjectFile fileRecord = projectFileMapper.selectById(fileId);
+        if (fileRecord == null) return ResponseEntity.badRequest().body("数据库中找不到该文件记录");
+
+        File uploadRootDir = new File(uploadDir);
+        File sourceFile = new File(uploadRootDir, fileRecord.getFilePath());
+        if (!sourceFile.exists()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("服务器上找不到物理文件");
+
+        // 准备输出目录
+        Path relativeParentPath = Paths.get(fileRecord.getFilePath()).getParent();
+        Path relativeOutputDirPath = relativeParentPath.resolve("split_output");
+        File outputDirFile = new File(sourceFile.getParent(), "split_output");
+
+        // 2. 【核心】启动异步线程 (Fire-and-Forget)
+        // 这样前端请求会立刻得到 200 OK，不会超时
+        new Thread(() -> {
+            try {
+                log.info("【异步任务】开始处理文件: {}", fileId);
+
+                // A. 调用 Service 执行分割 (传入 fileId 用于更新进度)
+                nativeSplitterService.splitExcelAsync(
+                    fileId, 
+                    sourceFile.getAbsolutePath(), 
+                    outputDirFile.getAbsolutePath()
+                );
+
+                // B. 分割完成，扫描文件并入库
+                File[] splitFiles = outputDirFile.listFiles((dir, name) -> name.toLowerCase().endsWith(".xlsx"));
+                
+                if (splitFiles != null && splitFiles.length > 0) {
+                    int count = 0;
+                    for (File f : splitFiles) {
+                        String fileName = f.getName();
+                        String newRelativePath = relativeOutputDirPath.resolve(fileName).toString().replace("\\", "/");
+                        
+                        ProjectFile newFile = new ProjectFile();
+                        newFile.setProjectId(fileRecord.getProjectId());
+                        newFile.setRecordId(fileRecord.getRecordId());
+                        newFile.setFileName(fileName);
+                        newFile.setFilePath(newRelativePath);
+                        newFile.setFileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                        newFile.setDocumentType("SPLIT_CHILD_SHEET"); 
+                        newFile.setParentId(fileId); // 关联父ID
+
+                        projectFileMapper.insert(newFile);
+                        count++;
+                    }
+                    log.info("【异步任务】数据库已同步 {} 个子文件记录", count);
+                }
+
+                // C. 全部搞定，将进度置为 100%
+                NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, 100);
+                log.info("【异步任务】文件 {} 处理完毕", fileId);
+
+            } catch (Exception e) {
+                log.error("【异步任务】出错", e);
+                // 标记失败，让前端停止轮询并报错
+                NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, -1);
+            }
+        }).start();
+
+        // 3. 主线程立刻返回
+        return ResponseEntity.ok("任务已启动，请轮询进度");
     }
+
+@GetMapping("/{fileId}/split-progress")
+    public ResponseEntity<?> getSplitProgress(@PathVariable("fileId") Long fileId) {
+        // 确保这里的类名 NativeExcelSplitterServiceImpl 是正确的，并且已经 Import 了
+        Integer progress = NativeExcelSplitterServiceImpl.PROGRESS_MAP.getOrDefault(fileId, 0);
+        return ResponseEntity.ok().body(java.util.Collections.singletonMap("progress", progress));
+    }
+
 }
