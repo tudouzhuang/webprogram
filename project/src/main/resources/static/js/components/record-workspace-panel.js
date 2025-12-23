@@ -728,10 +728,20 @@ Vue.component('record-workspace-panel', {
             }).then(async () => {
                 this.isWithdrawing = true;
                 try {
+                    // 注意：确保 this.recordId 在这个组件里也能取到
+                    // 如果取不到，可能需要换成 this.record.id 或者 this.itemId
                     await axios.post(`/api/process-records/${this.recordId}/withdraw`);
+                    
                     this.$message.success('撤回成功，您现在可以继续编辑了。');
-                    // 重新加载数据以更新界面状态（从 待审核 -> 草稿）
-                    await this.fetchData();
+                    
+                    // 注意：确保 fetchData 这个方法在当前组件里存在
+                    // 如果当前组件叫 loadData，这里要改成 this.loadData()
+                    if (this.fetchData) {
+                        await this.fetchData(); 
+                    } else {
+                        // 如果没有刷新方法，至少发个通知让父组件刷新
+                        this.$emit('refresh');
+                    }
                 } catch (e) {
                     this.$message.error('撤回失败: ' + (e.response?.data?.message || '未知错误'));
                 } finally {
@@ -739,6 +749,7 @@ Vue.component('record-workspace-panel', {
                 }
             }).catch(() => { });
         },
+    
 
     },
 

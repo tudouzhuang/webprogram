@@ -696,82 +696,66 @@ Vue.component('record-review-panel', {
     // 在 record-review-panel.js 中
 
     mounted() {
-        console.log('[INIT] 启动 0 抖动物理锁定守护神...');
-    
-        // 获取需要锁定的容器，通常是 body 或者你的滚动容器
-        // 如果你的页面滚动条在 body 上，就用 document.body
-        // 如果是在某个 div class="main-content" 上，请用 document.querySelector('.main-content')
-        this.scrollContainer = document.documentElement; // 或者 document.body
-    
-        // 状态记录
-        this._guardianState = {
-            isUserInteracting: false,
-            unlockTimer: null,
-            savedScrollTop: window.scrollY
+        console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
+
+        // 【步骤1】初始化状态对象
+        this._scrollGuardian = {
+            // 【关键】这个变量记录的不是一个固定的值，而是【上一帧】的滚动位置
+            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
+
+            // 【关键】敌我识别标志位
+            isUserScrolling: false,
+
+            scrollTimeoutId: null,
+            animationFrameId: null
         };
-    
-        // 【核心方法】上锁：物理禁止滚动
-        const lockScroll = () => {
-            if (this._guardianState.isUserInteracting) return;
-            
-            // 记录当前位置，防止上锁瞬间位置丢失
-            this._guardianState.savedScrollTop = window.scrollY;
-            
-            // ★★★ 核武器：直接把 overflow 设为 hidden ★★★
-            // 这会让滚动条消失（可能会导致页面宽度微调，见下方 CSS 补充）
-            // 如果不想滚动条消失，需要配合特定 CSS，或者接受这个微小的跳动
-            this.scrollContainer.style.overflowY = 'hidden'; 
-            
-            // 确保位置没变
-            window.scrollTo({ top: this._guardianState.savedScrollTop, behavior: 'instant' });
-        };
-    
-        // 【核心方法】解锁：允许用户滚动
-        const unlockScroll = () => {
-            this._guardianState.isUserInteracting = true;
-            this.scrollContainer.style.overflowY = 'auto'; // 或者 'overlay' / 'scroll'
-            
-            // 清除之前的定时器
-            if (this._guardianState.unlockTimer) {
-                clearTimeout(this._guardianState.unlockTimer);
+
+        // 【步骤2】定义守护循环
+        const guardianLoop = () => {
+            if (this && this._scrollGuardian) {
+                const currentScrollY = window.scrollY;
+
+                // 【【【核心逻辑】】】
+                if (this._scrollGuardian.isUserScrolling) {
+                    // 如果是用户在滚动，我们不干涉，只更新记录
+                    this._scrollGuardian.lastKnownScrollY = currentScrollY;
+                } else {
+                    // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
+                    if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
+                        console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
+                        window.scrollTo(0, this._scrollGuardian.lastKnownScrollY);
+                    }
+                }
+                this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
             }
-    
-            // 500ms 后如果没有操作，自动重新上锁
-            this._guardianState.unlockTimer = setTimeout(() => {
-                this._guardianState.isUserInteracting = false;
-                lockScroll();
-                // console.log('[GUARDIAN] 用户停止操作，重新上锁');
-            }, 500);
         };
-    
-        // --- 监听用户行为（只要用户动了，就解锁）---
-    
-        // 1. 滚轮事件
-        window.addEventListener('wheel', unlockScroll, { passive: true });
-        
-        // 2. 鼠标按下（可能是拖拽滚动条）
-        window.addEventListener('mousedown', unlockScroll);
-        
-        // 3. 键盘按键（上下键/空格/PgUp/PgDn）
-        window.addEventListener('keydown', unlockScroll);
-    
-        // 4. 移动端触摸
-        window.addEventListener('touchstart', unlockScroll, { passive: true });
-    
-        // --- 初始化 ---
-        // 默认直接上锁！让 Luckysheet 刚加载时的滚动指令全部失效
-        lockScroll();
-    
-        // --- 监听 iframe 消息（可选）---
-        window.addEventListener('message', (event) => {
-            // 如果 luckysheet 加载完了，为了保险起见，可以刷新一下锁的位置
-            if (event.data && event.data.type === 'LUCKYSHEET_RENDER_FINISHED') {
-                 this._guardianState.isUserInteracting = false;
-                 // 有时候加载完内容高度变了，解锁一下更新位置再锁
-                 this.scrollContainer.style.overflowY = 'auto';
-                 requestAnimationFrame(() => lockScroll());
-            }
-        });
+
+        // 【步骤3】启动守护循环
+        guardianLoop();
+
+        // 【步骤4】为“敌我识别系统”添加滚轮事件监听器
+        // 这个监听器只负责一件事：在用户滚动滚轮时，举起“自己人”的牌子
+        this.handleWheel = () => {
+            // 举起牌子：告诉守护神，现在是我在滚，别开枪！
+            this._scrollGuardian.isUserScrolling = true;
+
+            // 清除之前的“放下牌子”定时器
+            clearTimeout(this._scrollGuardian.scrollTimeoutId);
+
+            // 设置一个新的定时器：如果200毫秒内没再滚动，就自动放下牌子
+            this._scrollGuardian.scrollTimeoutId = setTimeout(() => {
+                this._scrollGuardian.isUserScrolling = false;
+                console.log('[GUARDIAN] 用户停止滚动，守护模式已恢复。');
+            }, 200);
+        };
+
+        // 将滚轮监听器绑定到整个 window 上，这样无论鼠标在哪里都能捕捉到
+        window.addEventListener('wheel', this.handleWheel, { passive: true });
+
+        // --- 您已有的其他 mounted 逻辑 ---
+        this.boundMessageListener = this.messageEventListener.bind(this);
+        window.addEventListener('message', this.boundMessageListener);
+
     },
 
     beforeDestroy() {
