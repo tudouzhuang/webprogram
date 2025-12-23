@@ -215,44 +215,6 @@ Vue.component("project-planning-panel", {
             </el-dialog>
             
         </div>
-
-
-        <style>
-                .preview-dialog .el-dialog__body { padding: 0; }
-                .preview-dialog .el-dialog__header { padding: 15px 20px; border-bottom: 1px solid #eee; }
-
-                /* 【新增】自定义滚动条样式 */
-                .custom-tabs .el-tabs__nav-scroll {
-                    overflow-x: auto !important; /* 强制显示横向滚动 */
-                    padding-bottom: 5px; /* 给滚动条留点位置 */
-                }
-                
-                /* 滚动条整体 */
-                .custom-tabs .el-tabs__nav-scroll::-webkit-scrollbar {
-                    height: 8px; /* 高度 */
-                    background-color: #f5f5f5;
-                }
-
-                /* 滚动条滑块 */
-                .custom-tabs .el-tabs__nav-scroll::-webkit-scrollbar-thumb {
-                    background-color: #dcdfe6; /* 浅灰色 */
-                    border-radius: 4px;
-                }
-
-                /* 滑块悬停 */
-                .custom-tabs .el-tabs__nav-scroll::-webkit-scrollbar-thumb:hover {
-                    background-color: #c0c4cc; /* 深灰色 */
-                }
-
-                .error-dialog-shake .el-dialog__header {
-                    background-color: #fef0f0 !important;
-                    border-bottom: 1px solid #fde2e2 !important;
-                }
-                .error-dialog-shake .el-dialog__title {
-                    color: #F56C6C !important;
-                    font-weight: bold;
-                }
-            </style>
     `,
 
     data() {
@@ -341,17 +303,6 @@ Vue.component("project-planning-panel", {
             if (!this.fileList) return [];
             return this.fileList.filter(f => f.documentType === 'SPLIT_CHILD_SHEET');
         },
-    },
-    // --- 【新增】生命周期：挂载后添加滚轮监听 ---
-    mounted() {
-        this.$nextTick(() => {
-            this.initTabScroll();
-        });
-    },
-
-    updated() {
-        // 数据变化导致 Tab 重新渲染时，重新绑定
-        this.initTabScroll();
     },
     methods: {
         // --- 核心数据获取逻辑 ---
