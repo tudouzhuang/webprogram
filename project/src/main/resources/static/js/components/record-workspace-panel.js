@@ -286,7 +286,8 @@ Vue.component('record-workspace-panel', {
             currentSessionSeconds: 0,
             sessionTimer: null,
             currentLiveStats: null,
-            personnelCache: null // 【保留】用于“挪用”和缓存人员信息
+            personnelCache: null, // 【保留】用于“挪用”和缓存人员信息
+            isWithdrawing: false,
         }
     },
 
@@ -311,6 +312,9 @@ Vue.component('record-workspace-panel', {
                 return this.metaFile;
             }
             return this.excelFiles.find(f => f.documentType === this.activeTab);
+        },
+        canWithdraw(){
+            return true;
         }
     },
 

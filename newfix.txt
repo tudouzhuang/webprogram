@@ -1,0 +1,2 @@
+-- 将 document_type 的长度扩大到 255 或者更长
+ALTER TABLE project_files MODIFY COLUMN document_type VARCHAR(255) DEFAULT NULL COMMENT '文档类型';

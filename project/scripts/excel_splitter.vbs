@@ -1,5 +1,6 @@
 ' D:\codespace\web-program\project\scripts\excel_splitter.vbs
-' V7.0 - The "Sweeper" Edition: Skip Failures & Collect Leftovers
+' V7.1 - The "Stable Sweeper" Edition
+' Fixes: Added Err.Clear and Sleep to prevent phantom index errors
 Option Explicit
 
 Dim args, sourcePath, outputDir
@@ -30,10 +31,14 @@ SetupExcelApp objExcel
 
 On Error Resume Next
 
-' 初次打开
+' =========================================================
+' 阶段 0: 打开文件 (致命错误检测)
+' =========================================================
 Set objWorkbook = objExcel.Workbooks.Open(sourcePath, False, True, , , , True)
+
+' 【关键修复】如果这里报错（如文件损坏/加密），Java端会捕获到 "Error opening file"
 If Err.Number <> 0 Then
-    WScript.Echo "Error opening file: " & Err.Description
+    WScript.Echo "Error opening file: " & Err.Description & " (Code: " & Err.Number & ")"
     QuitScript 1
 End If
 
@@ -51,9 +56,15 @@ successListStr = "|" ' 初始化分隔符
 ' 阶段 1: 逐个拆分 (遇到困难就跳过)
 ' =========================================================
 For i = 1 To sheetCount
+    ' 【关键修复 1】强制清除上一次循环可能残留的错误状态
     Err.Clear
-    methodUsed = ""
     
+    ' 【关键修复 2】给 Excel 喘息时间，防止连续操作导致进程假死或索引失效
+    WScript.Sleep 200 
+    
+    methodUsed = ""
+    Set currentSheet = Nothing ' 显式重置对象
+
     ' 1. 进程守护：如果 Excel 崩了，复活它
     If objExcel Is Nothing Then
         WScript.Echo "WARNING: Excel process died at index " & i & ". Resurrecting..."
@@ -71,6 +82,7 @@ For i = 1 To sheetCount
     If Err.Number <> 0 Or currentSheet Is Nothing Then
         WScript.Echo "WARNING: Cannot access Sheet index " & i & ". Skipping..."
         failedCount = failedCount + 1
+        Err.Clear ' 清除错误，防止影响下一次循环
         ForceRestartExcel ' 重启一下保平安
     Else
         targetName = currentSheet.Name
@@ -123,6 +135,7 @@ For i = 1 To sheetCount
             Else
                  newWbB.Close False
                  WScript.Echo "ERROR: All strategies failed for [" & targetName & "]. Skipping."
+                 Err.Clear ' 策略失败后必须清除错误
             End If
         End If
         
@@ -159,35 +172,41 @@ If failedCount > 0 Then
     SetupExcelApp objExcel
     
     ' 重新打开源文件
+    On Error Resume Next
     Set objWorkbook = objExcel.Workbooks.Open(sourcePath, False, True, , , , True)
-    objWorkbook.Unprotect
     
-    Dim delSheet, j
-    ' 倒序遍历删除
-    For j = objWorkbook.Sheets.Count To 1 Step -1
-        Set delSheet = objWorkbook.Sheets(j)
-        Dim checkName
-        checkName = "|" & delSheet.Name & "|"
+    If Err.Number = 0 Then
+        objWorkbook.Unprotect
         
-        ' 如果这个表之前成功了，就删掉它
-        If InStr(successListStr, checkName) > 0 Then
-            On Error Resume Next
-            ' 必须保证至少留一张表，否则删除最后一张会报错
-            If objWorkbook.Sheets.Count > 1 Then
-                delSheet.Visible = -1 ' 必须可见才能删
-                delSheet.Delete
+        Dim delSheet, j
+        ' 倒序遍历删除
+        For j = objWorkbook.Sheets.Count To 1 Step -1
+            Set delSheet = objWorkbook.Sheets(j)
+            Dim checkName
+            checkName = "|" & delSheet.Name & "|"
+            
+            ' 如果这个表之前成功了，就删掉它
+            If InStr(successListStr, checkName) > 0 Then
+                On Error Resume Next
+                ' 必须保证至少留一张表，否则删除最后一张会报错
+                If objWorkbook.Sheets.Count > 1 Then
+                    delSheet.Visible = -1 ' 必须可见才能删
+                    delSheet.Delete
+                End If
+                On Error Goto 0
             End If
-            On Error Goto 0
-        End If
-    Next
-    
-    ' 保存剩余文件
-    Dim leftoverPath
-    leftoverPath = outputDir & "\_需要人工处理的剩余表(" & failedCount & "个).xlsx"
-    objWorkbook.SaveCopyAs leftoverPath
-    objWorkbook.Close False
-    
-    WScript.Echo "SUCCESS: Created leftover file -> " & fso.GetFileName(leftoverPath)
+        Next
+        
+        ' 保存剩余文件
+        Dim leftoverPath
+        leftoverPath = outputDir & "\_需要人工处理的剩余表(" & failedCount & "个).xlsx"
+        objWorkbook.SaveCopyAs leftoverPath
+        objWorkbook.Close False
+        
+        WScript.Echo "SUCCESS: Created leftover file -> " & fso.GetFileName(leftoverPath)
+    Else
+        WScript.Echo "WARNING: Could not reopen file for leftover processing."
+    End If
     
     ' 视为整体成功（因为我们要的结果都拿到了，剩下的也打包了）
     QuitScript 0
@@ -200,6 +219,7 @@ End If
 ' 辅助过程
 ' =========================================================
 Sub SetupExcelApp(app)
+    On Error Resume Next
     app.Visible = False
     app.DisplayAlerts = False ' 关键：删除Sheet时不弹窗
     app.ScreenUpdating = False

@@ -11,9 +11,18 @@
     //Active class can be hard coded directly in html file also as required
 
     function addActiveClass(element) {
+      // 1. 安全获取 href 属性
+      var href = element.attr('href');
+
+      // 2. 【关键修复】如果 href 不存在（undefined）或为空，直接返回，不进行后续比较
+      if (!href) {
+        return;
+      }
+
+      // 3. 下面的逻辑中，将 element.attr('href') 替换为 href 变量
       if (current === "") {
-        //for root url
-        if (element.attr('href').indexOf("index.html") !== -1) {
+        // for root url
+        if (href.indexOf("index.html") !== -1) {
           element.parents('.nav-item').last().addClass('active');
           if (element.parents('.sub-menu').length) {
             element.closest('.collapse').addClass('show');
@@ -21,8 +30,8 @@
           }
         }
       } else {
-        //for other url
-        if (element.attr('href').indexOf(current) !== -1) {
+        // for other url
+        if (href.indexOf(current) !== -1) {
           element.parents('.nav-item').last().addClass('active');
           if (element.parents('.sub-menu').length) {
             element.closest('.collapse').addClass('show');

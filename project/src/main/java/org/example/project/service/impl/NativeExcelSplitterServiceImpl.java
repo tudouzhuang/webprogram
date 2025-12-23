@@ -31,35 +31,52 @@ public class NativeExcelSplitterServiceImpl {
     // 匹配: "index 20." 中的 20
     private static final Pattern SHEET_INDEX_PATTERN = Pattern.compile("index\\s+(\\d+)");
 
+// 确保你的类中有定义这个正则常量
+    // private static final Pattern SHEET_INDEX_PATTERN = Pattern.compile("index\\s+(\\d+)");
+
     public void splitExcelAsync(Long fileId, String sourceFilePath, String outputDir) {
         
+        // 1. 初始化状态
         PROGRESS_MAP.put(fileId, 0);
-        SKIPPED_SHEETS_MAP.remove(fileId); // 清理旧记录
+        SKIPPED_SHEETS_MAP.remove(fileId); 
 
         String projectRoot = System.getProperty("user.dir");
-        // 注意：请确保你的脚本路径是正确的
         String scriptPath = projectRoot + File.separator + "scripts" + File.separator + "excel_splitter.vbs";
 
         log.info("【NativeExcel】ID={} 开始处理", fileId);
 
         Process process = null;
         try {
-            // 调用 cscript 执行 VBS
+            // 2. 启动 VBS 进程
             ProcessBuilder pb = new ProcessBuilder("cscript", "//Nologo", scriptPath, sourceFilePath, outputDir);
-            pb.redirectErrorStream(true); // 将错误流合并到标准输出流
+            pb.redirectErrorStream(true); // 合并错误流
             process = pb.start();
 
-            // 使用 GBK 读取 Windows 命令行输出，防止中文乱码
+            // 3. 读取输出流 (GBK防止乱码)
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), Charset.forName("GBK")))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    // 打印原始日志方便调试
+                    // 记录原始日志
                     log.info("【VBS-{}】{}", fileId, line);
                     
                     String trimmedLine = line.trim();
 
                     // ============================================================
-                    // 1. 处理 VBS 明确的 ERROR (策略失败)
+                    // Case 1: 【致命错误】文件损坏或无法打开 (新增逻辑)
+                    // ============================================================
+                    // 检测关键词："Error opening file" 或 VBS 返回的中文错误
+                    if (trimmedLine.contains("Error opening file") || trimmedLine.contains("不能取得类 Workbooks 的 Open 属性")) {
+                        log.error("【NativeExcel】检测到致命错误: 文件可能已损坏或被加密，VBS无法打开 (ID={})", fileId);
+                        
+                        // 标记失败
+                        PROGRESS_MAP.put(fileId, -1);
+                        
+                        // 抛出异常中断流程，跳到外层 catch
+                        throw new RuntimeException("致命错误：Excel文件损坏或无法读取");
+                    }
+
+                    // ============================================================
+                    // Case 2: 【警告】特定 Sheet 策略失败 (跳过该 Sheet，继续处理)
                     // ============================================================
                     if (trimmedLine.contains("ERROR: All strategies failed")) {
                         String errorSheetName = "未知Sheet";
@@ -69,56 +86,45 @@ public class NativeExcelSplitterServiceImpl {
                             errorSheetName = trimmedLine.substring(start + 1, end);
                         }
 
-                        // 记录到跳过列表
                         SKIPPED_SHEETS_MAP.computeIfAbsent(fileId, k -> new CopyOnWriteArrayList<>()).add(errorSheetName);
-                        
                         log.warn("【NativeExcel】已记录跳过的Sheet (策略失败): {}", errorSheetName);
                         continue; 
                     }
 
                     // ============================================================
-                    // 2. ↓↓↓ 【新增修复】 处理 "Cannot access Sheet index" 警告 ↓↓↓
-                    //    日志示例: ... WARNING: Cannot access Sheet index 20. Skipping...
+                    // Case 3: 【警告】Sheet 索引无法访问 (跳过该 Sheet，继续处理)
                     // ============================================================
                     if (trimmedLine.contains("WARNING:") && trimmedLine.contains("Cannot access Sheet index")) {
                         String sheetIdx = "Unknown_Index";
-                        
-                        // 使用正则提取索引数字
                         Matcher matcher = SHEET_INDEX_PATTERN.matcher(trimmedLine);
                         if (matcher.find()) {
                             sheetIdx = matcher.group(1);
                         }
 
-                        // 为了方便前端展示，标记为 "Sheet_索引号"
                         String recordName = "Sheet_Index_" + sheetIdx;
-
-                        // 记录到跳过列表
                         SKIPPED_SHEETS_MAP.computeIfAbsent(fileId, k -> new CopyOnWriteArrayList<>()).add(recordName);
-
                         log.warn("【NativeExcel】警告: VBS无法读取 Sheet 索引 {}, 已跳过。", sheetIdx);
                         continue;
                     }
 
                     // ============================================================
-                    // 3. 处理进度条
+                    // Case 4: 【正常】进度更新
                     // ============================================================
                     if (trimmedLine.contains("PROGRESS:")) {
                         try {
-                            // 兼容 "PROGRESS: 64" 或 "【...】PROGRESS: 64"
-                            // 取冒号后的最后一部分
                             String[] parts = trimmedLine.split(":");
                             if (parts.length > 1) {
                                 String numStr = parts[parts.length - 1].trim();
                                 PROGRESS_MAP.put(fileId, Integer.parseInt(numStr));
                             }
                         } catch (Exception e) {
-                            // 解析失败忽略，以免影响主流程
+                            // 解析数字失败忽略
                         }
                     }
                 }
             }
 
-            // 等待完成
+            // 4. 等待进程结束
             boolean finished = process.waitFor(10, TimeUnit.MINUTES);
             if (!finished) {
                 process.destroyForcibly();
@@ -126,13 +132,15 @@ public class NativeExcelSplitterServiceImpl {
                 throw new RuntimeException("Excel 处理超时");
             }
             
-            // 只要不是完全崩溃，就算成功走到了最后，进度设为 99 (或 100，视业务逻辑而定)
+            // 5. 任务成功完成
             PROGRESS_MAP.put(fileId, 99);
 
         } catch (Exception e) {
-            log.error("【NativeExcel】异常", e);
+            // 捕获所有异常（包括上面抛出的“文件损坏”异常）
+            log.error("【NativeExcel】处理异常 ID=" + fileId, e);
             PROGRESS_MAP.put(fileId, -1);
         } finally {
+            // 6. 清理资源
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
