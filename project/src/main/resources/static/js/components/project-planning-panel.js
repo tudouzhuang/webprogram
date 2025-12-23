@@ -1,5 +1,3 @@
-// public/js/components/project-planning-panel.js
-
 Vue.component("project-planning-panel", {
     // 【核心修正1】: 将 props 的名字从 recordId 改为 projectId
     props: {
@@ -85,6 +83,16 @@ Vue.component("project-planning-panel", {
                                 清空分割
                             </el-button>
                             
+                            <el-button 
+                                v-if="planningDocuments.length > 0" 
+                                type="success" 
+                                size="small" 
+                                icon="el-icon-download" 
+                                plain
+                                @click="handleExport">
+                                下载
+                            </el-button>
+
                             <el-button size="small" icon="el-icon-refresh" circle @click="fetchData"></el-button>
                         </div>
                     </div>
@@ -245,6 +253,12 @@ Vue.component("project-planning-panel", {
             splitErrorSheet: null,
             // 【新增】记录具体的错误原因
             splitErrorReason: '',
+            // 【新增】预览超时定时器
+            previewTimer: null,
+            // 【新增】标记是否已因超时放弃当前预览
+            isPreviewAbandoned: false,
+
+
         };
     },
 
@@ -419,38 +433,6 @@ Vue.component("project-planning-panel", {
             return size > 20 * 1024 * 1024; // > 20MB
         },
 
-        // --- 智能预览逻辑 (曲线救国) ---
-        handlePreviewClick(file) {
-            // 1. 检查文件大小
-            if (this.isLargeFile(file)) {
-                const sizeStr = this.formatFileSize(file.fileSize || file.size);
-                this.$confirm(
-                    `该文件较大 (${sizeStr})，直接预览可能导致浏览器卡顿或崩溃。\n\n是否使用【自动分割】功能？\n系统将自动将其拆分为多个小文件，方便流畅查看。`,
-                    "大文件处理建议",
-                    {
-                        confirmButtonText: "🚀 自动分割 (推荐)",
-                        cancelButtonText: "强制预览 (风险)",
-                        type: "warning",
-                        distinguishCancelAndClose: true,
-                        center: true,
-                    }
-                )
-                    .then(() => {
-                        // 用户选择：自动分割
-                        this.handleSplitFile(file);
-                    })
-                    .catch((action) => {
-                        if (action === "cancel") {
-                            // 用户选择：强制预览
-                            this.startPreview(file);
-                        }
-                    });
-            } else {
-                // 小文件直接预览
-                this.startPreview(file);
-            }
-        },
-
         // --- 预览启动 ---
         startPreview(file) {
             this.currentPreviewFile = file;
@@ -611,16 +593,70 @@ Vue.component("project-planning-panel", {
             );
             if (!file) return;
 
-            // 判断大小 (> 20MB)
-            const size = file.fileSize || file.size || 0;
-            if (size > 20 * 1024 * 1024) {
-                this.showLargeFileConfirm = true; // 显示拦截层
-                this.isLoadingSheet = false; // 停止加载 loading
-                // 注意：这里不要 postMessage，iframe 保持空白或显示拦截层
-            } else {
-                this.showLargeFileConfirm = false;
-                this.loadActiveFile(); // 正常加载
+            // --- 重置状态 ---
+            this.showLargeFileConfirm = false; 
+            this.isPreviewAbandoned = false; 
+            if (this.previewTimer) clearTimeout(this.previewTimer);
+
+            // --- 判定 1: 是否为已分割的子文件 ---
+            if (file.documentType === 'SPLIT_CHILD_SHEET' || /_\d+\.xlsx$/.test(file.fileName)) {
+                console.log('[Tab] 检测到子文件，强制预览');
+                this.loadActiveFile(); 
+                return;
             }
+
+            // --- 判定 2: 文件过大 (> 20MB) ---
+            const size = file.fileSize || file.size || 0;
+            const THRESHOLD = 20 * 1024 * 1024; // 20MB (保持和其他地方一致)
+
+            if (size > THRESHOLD) {
+                // =======================================================
+                // ↓↓↓ 【核心新增】检测是否已经分割过 ↓↓↓
+                // =======================================================
+                // 只要 fileList 里有任何一个文件的 parentId 等于当前文件的 id，说明已经分割过了
+                const hasSplitChildren = this.fileList.some(f => f.parentId === file.id);
+
+                if (hasSplitChildren) {
+                    this.$message.warning('该大文件已完成分割，请直接查看右侧生成的子 Sheet 标签。');
+                    // 直接终止，不预览，也不触发分割
+                    return; 
+                }
+                // =======================================================
+
+                console.log('[Tab] 文件过大且未分割，自动触发分割');
+                this.$message.info('文件较大，系统正在自动为您分割以提升浏览体验...');
+                this.handleSplitFile(file);
+                return;
+            }
+
+            // --- 判定 3: 普通文件 (尝试预览 + 10秒熔断) ---
+            this.previewWithTimeout(file);
+        },
+
+        // 【新增】带超时机制的预览
+        previewWithTimeout(file) {
+            console.log('[Tab] 尝试预览，启动10秒熔断计时...');
+
+            // 启动 10秒 倒计时
+            this.previewTimer = setTimeout(() => {
+                this.isPreviewAbandoned = true;
+
+                // 停止 loading 状态 (如果有)
+                this.isLoadingSheet = false;
+
+                this.$notify({
+                    title: '加载响应较慢',
+                    message: '文件解析超时 (10s)，系统已自动切换为分割模式。',
+                    type: 'warning',
+                    duration: 4500
+                });
+
+                console.warn('[Timeout] 预览超时，转为自动分割');
+                this.handleSplitFile(file);
+            }, 10000); // 10秒
+
+            // 开始正常加载
+            this.loadActiveFile();
         },
 
         // 加载当前选中的文件到 iframe
@@ -747,58 +783,86 @@ Vue.component("project-planning-panel", {
             this.isSplitting = false;
         },
 
-        // 【最终版】一直跑到100%，然后结算
         pollProgress(fileId) {
-            // 清空之前的记录
-            this.skippedSheetsList = [];
+            console.log(`[Poll] 准备开始轮询文件 ${fileId} 的进度...`);
+            
+            // 保存 Vue 实例的引用，防止 this 丢失
+            const self = this;
 
-            const timer = setInterval(() => {
-                axios.get(`/api/files/${fileId}/split-progress?t=${new Date().getTime()}`)
-                    .then(res => {
-                        const data = res.data;
-                        const p = data.progress;
+            // 1. 清理旧定时器
+            if (self._pollTimer) {
+                clearInterval(self._pollTimer);
+                self._pollTimer = null;
+            }
 
-                        // 实时更新进度条
-                        this.splitProgress = p;
+            self.skippedSheetsList = [];
+            self.progressStatus = null; 
 
-                        // 1. 只有当进度跑完 (>=100) 时，才开始“算账”
-                        if (p >= 100) {
-                            clearInterval(timer);
+            // 2. 延迟 500ms 启动
+            setTimeout(() => {
+                // 再次检查清理
+                if (self._pollTimer) clearInterval(self._pollTimer);
 
-                            // 检查是否有跳过的 Sheet
-                            const skipped = data.skipped_sheets || (data.extra && data.extra.skipped_sheets);
+                console.log('[Poll] 定时器启动，开始每秒请求...'); // ★ 确认定时器真的启动了
 
-                            // Situation A: 有部分文件失败 (不完全成功)
-                            if (skipped && skipped.length > 0) {
-                                this.progressStatus = 'warning'; // 变橙色
-                                this.skippedSheetsList = skipped; // 存下来给 Template 显示
-                                this.isPartiallyFailed = true; // 标记为部分失败
+                self._pollTimer = setInterval(() => {
+                    const url = `/api/files/${fileId}/split-progress?t=${new Date().getTime()}`;
+                    
+                    // ★ 打印正在请求的 URL，请在控制台确认这个 URL 是否拼写正确
+                    console.log(`[Poll] 正在请求: ${url}`); 
 
-                                // 这里不自动刷新，等待用户确认
-                                // 弹窗停留在那里，显示列表
+                    axios.get(url)
+                        .then(res => {
+                            const data = res.data;
+                            // 确保 data 不为空
+                            if (!data) {
+                                console.error('[Poll] 响应数据为空！');
+                                return;
                             }
-                            // Situation B: 完美成功
-                            else {
-                                this.progressStatus = 'success';
-                                this.isPartiallyFailed = false;
 
-                                // 正常流程：延迟10秒刷新
-                                setTimeout(() => {
-                                    this.$message.success('🎉 数据同步完成，正在刷新页面...');
-                                    location.reload();
-                                }, 10000);
+                            const p = data.progress;
+                            console.log(`[Poll] 收到响应: 进度=${p}, 错误信息=${data.errorMessage}`); // ★ 关键日志
+
+                            self.splitProgress = p;
+
+                            // Case 1: 成功
+                            if (p >= 100) {
+                                clearInterval(self._pollTimer);
+                                self._pollTimer = null;
+                                // ... (成功逻辑保持不变) ...
+                                self.progressStatus = 'success';
+                                self.$message.success('🎉 处理完成，即将刷新');
+                                location.reload();
+                            } 
+                            // Case 2: 失败 (-1)
+                            else if (p === -1) {
+                                clearInterval(self._pollTimer);
+                                self._pollTimer = null;
+
+                                self.progressStatus = 'exception';
+                                self.isSplitting = false;
+                                self.showProgressDialog = false;
+                                
+                                const errorMsg = data.errorMessage || '发生未知错误';
+                                console.error('[Poll] 捕获到后端报错:', errorMsg);
+
+                                self.$alert(errorMsg, '文件处理失败', {
+                                    confirmButtonText: '关闭',
+                                    type: 'error',
+                                    showClose: false
+                                });
                             }
-                        }
-                        // 2. 进程彻底崩溃 (-1)
-                        else if (p === -1) {
-                            clearInterval(timer);
-                            this.progressStatus = 'exception';
-                            this.isSplitting = false;
-                            this.$message.error('后台进程异常终止');
-                        }
-                    })
-                    .catch(() => { });
-            }, 1000);
+                        })
+                        .catch((e) => {
+                            // ★ 打印详细的网络错误
+                            console.error('[Poll] 请求出错:', e);
+                            if (e.response) {
+                                console.error('[Poll] 状态码:', e.response.status);
+                                console.error('[Poll] 响应体:', e.response.data);
+                            }
+                        });
+                }, 1000);
+            }, 500);
         },
 
         // 【新增】用户点击“确认部分缺失，继续刷新”
@@ -807,6 +871,169 @@ Vue.component("project-planning-panel", {
             this.isSplitting = false;
             location.reload(); // 依然刷新，让用户看成功的那部分
         },
+
+        // 【新增/修改】监听 Iframe 发来的消息
+        messageEventListener(event) {
+            if (!event || !event.data) return;
+            const data = event.data;
+
+            // 判断消息类型：Luckysheet 渲染完成
+            // 注意：你需要确保 iframe 那边发的 type 是这个名字
+            if (data.type === 'LUCKYSHEET_RENDER_FINISHED' || data.type === 'LUCKYSHEET_SUCCESS') {
+
+                console.log('[Message] 收到 Iframe 加载完成信号');
+
+                // 【核心逻辑 1】如果标记为“已放弃”（即超时了），则忽略这次成功
+                // 防止已经切到分割界面了，预览界面又突然跳出来干扰
+                if (this.isPreviewAbandoned) {
+                    console.warn('[Preview] 加载过慢，超时逻辑已触发，忽略本次渲染结果。');
+                    return;
+                }
+
+                // 【核心逻辑 2】不仅没超时，还成功了 -> 赶紧把炸弹（定时器）拆了！
+                if (this.previewTimer) {
+                    clearTimeout(this.previewTimer);
+                    this.previewTimer = null;
+                    console.log('[Preview] ⚡️ 加载成功，已取消 10s 倒计时熔断。');
+                }
+
+                // 停止 loading 动画
+                this.isLoadingSheet = false;
+            }
+        },
+        // 【新增/修改】导出下载逻辑
+        handleExport() {
+            // 1. 获取当前选中的文件
+            const activeFile = this.planningDocuments.find(
+                (f) => f.id.toString() === this.activeFileId
+            );
+
+            if (!activeFile) {
+                this.$message.warning('当前没有选中的文件！');
+                return;
+            }
+
+            // 2. 【分支 A】如果是大文件拦截状态（Iframe 里没数据），直接下载源文件
+            if (this.showLargeFileConfirm) {
+                this.$confirm('当前文件未加载到预览框中（大文件拦截），将直接下载原始文件？', '提示', {
+                    confirmButtonText: '下载原文件',
+                    cancelButtonText: '取消',
+                    type: 'info'
+                }).then(() => {
+                    this.downloadSourceFile(activeFile);
+                }).catch(() => {});
+                return;
+            }
+
+            // 3. 【分支 B】正常预览状态，通知 Iframe 导出 (这样可以保留 Luckysheet 的渲染效果)
+            const iframe = this.$refs.previewIframe;
+            
+            if (!iframe || !iframe.contentWindow) {
+                this.$message.error('编辑器实例未就绪');
+                return;
+            }
+
+            // 发送指令
+            iframe.contentWindow.postMessage({
+                type: 'EXPORT_SHEET',
+                payload: {
+                    // 确保文件名有后缀
+                    fileName: activeFile.fileName.endsWith('.xlsx') ? activeFile.fileName : (activeFile.fileName + '.xlsx')
+                }
+            }, window.location.origin);
+
+            this.$message.success('已发送导出请求，正在生成 Excel...');
+        },
+
+        // 【辅助】直接下载源文件 (用于大文件或兜底)
+        downloadSourceFile(file) {
+            const link = document.createElement("a");
+            // 使用你的后端下载接口
+            link.href = `/api/files/content/${file.id}`; 
+            link.download = file.fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        },
+
+    },
+
+    mounted() {
+        console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
+
+        // 【步骤1】初始化状态对象
+        this._scrollGuardian = {
+            // 【关键】这个变量记录的不是一个固定的值，而是【上一帧】的滚动位置
+            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
+
+            // 【关键】敌我识别标志位
+            isUserScrolling: false,
+
+            scrollTimeoutId: null,
+            animationFrameId: null
+        };
+
+        // 【步骤2】定义守护循环
+        const guardianLoop = () => {
+            if (this && this._scrollGuardian) {
+                const currentScrollY = window.scrollY;
+
+                // 【【【核心逻辑】】】
+                if (this._scrollGuardian.isUserScrolling) {
+                    // 如果是用户在滚动，我们不干涉，只更新记录
+                    this._scrollGuardian.lastKnownScrollY = currentScrollY;
+                } else {
+                    // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
+                    if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
+                        console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
+                        window.scrollTo(0, this._scrollGuardian.lastKnownScrollY);
+                    }
+                }
+                this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
+            }
+        };
+
+        // 【步骤3】启动守护循环
+        guardianLoop();
+
+        // 【步骤4】为“敌我识别系统”添加滚轮事件监听器
+        // 这个监听器只负责一件事：在用户滚动滚轮时，举起“自己人”的牌子
+        this.handleWheel = () => {
+            // 举起牌子：告诉守护神，现在是我在滚，别开枪！
+            this._scrollGuardian.isUserScrolling = true;
+
+            // 清除之前的“放下牌子”定时器
+            clearTimeout(this._scrollGuardian.scrollTimeoutId);
+
+            // 设置一个新的定时器：如果200毫秒内没再滚动，就自动放下牌子
+            this._scrollGuardian.scrollTimeoutId = setTimeout(() => {
+                this._scrollGuardian.isUserScrolling = false;
+                console.log('[GUARDIAN] 用户停止滚动，守护模式已恢复。');
+            }, 200);
+        };
+
+        // 将滚轮监听器绑定到整个 window 上，这样无论鼠标在哪里都能捕捉到
+        window.addEventListener('wheel', this.handleWheel, { passive: true });
+
+        // --- 您已有的其他 mounted 逻辑 ---
+        this.boundMessageListener = this.messageEventListener.bind(this);
+        window.addEventListener('message', this.boundMessageListener);
+
+    },
+
+    beforeDestroy() {
+        console.log('[CLEANUP] 停止终极滚动守护神...');
+
+        if (this._scrollGuardian) {
+            cancelAnimationFrame(this._scrollGuardian.animationFrameId);
+            clearTimeout(this._scrollGuardian.scrollTimeoutId);
+        }
+
+        // 【【【核心清理】】】 必须移除全局的滚轮监听器
+        window.removeEventListener('wheel', this.handleWheel);
+
+        // --- 您已有的其他 beforeDestroy 逻辑 ---
+        window.removeEventListener('message', this.boundMessageListener);
     },
 
     watch: {

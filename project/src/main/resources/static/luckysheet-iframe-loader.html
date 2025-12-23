@@ -44,6 +44,54 @@
     <script src="/js/libs/exceljs.min.js"></script>
 
     <script type="module">
+// --- [0. 全局异常熔断 (增强版)] ---
+        // 捕获 Promise 也就是 Luckysheet 内部抛出的致命异步错误
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error("[Iframe] ⚠️ 捕获到未处理的 Promise 异常:", event.reason);
+            
+            const reason = event.reason || {};
+            const message = (reason.message || reason.toString() || "").toLowerCase();
+            const name = reason.name || "";
+
+            // 定义致命错误的特征：
+            // 1. 字体解析错误 (SyntaxError: FontFaceSet...)
+            // 2. 内部计算崩溃 (TypeError: Cannot read properties...) -> 你遇到的这个
+            if (
+                name === 'SyntaxError' || 
+                name === 'TypeError' || 
+                message.includes('fontfaceset') || 
+                message.includes('could not resolve') || 
+                message.includes('cannot read properties') || // 👈 针对本次报错
+                message.includes('reading')                   // 👈 针对本次报错
+            ) {
+                // 立即显示错误页
+                const container = document.getElementById('luckysheet-container');
+                if (container) {
+                    let userFriendlyMsg = "渲染引擎内部逻辑崩溃";
+                    
+                    if (message.includes('font')) {
+                        userFriendlyMsg = "浏览器无法应用字体设置";
+                    } else if (message.includes('cannot read') || message.includes('reading')) {
+                        userFriendlyMsg = "表格结构过复杂或含非法合并单元格，计算失败";
+                    }
+
+                    container.innerHTML = `
+                        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
+                            <h3 style="margin-bottom:10px;font-size:18px;">❌ 文件解析异常</h3>
+                            <p style="font-size:14px;color:#666;">${userFriendlyMsg}</p>
+                            <p style="font-size:12px;color:#999;margin-top:5px;">Technical Info: ${message.slice(0, 50)}...</p>
+                        </div>
+                    `;
+                }
+                
+                // 通知父窗口停止 Loading
+                window.parent.postMessage({ 
+                    type: 'LUCKYSHEET_RENDER_FINISHED', 
+                    status: 'error',
+                    message: "渲染崩溃: " + (reason.message || "未知内部错误")
+                }, window.location.origin);
+            }
+        });
         // --- [1. 导入外部模块] ---
         import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
 
@@ -53,7 +101,7 @@
         let originalRowlen = {};
 
         // --- [3. 辅助函数定义] ---
-        
+
         /**
          * 恢复行高函数
          */
@@ -187,7 +235,7 @@
 
             // --- [数据防御性处理] ---
             let validData = luckysheetData;
-            
+
             // 1. 如果数据为空或非数组，初始化默认页
             if (!Array.isArray(validData) || validData.length === 0) {
                 console.warn("[Iframe] 数据为空，初始化为默认 Sheet1。");
@@ -200,7 +248,7 @@
                 }];
             } else {
                 // 深拷贝，防止修改影响原始数据
-                try { validData = JSON.parse(JSON.stringify(validData)); } catch(e) {}
+                try { validData = JSON.parse(JSON.stringify(validData)); } catch (e) { }
             }
 
             // 2. 确保必然有一个激活的 Sheet (status: 1)
@@ -242,6 +290,17 @@
                 data: validData,
                 title: fileName,
                 lang: 'zh',
+                
+                // --- 【核心修复】强制指定默认字体配置，防止 '12px default' 报错 ---
+                defaultFontSize: 14, 
+                limitSheetNameLength: false, // 允许长文件名
+                fontList: [
+                    { "fontName": "微软雅黑", "url": "" },
+                    { "fontName": "Arial", "url": "" },
+                    { "fontName": "Times New Roman", "url": "" }
+                ],
+                // -----------------------------------------------------------
+
                 ...options
             };
 
@@ -276,18 +335,18 @@
                     if (window.luckysheet && !window.luckysheet.hooks) {
                         window.luckysheet.hooks = {};
                     }
-                    
+
                     window.luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
                         try {
                             // 使用 getAllSheets 替代 getFlowdata 以避免报错
                             const allSheets = luckysheet.getAllSheets();
                             // 查找当前激活的 sheet
                             const currentSheet = allSheets.find(s => s.status === 1) || allSheets[0];
-                            
+
                             // 安全获取单元格数据
                             if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
                                 const cell = currentSheet.data[r][c];
-                                
+
                                 // 执行原来的业务逻辑
                                 autoHighlightCell(r, c, cell);
                                 debouncedCalculate();
@@ -322,25 +381,85 @@
                             const dataToRender = Array.isArray(jsonData) ? jsonData : (jsonData.sheets || []);
                             renderSheet(dataToRender, fileName, options);
                         })
+                        // ... 前面的 fetch(...).then(...).then(...) 保持不变
+
                         .catch(jsonError => {
                             console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
                             container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
 
+                            // 1. 获取 Blob 数据
                             return clonedResponse.blob().then(fileBlob => {
-                                LuckyExcel.transformExcelToLucky(fileBlob,
-                                    exportJson => {
-                                        console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
-                                        const sheets = exportJson.sheets || [];
-                                        const name = (exportJson.info && exportJson.info.name) || fileName;
-                                        renderSheet(sheets, name, options);
-                                    },
-                                    excelError => {
-                                        console.error("[Iframe] ❌ LuckyExcel 解析失败:", excelError);
-                                        container.innerHTML = `<div class="loader">文件解析失败。</div>`;
+
+                                // 2. 定义超时竞速 Promise (10秒)
+                                const timeoutPromise = new Promise((_, reject) => {
+                                    setTimeout(() => {
+                                        reject(new Error('TIMEOUT'));
+                                    }, 10000);
+                                });
+
+                                // 3. 定义解析 Promise (包裹 LuckyExcel)
+                                const parsingPromise = new Promise((resolve, reject) => {
+                                    try {
+                                        LuckyExcel.transformExcelToLucky(fileBlob,
+                                            function (exportJson, luckysheetfile) {
+                                                // 成功回调：检查内容是否为空
+                                                if (exportJson.sheets == null || exportJson.sheets.length == 0) {
+                                                    reject(new Error('EMPTY_CONTENT'));
+                                                } else {
+                                                    resolve(exportJson);
+                                                }
+                                            },
+                                            function (err) {
+                                                // 库内部报错回调
+                                                console.error("LuckyExcel internal error:", err);
+                                                reject(new Error('PARSE_ERROR'));
+                                            }
+                                        );
+                                    } catch (e) {
+                                        // 捕获同步崩溃 (如 INTERSECTCLIPRECT)
+                                        console.error("LuckyExcel crash:", e);
+                                        reject(new Error('CRASH'));
                                     }
-                                );
-                            });
-                        });
+                                });
+
+                                // 4. 【核心】竞速：解析 vs 超时
+                                return Promise.race([parsingPromise, timeoutPromise]);
+                            })
+                                .then(exportJson => {
+                                    // --- 竞速胜利：解析成功 ---
+                                    console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
+                                    const sheets = exportJson.sheets || [];
+                                    const name = (exportJson.info && exportJson.info.name) || fileName;
+                                    renderSheet(sheets, name, options);
+                                })
+                                .catch(err => {
+                                    // --- 竞速失败：超时或报错 ---
+                                    console.error("[Iframe] ❌ 解析最终失败:", err);
+
+                                    let displayMsg = "此表格格式有问题，无法解析";
+                                    let subMsg = "文件可能包含不支持的图形/公式或已损坏";
+
+                                    if (err.message === 'TIMEOUT') {
+                                        displayMsg = "文件解析超时 (10秒)";
+                                        subMsg = "文件过于复杂，请尝试简化格式后查看或者下载";
+                                    }
+
+                                    // A. Iframe 界面显示红屏错误
+                                    container.innerHTML = `
+                            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
+                                <h3 style="margin-bottom:10px;font-size:18px;">❌ ${displayMsg}</h3>
+                                <p style="font-size:14px;color:#666;">${subMsg}</p>
+                            </div>
+                        `;
+
+                                    // B. 通知父窗口 (Vue) 停止 Loading 并报错
+                                    window.parent.postMessage({
+                                        type: 'LUCKYSHEET_RENDER_FINISHED',
+                                        status: 'error',
+                                        message: displayMsg
+                                    }, window.location.origin);
+                                });
+                        }); // fetch 的 catch 结束
                 })
                 .catch(error => {
                     console.error("[Iframe] ❌ 加载文件失败:", error);
@@ -453,7 +572,7 @@
 
             // 4. 获取底层数据引用
             let file = luckysheet.getluckysheetfile();
-            
+
             // 5. 找到当前激活的 Sheet
             let currentSheet = file.find(s => s.status === 1);
             if (!currentSheet) return;
@@ -471,7 +590,7 @@
             // 7. 限制范围
             if (currentRatio < 0.1) currentRatio = 0.1;
             if (currentRatio > 4.0) currentRatio = 4.0;
-            
+
             // 修正浮点数精度
             currentRatio = Math.round(currentRatio * 100) / 100;
 

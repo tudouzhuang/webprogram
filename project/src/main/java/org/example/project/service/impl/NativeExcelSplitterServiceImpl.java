@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 public class NativeExcelSplitterServiceImpl {
 
     private static final Logger log = LoggerFactory.getLogger(NativeExcelSplitterServiceImpl.class);
-
+    public static final Map<Long, String> ERROR_MESSAGE_MAP = new ConcurrentHashMap<>();
     // 进度表
     public static final Map<Long, Integer> PROGRESS_MAP = new ConcurrentHashMap<>();
 
@@ -31,14 +31,12 @@ public class NativeExcelSplitterServiceImpl {
     // 匹配: "index 20." 中的 20
     private static final Pattern SHEET_INDEX_PATTERN = Pattern.compile("index\\s+(\\d+)");
 
-// 确保你的类中有定义这个正则常量
-    // private static final Pattern SHEET_INDEX_PATTERN = Pattern.compile("index\\s+(\\d+)");
-
     public void splitExcelAsync(Long fileId, String sourceFilePath, String outputDir) {
-        
+
         // 1. 初始化状态
         PROGRESS_MAP.put(fileId, 0);
-        SKIPPED_SHEETS_MAP.remove(fileId); 
+        SKIPPED_SHEETS_MAP.remove(fileId);
+        ERROR_MESSAGE_MAP.remove(fileId); // 【修复】清理上次的错误信息
 
         String projectRoot = System.getProperty("user.dir");
         String scriptPath = projectRoot + File.separator + "scripts" + File.separator + "excel_splitter.vbs";
@@ -46,6 +44,9 @@ public class NativeExcelSplitterServiceImpl {
         log.info("【NativeExcel】ID={} 开始处理", fileId);
 
         Process process = null;
+        // 标记位：用于判断是否在日志流中已经发现了致命错误
+        boolean hasFatalError = false;
+
         try {
             // 2. 启动 VBS 进程
             ProcessBuilder pb = new ProcessBuilder("cscript", "//Nologo", scriptPath, sourceFilePath, outputDir);
@@ -58,25 +59,32 @@ public class NativeExcelSplitterServiceImpl {
                 while ((line = reader.readLine()) != null) {
                     // 记录原始日志
                     log.info("【VBS-{}】{}", fileId, line);
-                    
+
                     String trimmedLine = line.trim();
 
-                    // ============================================================
-                    // Case 1: 【致命错误】文件损坏或无法打开 (新增逻辑)
-                    // ============================================================
-                    // 检测关键词："Error opening file" 或 VBS 返回的中文错误
-                    if (trimmedLine.contains("Error opening file") || trimmedLine.contains("不能取得类 Workbooks 的 Open 属性")) {
-                        log.error("【NativeExcel】检测到致命错误: 文件可能已损坏或被加密，VBS无法打开 (ID={})", fileId);
-                        
-                        // 标记失败
+                    if (trimmedLine.contains("Error opening file")
+                            || trimmedLine.contains("不能取得类 Workbooks 的 Open 属性")
+                            || trimmedLine.contains("VBS无法打开")) {
+
+                        String msg = "致命错误: 文件可能已损坏或被加密，Excel无法打开";
+                        log.error("【NativeExcel】ID={} {}", fileId, msg);
+
+                        // 1. 记录错误原因
+                        ERROR_MESSAGE_MAP.put(fileId, msg);
                         PROGRESS_MAP.put(fileId, -1);
-                        
-                        // 抛出异常中断流程，跳到外层 catch
-                        throw new RuntimeException("致命错误：Excel文件损坏或无法读取");
+
+                        // 2. 标记标志位
+                        hasFatalError = true;
+
+                        // 3. 杀死进程 (必须在抛异常之前做)
+                        process.destroy();
+
+                        // 4. 抛出异常中断流程 (使用 msg 而不是 e)
+                        throw new RuntimeException(msg);
                     }
 
                     // ============================================================
-                    // Case 2: 【警告】特定 Sheet 策略失败 (跳过该 Sheet，继续处理)
+                    // Case 2: 【警告】特定 Sheet 策略失败 (跳过该 Sheet)
                     // ============================================================
                     if (trimmedLine.contains("ERROR: All strategies failed")) {
                         String errorSheetName = "未知Sheet";
@@ -88,11 +96,11 @@ public class NativeExcelSplitterServiceImpl {
 
                         SKIPPED_SHEETS_MAP.computeIfAbsent(fileId, k -> new CopyOnWriteArrayList<>()).add(errorSheetName);
                         log.warn("【NativeExcel】已记录跳过的Sheet (策略失败): {}", errorSheetName);
-                        continue; 
+                        continue;
                     }
 
                     // ============================================================
-                    // Case 3: 【警告】Sheet 索引无法访问 (跳过该 Sheet，继续处理)
+                    // Case 3: 【警告】Sheet 索引无法访问 (跳过该 Sheet)
                     // ============================================================
                     if (trimmedLine.contains("WARNING:") && trimmedLine.contains("Cannot access Sheet index")) {
                         String sheetIdx = "Unknown_Index";
@@ -128,22 +136,64 @@ public class NativeExcelSplitterServiceImpl {
             boolean finished = process.waitFor(10, TimeUnit.MINUTES);
             if (!finished) {
                 process.destroyForcibly();
+                String msg = "Excel 处理超时 (10分钟)";
+                ERROR_MESSAGE_MAP.put(fileId, msg);
                 PROGRESS_MAP.put(fileId, -1);
-                throw new RuntimeException("Excel 处理超时");
+                throw new RuntimeException(msg);
             }
-            
+
+            // ============================================================
+            // 【核心修复】检查进程退出码 (Exit Code)
+            // ============================================================
+            // 0 表示成功，非 0 表示脚本中途崩溃或调用了 WScript.Quit(1)
+            int exitCode = process.exitValue();
+
+            if (exitCode != 0) {
+                // 如果之前没捕获到 fatal error，但退出码不对，说明是未知错误崩溃
+                if (!hasFatalError) {
+                    String msg = "脚本异常退出 (Code: " + exitCode + ")";
+                    log.error("【NativeExcel】ID={} {}", fileId, msg);
+                    ERROR_MESSAGE_MAP.put(fileId, msg);
+                    PROGRESS_MAP.put(fileId, -1);
+                }
+                // 只要退出码不是0，绝对不能标记为成功
+                return;
+            }
+
             // 5. 任务成功完成
-            PROGRESS_MAP.put(fileId, 99);
+            // 只有 exitCode == 0 且没有抛出异常才走到这里
+            log.info("【NativeExcel】处理成功完成 ID={}", fileId);
+            PROGRESS_MAP.put(fileId, 98);
 
         } catch (Exception e) {
-            // 捕获所有异常（包括上面抛出的“文件损坏”异常）
+// 1. 记录日志
             log.error("【NativeExcel】处理异常 ID=" + fileId, e);
+
+// 2. 存入错误信息 (供前端展示)
+            ERROR_MESSAGE_MAP.putIfAbsent(fileId, "系统异常: " + e.getMessage());
+
+// 3. 设置失败状态
             PROGRESS_MAP.put(fileId, -1);
+
+// =======================================================
+// 【核心修复】必须抛出异常！打断 Controller 的后续逻辑
+// =======================================================
+// 如果不抛出，Controller 会以为执行成功，继续把进度改成 100
+            throw new RuntimeException(e);
         } finally {
             // 6. 清理资源
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
         }
+    }
+
+    /**
+     * 【必须新增】同步重置状态方法 防止前端在异步任务启动前就查到了上一次的错误状态
+     */
+    public void resetProgress(Long fileId) {
+        PROGRESS_MAP.put(fileId, 0);
+        ERROR_MESSAGE_MAP.remove(fileId);
+        SKIPPED_SHEETS_MAP.remove(fileId);
     }
 }

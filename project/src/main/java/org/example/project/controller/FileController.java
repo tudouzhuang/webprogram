@@ -37,9 +37,11 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 文件控制器 (File Controller) 负责处理所有与文件获取、下载、预览相关的API请求。
@@ -235,9 +237,6 @@ public class FileController {
         return ResponseEntity.ok(stats);
     }
 
-// =======================================================
-    //  ↓↓↓ 【修复版】异步分割接口 ↓↓↓
-    // =======================================================
     @PostMapping("/{fileId}/split-by-sheet")
     public ResponseEntity<?> splitBySheet(@PathVariable("fileId") Long fileId) {
         log.info("收到大文件分割请求: fileId={}", fileId);
@@ -254,29 +253,39 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("服务器上找不到物理文件");
         }
 
-        // 准备输出目录
-        Path relativeParentPath = Paths.get(fileRecord.getFilePath()).getParent();
-        Path relativeOutputDirPath = relativeParentPath.resolve("split_output");
         File outputDirFile = new File(sourceFile.getParent(), "split_output");
 
-        // 2. 【核心】启动异步线程 (Fire-and-Forget)
-        // 这样前端请求会立刻得到 200 OK，不会超时
-        new Thread(() -> {
+        // =======================================================
+        // 【核心修复 1】同步重置状态 (必须在主线程！)
+        // =======================================================
+        // 防止异步线程还没启动，前端轮询就读到了上一次的残留状态
+        nativeSplitterService.resetProgress(fileId);
+
+        // =======================================================
+        // 【核心修复 2】使用 CompletableFuture 启动异步任务
+        // =======================================================
+        CompletableFuture.runAsync(() -> {
             try {
                 log.info("【异步任务】开始处理文件: {}", fileId);
 
-                // A. 调用 Service 执行分割 (传入 fileId 用于更新进度)
+                // A. 调用 Service 执行 VBS 分割
                 nativeSplitterService.splitExcelAsync(
                         fileId,
                         sourceFile.getAbsolutePath(),
                         outputDirFile.getAbsolutePath()
                 );
 
-                // B. 分割完成，扫描文件并入库
+                // 手动更新进度到 98%
+                NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, 98);
+
+                // B. 扫描文件并批量入库
                 File[] splitFiles = outputDirFile.listFiles((dir, name) -> name.toLowerCase().endsWith(".xlsx"));
 
                 if (splitFiles != null && splitFiles.length > 0) {
-                    int count = 0;
+                    List<ProjectFile> batchList = new ArrayList<>(splitFiles.length);
+                    Path relativeParentPath = Paths.get(fileRecord.getFilePath()).getParent();
+                    Path relativeOutputDirPath = relativeParentPath.resolve("split_output");
+
                     for (File f : splitFiles) {
                         String fileName = f.getName();
                         String newRelativePath = relativeOutputDirPath.resolve(fileName).toString().replace("\\", "/");
@@ -288,43 +297,72 @@ public class FileController {
                         newFile.setFilePath(newRelativePath);
                         newFile.setFileType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
                         newFile.setDocumentType("SPLIT_CHILD_SHEET");
-                        newFile.setParentId(fileId); // 关联父ID
+                        newFile.setParentId(fileId);
+                        
+                        // 【修复点 1】先把这行注释掉，除非你在 ProjectFile 实体里加了 fileSize 字段
+                        // newFile.setFileSize(f.length()); 
 
-                        projectFileMapper.insert(newFile);
-                        count++;
+                        batchList.add(newFile);
                     }
-                    log.info("【异步任务】数据库已同步 {} 个子文件记录", count);
+
+                    // 【修复点 2】把 batchList.length 改为 batchList.size()
+                    log.info("【异步任务】正在批量入库 {} 个文件...", batchList.size());
+                    
+                    for (ProjectFile pf : batchList) {
+                        projectFileMapper.insert(pf);
+                    }
+                    
+                    log.info("【异步任务】数据库同步完成");
                 }
 
-                // C. 全部搞定，将进度置为 100%
+                // C. 流程结束
                 NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, 100);
-                log.info("【异步任务】文件 {} 处理完毕", fileId);
+                log.info("【异步任务】流程全部结束 ID={}", fileId);
 
             } catch (Exception e) {
-                log.error("【异步任务】出错", e);
-                // 标记失败，让前端停止轮询并报错
+                log.error("【异步任务】异常中断", e);
+                String msg = "处理失败: " + e.getMessage();
+                NativeExcelSplitterServiceImpl.ERROR_MESSAGE_MAP.put(fileId, msg);
                 NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, -1);
             }
-        }).start();
-
-        // 3. 主线程立刻返回
-        return ResponseEntity.ok("任务已启动，请轮询进度");
+        });
+        return ResponseEntity.ok("任务已启动");
     }
 
+// FileController.java
     @GetMapping("/{fileId}/split-progress")
-    public ResponseEntity<Map<String, Object>> getSplitProgress(@PathVariable("fileId") Long fileId) {
-        Map<String, Object> result = new HashMap<>();
+    public ResponseEntity<Map<String, Object>> getSplitProgress(@PathVariable Long fileId) {
+        // 打印日志，确认接口被调用
+        System.out.println("【Debug】正在处理进度查询 ID: " + fileId);
 
+        Map<String, Object> response = new HashMap<>();
+
+        // 1. 从 Service 的静态 Map 中获取进度
         Integer progress = NativeExcelSplitterServiceImpl.PROGRESS_MAP.getOrDefault(fileId, 0);
-        result.put("progress", progress);
+        response.put("progress", progress);
 
-        // 【核心】获取跳过的 Sheet 列表
-        List<String> skippedSheets = NativeExcelSplitterServiceImpl.SKIPPED_SHEETS_MAP.get(fileId);
-        if (skippedSheets != null && !skippedSheets.isEmpty()) {
-            result.put("skipped_sheets", skippedSheets); // 返回列表
+        // 2. 获取跳过列表
+        List<String> skipped = NativeExcelSplitterServiceImpl.SKIPPED_SHEETS_MAP.get(fileId);
+        if (skipped != null) {
+            response.put("skipped_sheets", skipped);
+        }
+        if (progress == -1) {
+            // 从 Service 的 ERROR_MESSAGE_MAP 中取出报错原因
+            String errorMsg = NativeExcelSplitterServiceImpl.ERROR_MESSAGE_MAP.get(fileId);
+
+            // 如果取不到，给一个默认值
+            if (errorMsg == null || errorMsg.isEmpty()) {
+                errorMsg = "后端未返回具体错误原因 (Map为空)";
+            }
+
+            // 放入响应
+            response.put("errorMessage", errorMsg);
+
+            // 打印日志确认后端拿到了错误
+            System.err.println("【Debug Controller】发现错误状态，返回消息: " + errorMsg);
         }
 
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(response);
     }
 
 }
