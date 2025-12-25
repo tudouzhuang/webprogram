@@ -35,14 +35,25 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                 // 【保留您已有的所有 permitAll 规则，不做任何修改】
                 .antMatchers(
-                        "/login", "/signup", "/reset", "/404",
-                        "/api/users/login", "/api/users/register",
-                        "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**",
-                        "/luckysheet/**", "/luckyexcel/**", "/favicon.ico",
-                        "/material/**", "/pdfjs/**", "/luckysheet-iframe-loader.html",
-                        "/uploads/**", "/templates/**",
-                        "/api/files/content/**", "/api/files/templates/**"
+                    // 1. 纯静态页面和公共路由
+                    "/login", "/signup", "/reset", "/404", "/index", "/",
+                
+                    // 2. 【核心修正】只放行登录和注册接口，不要放行整个 /api/users/**
+                    "/api/users/signin", 
+                    "/api/users/register", 
+                
+                    // 3. 静态资源 (保持不变)
+                    "/static/**", "/assets/**", "/main/**", "/js/**", "/css/**",
+                    "/favicon.ico", "/material/**", "/pdfjs/**", 
+                    
+                    // 4. Luckysheet 相关资源 (保持不变)
+                    "/luckysheet/**", "/luckyexcel/**", "/luckysheet-iframe-loader.html",
+                
+                    // 5. 文件上传和预览资源 (保持不变)
+                    "/uploads/**", "/templates/**",
+                    "/api/files/content/**", "/api/files/templates/**"
                 ).permitAll()
+                // 其他所有请求都需要认证
                 // 【【【核心修正2：为转交API添加明确的授权规则】】】
                 // 允许任何已登录的用户访问转交接口，先确保功能跑通
                 .antMatchers(HttpMethod.POST, "/api/process-records/**", "/api/problems/**")

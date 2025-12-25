@@ -13,21 +13,46 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Data
-@TableName("users")
+@TableName("users") // 保持你原有的表名设置
 public class User implements UserDetails {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+
+    /**
+     * 工号 (用来登录，业务主键)
+     * 格式要求：CT20 开头 + 6位数字
+     * 建议在数据库设置为 UNIQUE 索引
+     */
+    @TableField("employee_id")
+    private String employeeId;
+
+    /**
+     * 真实姓名 (用来显示)
+     */
+    @TableField("real_name")
+    private String realName;
+
+    /**
+     * 用户名
+     * 改造后逻辑：系统自动生成 = realName + employeeId
+     * 例如：张三CT20117012
+     */
+    @TableField("username")
     private String username;
+
+    @TableField("password")
     private String password;
+
+    @TableField("email")
     private String email;
+
+    @TableField("identity")
     private String identity; // 角色, e.g., 'DESIGNER', 'MANAGER'
     
-    @TableField("avatar_url") // 明确指定数据库字段名
+    @TableField("avatar_url")
     private String avatarUrl;
     
     @TableField("created_at")

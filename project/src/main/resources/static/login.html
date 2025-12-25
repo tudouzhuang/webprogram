@@ -1,301 +1,588 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <title>登录 - 系统入口</title>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Portal Admin Dashboard" />
-    <meta name="author" content="Xiaoying Riley at 3rd Wave Media" />
-    <link rel="shortcut icon" href="favicon.ico" />
-    <script src="assets/plugins/fontawesome/js/all.min.js"></script>
-    <link id="theme-style" rel="stylesheet" href="assets/css/portal.css" />
 
-    <style>
-      .toast-container {
-        z-index: 9999;
-      }
-      /* 成功提示样式 */
-      .toast.bg-success .toast-header {
-        background-color: #198754;
-        color: white;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      /* 错误提示样式 */
-      .toast.bg-danger .toast-header {
-        background-color: #dc3545;
-        color: white;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      .toast-header .btn-close {
-        filter: invert(1) grayscale(100%) brightness(200%);
-      }
-      /* 加载中遮罩层 (防止重复点击) */
-      .loading-overlay {
-        position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(255, 255, 255, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10;
-        border-radius: 0.25rem;
+<head>
+  <title>审查系统 - 安全登录</title>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Audit System Login" />
+  <meta name="author" content="System Admin" />
+  <link rel="shortcut icon" href="favicon.ico" />
+  <script src="assets/plugins/fontawesome/js/all.min.js"></script>
+  <link id="theme-style" rel="stylesheet" href="assets/css/portal.css" />
+
+  <style>
+    /* --- [绝对保留] 核心逻辑样式 (勿动) --- */
+    .toast-container {
+      z-index: 9999;
+    }
+
+    .toast.bg-success .toast-header {
+      background-color: #198754;
+      color: white;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .toast.bg-danger .toast-header {
+      background-color: #dc3545;
+      color: white;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .toast-header .btn-close {
+      filter: invert(1) grayscale(100%) brightness(200%);
+    }
+
+    #debug-area {
+      display: none;
+      font-size: 12px;
+      text-align: left;
+      word-break: break-all;
+    }
+
+    /* --- 界面美化样式 (Review System Theme - Typography Enhanced) --- */
+    :root {
+      --audit-primary: #1a252f;
+      --audit-accent: #2980b9;
+      --audit-bg: #ecf0f3;
+    }
+
+    /* =========================================
+         字体优化核心段落
+         说明：优先匹配 Mac/Win 的现代无衬线黑体，
+         防止回退到宋体，提升专业感。
+      ========================================= */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background-color: var(--audit-bg);
+      height: 100vh;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      /* Mac字体抗锯齿 */
+      -moz-osx-font-smoothing: grayscale;
+      color: #2c3e50;
+    }
+
+    .app-auth-wrapper {
+      height: 100vh;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+
+    /* 左侧登录区 */
+    .auth-main-col {
+      background: #ffffff;
+      position: relative;
+      z-index: 10;
+      box-shadow: 10px 0 30px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 右侧动态背景区容器 */
+    .auth-background-col {
+      position: relative;
+      background: #1e2a38;
+      overflow: hidden;
+    }
+
+    /* Vanta Canvas 样式 */
+    #vanta-bg canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    /* 登录框容器 */
+    .app-auth-body {
+      width: 100%;
+      max-width: 440px;
+      padding: 3rem;
+    }
+
+    /* 标题字体优化：增加字重和间距，体现严肃感 */
+    .auth-heading {
+      font-family: -apple-system, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font-weight: 800;
+      color: var(--audit-primary);
+      letter-spacing: 1.5px;
+      /* 增加字间距 */
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem !important;
+      text-transform: uppercase;
+      /* 英文自动大写 */
+    }
+
+    .sub-heading {
+      font-size: 0.9rem;
+      color: #7f8c8d;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+      margin-bottom: 2rem;
+    }
+
+    .app-logo img {
+      height: 60px;
+      margin-bottom: 1rem;
+    }
+
+    /* 输入框美化：字体更大更清晰 */
+    .form-control {
+      height: 54px;
+      border: 2px solid #eaeff2;
+      background-color: #fcfdfe;
+      border-radius: 6px;
+      padding-left: 20px;
+      font-size: 1rem;
+      font-weight: 500;
+      /* 字体加粗一点点，更易读 */
+      color: #2c3e50;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .form-control::placeholder {
+      color: #bdc3c7;
+      font-weight: 400;
+      font-size: 0.95rem;
+    }
+
+    .form-control:focus {
+      background-color: #fff;
+      border-color: var(--audit-accent);
+      box-shadow: 0 0 0 4px rgba(41, 128, 185, 0.1);
+      color: #000;
+    }
+
+    /* Floating label 修正 */
+    .form-floating>label {
+      padding-left: 20px;
+      padding-top: 1.1rem;
+      /* 垂直居中微调 */
+      color: #95a5a6;
+    }
+
+    .form-floating>.form-control:focus~label,
+    .form-floating>.form-control:not(:placeholder-shown)~label {
+      transform: scale(0.85) translateY(-0.7rem) translateX(0.15rem);
+      color: var(--audit-accent);
+      font-weight: 600;
+    }
+
+    /* 按钮美化：字体加粗 */
+    .btn.app-btn-primary {
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      height: 54px;
+      font-weight: 700;
+      /* 粗体按钮 */
+      border: none;
+      border-radius: 6px;
+      letter-spacing: 2px;
+      /* 按钮文字拉开间距 */
+      font-size: 1.05rem;
+      transition: all 0.3s;
+      box-shadow: 0 4px 6px rgba(44, 62, 80, 0.1);
+    }
+
+    .btn.app-btn-primary:hover {
+      background: linear-gradient(135deg, #1a252f 0%, #2c3e50 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 12px rgba(44, 62, 80, 0.2);
+    }
+
+    .btn.app-btn-primary:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* 链接文字 */
+    a.text-link,
+    a.text-decoration-none {
+      color: var(--audit-accent);
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    a.text-link:hover,
+    a.text-decoration-none:hover {
+      color: #1a5276;
+      text-decoration: underline !important;
+    }
+
+    /* Loading 遮罩 */
+    .loading-overlay {
+      position: absolute;
+      top: -1rem;
+      left: -1rem;
+      right: -1rem;
+      bottom: -1rem;
+      background: rgba(255, 255, 255, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      border-radius: 12px;
+      backdrop-filter: blur(2px);
+      display: none;
+    }
+
+    /* 调试区域美化 (代码字体) */
+    #debug-area-styled {
+      background-color: #1e1e1e;
+      border: 1px solid #333;
+      color: #4ec9b0;
+      /* 强制使用等宽代码字体 */
+      font-family: "Cascadia Code", "Fira Code", "Consolas", "Courier New", monospace;
+      border-radius: 4px;
+      padding: 1rem;
+      margin-top: 2rem;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
+    /* 复选框美化 */
+    .form-check-input {
+      cursor: pointer;
+      border: 2px solid #bdc3c7;
+    }
+
+    .form-check-input:checked {
+      background-color: var(--audit-accent);
+      border-color: var(--audit-accent);
+    }
+
+    .form-check-label {
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .password-toggle {
+      position: absolute;
+      top: 50%;
+      right: 15px;
+      transform: translateY(-50%);
+      /* 垂直居中 */
+      cursor: pointer;
+      z-index: 10;
+      color: #95a5a6;
+      /* 默认灰色 */
+      transition: all 0.3s ease;
+      padding: 5px;
+      /* 增加点击热区 */
+    }
+
+    .password-toggle:hover {
+      color: var(--audit-accent);
+      /* 悬停变色 (跟随你的主题蓝) */
+    }
+
+    /* 调整 floating label 的层级，防止遮挡 */
+    .form-floating>label {
+      z-index: 5;
+    }
+
+    @media (max-width: 991px) {
+      .auth-background-col {
         display: none;
       }
-      .form-control:focus {
-        border-color: #15a362;
-        box-shadow: 0 0 0 0.2rem rgba(21, 163, 98, 0.25);
-      }
-    </style>
-  </head>
 
-  <body class="app app-login p-0">
-    <!-- 全局 Toast 通知容器 -->
-    <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
-      <div id="login-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="4000">
-        <div class="toast-header">
-          <strong class="me-auto" id="toast-header-title">系统提示</strong>
-          <small id="toast-time">刚刚</small>
-          <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body" id="toast-body-content">
-          <!-- JS 填充 -->
-        </div>
+      .auth-main-col {
+        width: 100%;
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .app-auth-body {
+        max-width: 100%;
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+
+<body class="app app-login p-0">
+  <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
+    <div id="login-toast" class="toast shadow-lg border-0" role="alert" aria-live="assertive" aria-atomic="true"
+      data-bs-delay="4000">
+      <div class="toast-header border-bottom-0 text-white" style="background: #2c3e50;">
+        <i class="fas fa-shield-alt me-2"></i>
+        <strong class="me-auto" id="toast-header-title"
+          style="font-family: 'Microsoft YaHei UI', sans-serif;">系统提示</strong>
+        <small id="toast-time" class="text-white-50">刚刚</small>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body fw-bold d-flex align-items-center bg-white" id="toast-body-content"
+        style="min-height: 60px; font-size: 1rem; color: #333;">
       </div>
     </div>
+  </div>
 
-    <div class="row g-0 app-auth-wrapper">
-      <div class="col-12 col-md-7 col-lg-6 auth-main-col text-center p-5">
-        <div class="d-flex flex-column align-content-end">
-          <div class="app-auth-body mx-auto position-relative">
-            
-            <!-- 加载遮罩 -->
-            <div id="form-loading" class="loading-overlay">
-                <div class="spinner-border text-success" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
+  <div class="row g-0 app-auth-wrapper">
+    <div class="col-12 col-lg-5 auth-main-col text-center d-flex justify-content-center align-items-center">
+
+      <div class="app-auth-body mx-auto position-relative text-start">
+
+        <div id="form-loading" class="loading-overlay">
+          <div class="d-flex flex-column align-items-center">
+            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem; border-width: 3px;"
+              role="status"></div>
+            <span style="font-family: 'Microsoft YaHei UI'; font-weight: 600; color: #555;">正在验证身份权限...</span>
+          </div>
+        </div>
+
+        <div class="text-center">
+          <a class="app-logo d-inline-block" href="#">
+            <img class="logo-icon" src="assets/images/app-logo.svg" alt="Logo"
+              onerror="this.outerHTML='<i class=\'fas fa-user-shield fa-3x\' style=\'color:#2c3e50\'></i>'" />
+          </a>
+          <h2 class="auth-heading mt-3">审查系统入口</h2>
+          <p class="sub-heading">SECURE AUDIT & CONTROL SYSTEM</p>
+        </div>
+
+        <div class="auth-form-container">
+          <form class="auth-form login-form" id="login-form">
+            <div class="form-floating mb-3">
+              <input id="username" name="username" type="text" class="form-control" placeholder="用户名"
+                required="required" autocomplete="username">
+              <label for="username"><i class="fas fa-user me-2"></i>账号 ID</label>
             </div>
 
-            <div class="app-auth-branding mb-4">
-              <a class="app-logo" href="index.html">
-                <img class="logo-icon me-2" src="assets/images/app-logo.svg" alt="logo" />
-              </a>
-            </div>
-            <h2 class="auth-heading text-center mb-5">账号登录</h2>
-            
-            <div class="auth-form-container text-start">
-              <form class="auth-form login-form" id="login-form">
-                <div class="email mb-3">
-                  <label class="sr-only" for="username">用户名</label>
-                  <input id="username" name="username" type="text" class="form-control signin-username" placeholder="用户名" required="required" autocomplete="username"/>
-                </div>
-                <div class="password mb-3">
-                  <label class="sr-only" for="password">密码</label>
-                  <input id="password" name="password" type="password" class="form-control signin-password" placeholder="密码" required="required" autocomplete="current-password"/>
-                  
-                  <div class="extra mt-3 row justify-content-between">
-                    <div class="col-6">
-                      <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="" id="RememberPassword" />
-                        <label class="form-check-label" for="RememberPassword">记住我</label>
-                      </div>
-                    </div>
-                    <div class="col-6">
-                      <div class="forgot-password text-end">
-                        <a href="reset-password.html" class="text-decoration-none">忘记密码？</a>
-                      </div>
-                    </div>
+            <div class="password-group mb-4">
+              <div class="form-floating position-relative">
+                <input id="password" name="password" type="password" class="form-control" placeholder="密码"
+                  required="required" autocomplete="current-password" style="padding-right: 50px;">
+                <label for="password"><i class="fas fa-key me-2"></i>访问密钥</label>
+
+                <span class="password-toggle" onclick="togglePasswordVisibility()" title="显示/隐藏密码">
+                  <i class="fas fa-eye-slash" id="password-icon"></i>
+                </span>
+              </div>
+
+              <div class="extra mt-3 row justify-content-between align-items-center">
+                <div class="col-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="" id="RememberPassword" />
+                    <label class="form-check-label text-muted small" for="RememberPassword">记住凭证</label>
                   </div>
                 </div>
-                
-                <div class="text-center">
-                  <button type="submit" class="btn app-btn-primary w-100 theme-btn mx-auto" id="submit-btn">
-                    登录
-                  </button>
+                <div class="col-6">
+                  <div class="forgot-password text-end">
+                    <a href="/signup" class="text-decoration-none small">注册账号</a>
+                  </div>
                 </div>
-              </form>
-              
-              <div class="auth-option text-center pt-5">
-                没有账户？ <a class="text-link" href="/signup">立即注册</a>
               </div>
-              
-              <!-- 调试信息展示区 (默认隐藏，出错时显示，方便用户截图反馈) -->
-              <div id="debug-area" class="mt-4 p-2 bg-light border rounded text-danger" style="display:none; font-size: 12px; text-align: left; word-break: break-all;">
-                  <strong>出错信息 (请截图反馈给管理员):</strong><br>
-                  <span id="debug-msg"></span>
-              </div>
+            </div>
 
+            <div class="d-grid gap-2 mt-4">
+              <button type="submit" class="btn app-btn-primary theme-btn" id="submit-btn">
+                安全登录
+              </button>
+            </div>
+          </form>
+
+          <div id="debug-area-styled" style="display: none;">
+            <div class="mb-2" style="color:#f44336; font-weight:bold;">
+              <i class="fas fa-exclamation-triangle me-2"></i>SYSTEM_EXCEPTION
+            </div>
+            <div id="debug-area">
+              <span id="debug-msg"></span>
             </div>
           </div>
+
         </div>
-      </div>
-      <div class="col-12 col-md-5 col-lg-6 h-100 auth-background-col">
-        <div class="auth-background-holder"></div>
-        <div class="auth-background-mask"></div>
-        <div class="auth-background-overlay p-3 p-lg-5">
-          <div class="d-flex flex-column align-content-end h-100">
-            <div class="h-100"></div>
-          </div>
+
+        <div class="auth-option text-center pt-5 text-muted" style="font-size: 0.8rem;">
+          &copy; 2025 内部审查系统 | 仅限授权访问 <br>
+          IP: 127.0.0.1 (Local)
         </div>
       </div>
     </div>
 
-    <!-- 引入库 -->
-    <script src="/material/axios.min.js"></script>
-    <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <div class="col-12 col-lg-7 h-100 auth-background-col" id="vanta-bg">
+    </div>
+  </div>
 
-    <script>
-      // DOM 元素引用
-      const loginForm = document.getElementById('login-form');
-      const submitBtn = document.getElementById('submit-btn');
-      const debugArea = document.getElementById('debug-area');
-      const debugMsg = document.getElementById('debug-msg');
-      const loadingOverlay = document.getElementById('form-loading');
+  <script src="/material/axios.min.js"></script>
+  <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 
-      // 初始化 Toast
-      const toastEl = document.getElementById('login-toast');
-      const toastInstance = new bootstrap.Toast(toastEl);
-      const toastTitle = document.getElementById('toast-header-title');
-      const toastBody = document.getElementById('toast-body-content');
-
-      /**
-       * 显示 Toast 提示
-       */
-      function showToast(type, title, message) {
-        toastEl.className = `toast ${type === 'success' ? 'bg-success' : 'bg-danger'} text-white`;
-        toastTitle.textContent = title;
-        toastBody.innerHTML = message;
-        toastInstance.show();
+  <script src="assets/plugins/vanta/three.min.js"></script>
+  <script src="assets/plugins/vanta/vanta.net.min.js"></script>
+  <script>
+    // 初始化 Vanta 效果
+    document.addEventListener("DOMContentLoaded", function () {
+      if (window.VANTA) {
+        VANTA.NET({
+          el: "#vanta-bg",
+          mouseControls: true,
+          touchControls: true,
+          gyroControls: false,
+          minHeight: 200.00,
+          minWidth: 200.00,
+          scale: 1.00,
+          scaleMobile: 1.00,
+          color: 0x3498db,      // 线条颜色
+          backgroundColor: 0x1e2a38, // 背景颜色
+          points: 12.00,        // 点的数量
+          maxDistance: 23.00,   // 连接距离
+          spacing: 18.00        // 间距
+        });
       }
+    });
+  </script>
 
-      /**
-       * 显示调试信息
-       */
-      function showDebugInfo(error) {
-          debugArea.style.display = 'block';
-          let msg = new Date().toLocaleString() + ' - ';
-          if (error.response) {
-              // 后端有返回，但状态码不对
-              msg += `Status: ${error.response.status} | Data: ${JSON.stringify(error.response.data)}`;
-          } else if (error.request) {
-              // 请求已发出，无响应
-              msg += `Network Error: 无响应 (请检查网络或服务器IP)`;
-          } else {
-              // 设置请求时发生错误
-              msg += `Error: ${error.message}`;
-          }
-          debugMsg.textContent = msg;
+  <script>
+    // DOM 元素引用
+    const loginForm = document.getElementById('login-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const debugArea = document.getElementById('debug-area');
+    const debugMsg = document.getElementById('debug-msg');
+    const loadingOverlay = document.getElementById('form-loading');
+
+    // 初始化 Toast
+    const toastEl = document.getElementById('login-toast');
+    const toastInstance = new bootstrap.Toast(toastEl);
+    const toastTitle = document.getElementById('toast-header-title');
+    const toastBody = document.getElementById('toast-body-content');
+
+    /**
+     * 显示 Toast 提示
+     */
+    function showToast(type, title, message) {
+      toastEl.className = `toast shadow-lg border-0 ${type === 'success' ? 'bg-success' : 'bg-danger'}`;
+      toastEl.querySelector('.toast-header').className = `toast-header border-bottom-0 text-white ${type === 'success' ? 'bg-success' : 'bg-danger'}`;
+      toastTitle.textContent = title;
+      toastBody.innerHTML = message;
+      toastInstance.show();
+    }
+
+    /**
+     * 显示调试信息
+     */
+    function showDebugInfo(error) {
+      document.getElementById('debug-area-styled').style.display = 'block';
+      debugArea.style.display = 'block';
+      let msg = new Date().toLocaleString() + ' - ';
+      if (error.response) {
+        msg += `Status: ${error.response.status} | Data: ${JSON.stringify(error.response.data)}`;
+      } else if (error.request) {
+        msg += `Network Error: 无响应 (请检查网络或服务器IP)`;
+      } else {
+        msg += `Error: ${error.message}`;
       }
+      debugMsg.textContent = msg;
+    }
 
-      // 配置 Axios 全局默认值
-      axios.defaults.timeout = 8000; // 8秒超时，防止无限等待
+    axios.defaults.timeout = 8000;
 
-      /**
-       * 登录请求逻辑 (带重试机制)
-       * @param {Object} params - 表单数据
-       * @param {number} retries - 剩余重试次数
-       */
-      async function attemptLogin(params, retries = 1) {
-          try {
-              // 模拟 API 路径，如果这里是 localhost，请务必改为相对路径或服务器真实IP
-              const response = await axios.post('/api/users/login', params);
-              return response; // 成功直接返回
-          } catch (error) {
-              // 如果还有重试次数，并且是网络错误（不是账号密码错误），则重试
-              // 401/400 通常是账号密码错，不需要重试
-              if (retries > 0 && (!error.response || error.response.status >= 500)) {
-                  console.warn(`请求失败，正在重试... 剩余次数: ${retries}`);
-                  showToast('error', '网络波动', `连接不稳定，正在自动重试 (${retries})...`);
-                  // 等待 1 秒后重试
-                  await new Promise(r => setTimeout(r, 1000));
-                  return attemptLogin(params, retries - 1);
-              } else {
-                  throw error; // 抛出错误给主逻辑处理
-              }
-          }
-      }
-
-      // 表单提交事件
-      loginForm.addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        // 1. 获取并验证输入
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
-
-        if (!username || !password) {
-            showToast('error', '提示', '请填写完整的账号和密码');
-            return;
+    async function attemptLogin(params, retries = 1) {
+      try {
+        const response = await axios.post('/api/users/login', params);
+        return response;
+      } catch (error) {
+        if (retries > 0 && (!error.response || error.response.status >= 500)) {
+          console.warn(`请求失败，正在重试... 剩余次数: ${retries}`);
+          showToast('error', '网络波动', `连接不稳定，正在自动重试 (${retries})...`);
+          await new Promise(r => setTimeout(r, 1000));
+          return attemptLogin(params, retries - 1);
+        } else {
+          throw error;
         }
+      }
+    }
 
-        // 2. 锁定 UI
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 登录中...';
-        loadingOverlay.style.display = 'flex'; // 显示遮罩
-        debugArea.style.display = 'none'; // 隐藏旧的报错
+    loginForm.addEventListener('submit', function (e) {
+      e.preventDefault();
 
-        // 3. 准备数据
-        const params = new URLSearchParams();
-        params.append('username', username);
-        params.append('password', password);
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
 
-        // 4. 发起请求 (使用封装的带重试函数)
-        attemptLogin(params)
-          .then(function (response) {
-            if (response.data && response.data.success) {
-              // --- 登录成功 ---
-              const userRole = response.data.role;
-              if (userRole) sessionStorage.setItem('userRole', userRole);
+      if (!username || !password) {
+        showToast('error', '提示', '请填写完整的账号和密码');
+        return;
+      }
 
-              let roleName = '用户';
-              if(userRole === 'manager') roleName = '管理员';
-              if(userRole === 'designer') roleName = '设计员';
-              if(userRole === 'student') roleName = '学生';
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 安全验证中...';
+      loadingOverlay.style.display = 'flex';
+      document.getElementById('debug-area-styled').style.display = 'none';
 
-              showToast('success', '登录成功', `欢迎回来，<b>${roleName}</b>！正在跳转...`);
-              
-              // 延迟跳转
-              setTimeout(() => {
-                window.location.href = response.data.redirectUrl || '/index';
-              }, 1500);
-            } else {
-              // --- 业务逻辑失败 (如密码错误) ---
-              throw new Error(response.data.message || '未知业务错误');
+      const params = new URLSearchParams();
+      params.append('username', username);
+      params.append('password', password);
+
+      attemptLogin(params)
+        .then(function (response) {
+          if (response.data && response.data.success) {
+            const userRole = response.data.role;
+            if (userRole) sessionStorage.setItem('userRole', userRole);
+
+            let roleName = '用户';
+            if (userRole === 'manager') roleName = '管理员';
+            if (userRole === 'designer') roleName = '设计员';
+            if (userRole === 'student') roleName = '学生';
+
+            showToast('success', '验证通过', `身份确认：<b>${roleName}</b>。正在进入系统...`);
+
+            setTimeout(() => {
+              window.location.href = response.data.redirectUrl || '/index';
+            }, 1500);
+          } else {
+            throw new Error(response.data.message || '未知业务错误');
+          }
+        })
+        .catch(function (error) {
+          console.error(error);
+          let userMsg = '登录遇到问题，请重试';
+
+          if (error.response) {
+            if (error.response.status === 401 || error.response.data?.message) {
+              userMsg = error.response.data.message || '用户名或密码错误';
+            } else if (error.response.status === 404) {
+              userMsg = '登录接口不存在 (404)，请联系管理员';
+            } else if (error.response.status >= 500) {
+              userMsg = '服务器内部错误 (500)，请稍后再试';
             }
-          })
-          .catch(function (error) {
-            // --- 捕获所有错误 ---
-            console.error(error);
-            let userMsg = '登录遇到问题，请重试';
+          } else if (error.request) {
+            userMsg = '无法连接到服务器，请检查网络或防火墙设置';
+          } else {
+            userMsg = error.message;
+          }
 
-            if (error.response) {
-                // 服务器返回了错误状态码
-                if (error.response.status === 401 || error.response.data?.message) {
-                    userMsg = error.response.data.message || '用户名或密码错误';
-                } else if (error.response.status === 404) {
-                    userMsg = '登录接口不存在 (404)，请联系管理员';
-                } else if (error.response.status >= 500) {
-                    userMsg = '服务器内部错误 (500)，请稍后再试';
-                }
-            } else if (error.request) {
-                // 请求发出但无响应
-                userMsg = '无法连接到服务器，请检查网络或防火墙设置';
-            } else {
-                // 代码逻辑错误
-                userMsg = error.message;
-            }
+          showToast('error', '登录失败', userMsg);
 
-            showToast('error', '登录失败', userMsg);
-            
-            // 显示底部的调试信息，方便用户截图
-            showDebugInfo(error);
+          showDebugInfo(error);
 
-            // 恢复 UI
-            submitBtn.disabled = false;
-            submitBtn.textContent = '登录';
-            loadingOverlay.style.display = 'none';
-          });
-      });
-    </script>
-  </body>
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '安全登录';
+          loadingOverlay.style.display = 'none';
+        });
+    });
+
+
+
+
+    function togglePasswordVisibility() {
+      const passwordInput = document.getElementById('password');
+      const passwordIcon = document.getElementById('password-icon');
+
+      if (passwordInput.type === 'password') {
+        // 切换为可见
+        passwordInput.type = 'text';
+        passwordIcon.classList.remove('fa-eye-slash');
+        passwordIcon.classList.add('fa-eye');
+        passwordIcon.style.color = '#3498db'; // 高亮提示当前是明文状态
+      } else {
+        // 切换为隐藏
+        passwordInput.type = 'password';
+        passwordIcon.classList.remove('fa-eye');
+        passwordIcon.classList.add('fa-eye-slash');
+        passwordIcon.style.color = ''; // 恢复默认颜色
+      }
+    }
+
+  </script>
+</body>
+
 </html>

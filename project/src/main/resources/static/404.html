@@ -1,37 +1,162 @@
 <!DOCTYPE html>
-<html lang="en"> 
+<html lang="zh-CN"> 
 <head>
-    <title>NotFound</title>
+    <title>系统提示 - 404</title>
 
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <meta name="description" content="Portal - Bootstrap 5 Admin Dashboard Template For Developers">
-    <meta name="author" content="Xiaoying Riley at 3rd Wave Media">    
+    <meta name="description" content="Audit System 404 Error">
+    <meta name="author" content="System Admin">    
     <link rel="shortcut icon" href="favicon.ico"> 
 
     <script defer src="assets/plugins/fontawesome/js/all.min.js"></script>
     <link id="theme-style" rel="stylesheet" href="assets/css/portal.css">
 
+    <style>
+        /* --- 审查系统统一主题 (System Audit Theme) --- */
+        :root {
+            --audit-primary: #1a252f;
+            --audit-accent: #3498db;
+            --audit-error: #c0392b; /* 警告红 */
+            --audit-bg: #1e2a38;
+        }
+
+        /* 统一的高级字体栈 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+            background-color: var(--audit-bg);
+            height: 100vh;
+            overflow: hidden; /* 404页面锁定滚动 */
+            color: #2c3e50;
+        }
+
+        /* 背景容器 */
+        .app-404-page {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Vanta Canvas */
+        #vanta-bg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0;
+        }
+
+        /* 内容卡片容器 */
+        .container {
+            position: relative;
+            z-index: 10; /* 浮在背景之上 */
+        }
+
+        /* 卡片美化 */
+        .app-card {
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            padding: 4rem 3rem !important; /* 增加内边距 */
+            backdrop-filter: blur(5px);
+        }
+
+        /* Logo 区域 */
+        .app-logo .logo-text {
+            color: var(--audit-primary);
+            font-weight: 700;
+            font-size: 1.5rem;
+            vertical-align: middle;
+        }
+        .app-logo img {
+            height: 40px;
+        }
+
+        /* 404 标题美化 */
+        .page-title {
+            font-family: "Consolas", "Monaco", monospace; /* 代码风格字体 */
+            font-size: 6rem;
+            font-weight: 900;
+            color: var(--audit-primary);
+            line-height: 1;
+            margin-bottom: 1rem;
+            letter-spacing: -2px;
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+        }
+        
+        .page-title .font-weight-light {
+            display: block;
+            font-family: "Microsoft YaHei UI", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600 !important;
+            color: var(--audit-error); /* 红色警告色 */
+            letter-spacing: 2px;
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+
+        /* 错误描述文字 */
+        .mb-4 {
+            font-size: 1.1rem;
+            color: #7f8c8d;
+            margin-bottom: 2.5rem !important;
+        }
+
+        /* 按钮美化 (与登录页一致) */
+        .btn.app-btn-primary {
+            background: linear-gradient(135deg, var(--audit-primary) 0%, #34495e 100%);
+            color: white;
+            padding: 0.8rem 2.5rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(44, 62, 80, 0.2);
+        }
+
+        .btn.app-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(44, 62, 80, 0.3);
+            color: #fff;
+        }
+
+    </style>
 </head>
 <body class="app app-404-page">
+    
+    <div id="vanta-bg"></div>
+
     <div class="container mb-5">
-	    <div class="row">
-		    <div class="col-12 col-md-11 col-lg-7 col-xl-6 mx-auto">
-			    <div class="app-branding text-center mb-5">
-		            <a class="app-logo" href="index.html"><img class="logo-icon me-2" src="assets/images/app-logo.svg" alt="logo"><span class="logo-text">Not Found</span></a>
-	
-		        </div>
-			    <div class="app-card p-5 text-center shadow-sm">
-				    <h1 class="page-title mb-4">404<br><span class="font-weight-light">页面丢失啦!</span></h1>
-				    <div class="mb-4">
-					    对不起,找不到您所需要的页面.
-				    </div>
-				    <a class="btn app-btn-primary" href="index.html">回到主页</a>
-			    </div>
-		    </div>
-	    </div>
+        <div class="row">
+            <div class="col-12 col-md-11 col-lg-7 col-xl-6 mx-auto">
+                
+                <div class="app-card p-5 text-center shadow-sm">
+                    <div class="app-branding text-center mb-4">
+                        <a class="app-logo text-decoration-none" href="index.html">
+                            <img class="logo-icon me-2" src="assets/images/app-logo.svg" alt="logo" onerror="this.outerHTML='<i class=\'fas fa-shield-alt fa-2x me-2\' style=\'color:#1a252f; vertical-align:middle;\'></i>'">
+                            <span class="logo-text">System Audit</span>
+                        </a>
+                    </div>
+
+                    <h1 class="page-title mb-4">
+                        404
+                        <span class="font-weight-light"><i class="fas fa-exclamation-triangle me-2"></i>页面路径丢失</span>
+                    </h1>
+                    
+                    <div class="mb-4">
+                        <p>系统无法定位请求的资源。<br>该页面可能已被移除、重命名或您没有访问权限。</p>
+                        <small class="text-muted" style="font-family: monospace;">ERROR_CODE: RESOURCE_NOT_FOUND</small>
+                    </div>
+                    
+                    <a class="btn app-btn-primary" href="index.html">
+                        <i class="fas fa-undo-alt me-2"></i>返回系统主页
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="assets/plugins/popper.min.js"></script>
@@ -40,6 +165,30 @@
     <script src="assets/js/charts-custom.js"></script>
     <script src="assets/js/app.js"></script> 
 
-</body>
-</html> 
+    <script src="assets/plugins/vanta/three.min.js"></script>
+    <script src="assets/plugins/vanta/vanta.net.min.js"></script>
+    <script>
+      // 初始化 Vanta 效果
+      document.addEventListener("DOMContentLoaded", function(){
+        if (window.VANTA) {
+            VANTA.NET({
+              el: "#vanta-bg",
+              mouseControls: true,
+              touchControls: true,
+              gyroControls: false,
+              minHeight: 200.00,
+              minWidth: 200.00,
+              scale: 1.00,
+              scaleMobile: 1.00,
+              color: 0x3498db,      // 科技蓝
+              backgroundColor: 0x1e2a38, // 深蓝灰背景
+              points: 10.00,        // 稍微稀疏一点，区别于登录页
+              maxDistance: 22.00,
+              spacing: 18.00
+            });
+        }
+      });
+    </script>
 
+</body>
+</html>

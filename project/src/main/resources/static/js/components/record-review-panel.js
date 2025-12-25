@@ -208,6 +208,15 @@ Vue.component('record-review-panel', {
                         </div>
                     </el-tab-pane>
                         
+                        <el-tab-pane label="问题记录" name="problemRecord" lazy>
+                            <problem-record-table
+                                v-if="activeTab === 'problemRecord'"
+                                :record-id="Number(recordId)"
+                                mode="reviewer">
+                            </problem-record-table>
+                        </el-tab-pane>
+
+                        
                         <!-- 2. 动态Excel文件 Tab -->
                         <el-tab-pane
                             v-for="file in excelFiles"
@@ -224,14 +233,6 @@ Vue.component('record-review-panel', {
                             </iframe>
                         </el-tab-pane>
             
-                        <!-- 3. 问题记录 Tab (从页面底部移入) -->
-                        <el-tab-pane label="问题记录" name="problemRecord" lazy>
-                            <problem-record-table
-                                v-if="activeTab === 'problemRecord'"
-                                :record-id="Number(recordId)"
-                                mode="reviewer">
-                            </problem-record-table>
-                        </el-tab-pane>
             
                         <!-- 4. 无文件时的提示信息 -->
                         <div v-if="!metaFile && excelFiles.length === 0" class="text-center text-muted p-5">
