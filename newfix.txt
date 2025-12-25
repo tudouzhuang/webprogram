@@ -1,2 +1,29 @@
+INSERT INTO `statistics_rules` 
+(`rule_name`, `category`, `sheet_name_pattern`, `range_to_scan`, `total_count_range`, `ok_symbol`, `ng_symbol`, `na_symbol`, `is_active`, `created_at`) 
+VALUES 
+('设计-内审', '设计-内审', '.*', 'E1:E200', 'A1:A200', '√', '×', '无', 1, NOW()),
+('设计-FMC', '设计-FMC', '.*', 'F1:F200', 'A1:A200', '√', '×', '无', 1, NOW()),
+('设计-正式图', '设计-正式图', '.*', 'G1:G200', 'A1:A200', '√', '×', '无', 1, NOW()),
+('校审-内审', '校审-内审', '.*', 'H1:H200', 'A1:A200', '√', '×', '无', 1, NOW()),
+('校审-FMC', '校审-FMC', '.*', 'I1:I200', 'A1:A200', '√', '×', '无', 1, NOW()),
+('校审-正式图', '校审-正式图', '.*', 'J1:J200', 'A1:A200', '√', '×', '无', 1, NOW());
+
+
+
+
 -- 将 document_type 的长度扩大到 255 或者更长
 ALTER TABLE project_files MODIFY COLUMN document_type VARCHAR(255) DEFAULT NULL COMMENT '文档类型';
+
+-- 1. 添加 工号(employee_id) 和 真实姓名(real_name) 字段
+ALTER TABLE users 
+ADD COLUMN employee_id VARCHAR(32) NOT NULL COMMENT '工号' AFTER id,
+ADD COLUMN real_name VARCHAR(50) DEFAULT NULL COMMENT '真实姓名' AFTER employee_id;
+
+-- 2. 给工号添加唯一索引 (防止重复注册)
+ALTER TABLE users 
+ADD UNIQUE INDEX idx_employee_id (employee_id);
+
+UPDATE users 
+SET employee_id = 'ADMIN888', 
+    real_name = '系统管理员' 
+WHERE id = 15;
