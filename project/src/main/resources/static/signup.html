@@ -2,533 +2,517 @@
 <html lang="zh-CN">
 
 <head>
-	<title>审查系统 - 账户注册</title>
-	<meta charset="utf-8">
-	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta name="description" content="Audit System Registration">
-	<link rel="shortcut icon" href="favicon.ico">
+    <title>审查系统 - 账户注册</title>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Audit System Registration">
+    <link rel="shortcut icon" href="favicon.ico">
 
-	<script src="assets/plugins/fontawesome/js/all.min.js"></script>
-	<link id="theme-style" rel="stylesheet" href="assets/css/portal.css">
+    <script src="assets/plugins/fontawesome/js/all.min.js"></script>
+    <link id="theme-style" rel="stylesheet" href="assets/css/portal.css">
 
-	<style>
-		/* --- 审查系统统一主题 (System Audit Theme) --- */
-		:root {
-			--audit-primary: #1a252f;
-			--audit-accent: #3498db;
-			--audit-bg: #ecf0f3;
-		}
+    <style>
+        /* --- 审查系统统一主题 (System Audit Theme) --- */
+        :root {
+            --audit-primary: #1a252f;
+            --audit-accent: #3498db;
+            --audit-bg: #ecf0f3;
+        }
 
-		body {
-			/* 优先使用系统级现代黑体 */
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-			background-color: var(--audit-bg);
-			height: 100vh;
-			overflow: hidden;
-			color: #2c3e50;
-		}
+        body {
+            /* 优先使用系统级现代黑体 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+            background-color: var(--audit-bg);
+            height: 100vh;
+            overflow: hidden;
+            color: #2c3e50;
+        }
 
-		.app-auth-wrapper {
-			height: 100vh;
-			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-		}
+        .app-auth-wrapper {
+            height: 100vh;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
 
-		/* 左侧注册区 */
-		.auth-main-col {
-			background: #ffffff;
-			position: relative;
-			z-index: 10;
-			box-shadow: 10px 0 30px rgba(0, 0, 0, 0.03);
-			overflow-y: auto;
-			/* 防止内容过多无法滚动 */
-		}
+        /* 左侧注册区 */
+        .auth-main-col {
+            background: #ffffff;
+            position: relative;
+            z-index: 10;
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.03);
+            overflow-y: auto;
+            /* 防止内容过多无法滚动 */
+        }
 
-		/* 注册框容器 */
-		.app-auth-body {
-			width: 100%;
-			max-width: 480px;
-			/* 稍微宽一点以容纳更多字段 */
-			padding: 2rem;
-			margin: auto;
-		}
+        /* 注册框容器 */
+        .app-auth-body {
+            width: 100%;
+            max-width: 480px;
+            /* 稍微宽一点以容纳更多字段 */
+            padding: 2rem;
+            margin: auto;
+        }
 
-		/* 标题样式 */
-		.auth-heading {
-			font-family: -apple-system, "Microsoft YaHei UI", sans-serif;
-			font-weight: 800;
-			color: var(--audit-primary);
-			letter-spacing: 1px;
-			font-size: 1.8rem;
-			margin-bottom: 0.5rem !important;
-		}
+        /* 标题样式 */
+        .auth-heading {
+            font-family: -apple-system, "Microsoft YaHei UI", sans-serif;
+            font-weight: 800;
+            color: var(--audit-primary);
+            letter-spacing: 1px;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem !important;
+        }
 
-		.sub-heading {
-			font-size: 0.9rem;
-			color: #7f8c8d;
-			letter-spacing: 0.5px;
-			margin-bottom: 2rem;
-		}
+        .sub-heading {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            letter-spacing: 0.5px;
+            margin-bottom: 2rem;
+        }
 
-		.app-logo img {
-			height: 55px;
-			margin-bottom: 1rem;
-		}
+        .app-logo img {
+            height: 55px;
+            margin-bottom: 1rem;
+        }
 
-		/* 输入框美化 (Floating Labels) */
-		.form-control,
-		.form-select {
-			height: 52px;
-			border: 2px solid #eaeff2;
-			background-color: #fcfdfe;
-			border-radius: 6px;
-			padding-left: 15px;
-			font-size: 0.95rem;
-			font-weight: 500;
-			color: #2c3e50;
-			transition: all 0.2s ease-in-out;
-		}
+        /* 输入框美化 (Floating Labels) */
+        .form-control,
+        .form-select {
+            height: 52px;
+            border: 2px solid #eaeff2;
+            background-color: #fcfdfe;
+            border-radius: 6px;
+            padding-left: 15px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #2c3e50;
+            transition: all 0.2s ease-in-out;
+        }
 
-		.form-control:focus,
-		.form-select:focus {
-			background-color: #fff;
-			border-color: var(--audit-accent);
-			box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
-			color: #000;
-		}
+        .form-control:focus,
+        .form-select:focus {
+            background-color: #fff;
+            border-color: var(--audit-accent);
+            box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+            color: #000;
+        }
 
-		.form-floating>label {
-			padding-left: 15px;
-			color: #95a5a6;
-		}
+        .form-floating>label {
+            padding-left: 15px;
+            color: #95a5a6;
+        }
 
-		.form-floating>.form-control:focus~label,
-		.form-floating>.form-control:not(:placeholder-shown)~label,
-		.form-floating>.form-select~label {
-			color: var(--audit-accent);
-			font-weight: 600;
-			transform: scale(0.85) translateY(-0.7rem) translateX(0.15rem);
-		}
+        .form-floating>.form-control:focus~label,
+        .form-floating>.form-control:not(:placeholder-shown)~label,
+        .form-floating>.form-select~label {
+            color: var(--audit-accent);
+            font-weight: 600;
+            transform: scale(0.85) translateY(-0.7rem) translateX(0.15rem);
+        }
 
-		/* 密码显隐图标样式 */
-		.password-toggle {
-			position: absolute;
-			top: 50%;
-			right: 15px;
-			transform: translateY(-50%);
-			cursor: pointer;
-			z-index: 10;
-			color: #95a5a6;
-			padding: 5px;
-		}
+        /* 密码显隐图标样式 */
+        .password-toggle {
+            position: absolute;
+            top: 50%;
+            right: 15px;
+            transform: translateY(-50%);
+            cursor: pointer;
+            z-index: 10;
+            color: #95a5a6;
+            padding: 5px;
+        }
 
-		.password-toggle:hover {
-			color: var(--audit-accent);
-		}
+        .password-toggle:hover {
+            color: var(--audit-accent);
+        }
 
-		/* 按钮美化 */
-		.btn-signup {
-			background: linear-gradient(135deg, var(--audit-primary) 0%, #34495e 100%);
-			color: white;
-			height: 52px;
-			font-weight: 700;
-			border: none;
-			border-radius: 6px;
-			letter-spacing: 2px;
-			font-size: 1.05rem;
-			transition: all 0.3s;
-			box-shadow: 0 4px 6px rgba(44, 62, 80, 0.1);
-		}
+        /* 按钮美化 */
+        .btn-signup {
+            background: linear-gradient(135deg, var(--audit-primary) 0%, #34495e 100%);
+            color: white;
+            height: 52px;
+            font-weight: 700;
+            border: none;
+            border-radius: 6px;
+            letter-spacing: 2px;
+            font-size: 1.05rem;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(44, 62, 80, 0.1);
+        }
 
-		.btn-signup:hover {
-			transform: translateY(-2px);
-			box-shadow: 0 6px 12px rgba(44, 62, 80, 0.2);
-			color: white;
-		}
+        .btn-signup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(44, 62, 80, 0.2);
+            color: white;
+        }
 
-		.btn-signup:disabled {
-			background: #95a5a6;
-			cursor: not-allowed;
-			transform: none;
-		}
+        .btn-signup:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
 
-		/* 链接样式 */
-		.text-link {
-			color: var(--audit-accent);
-			font-weight: 600;
-			text-decoration: none;
-		}
+        /* 链接样式 */
+        .text-link {
+            color: var(--audit-accent);
+            font-weight: 600;
+            text-decoration: none;
+        }
 
-		.text-link:hover {
-			text-decoration: underline;
-			color: #1a5276;
-		}
+        .text-link:hover {
+            text-decoration: underline;
+            color: #1a5276;
+        }
 
-		/* Loading 遮罩 */
-		.loading-overlay {
-			position: absolute;
-			top: -1rem;
-			left: -1rem;
-			right: -1rem;
-			bottom: -1rem;
-			background: rgba(255, 255, 255, 0.92);
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			z-index: 100;
-			border-radius: 12px;
-			backdrop-filter: blur(2px);
-			display: none;
-		}
+        /* Loading 遮罩 */
+        .loading-overlay {
+            position: absolute;
+            top: -1rem;
+            left: -1rem;
+            right: -1rem;
+            bottom: -1rem;
+            background: rgba(255, 255, 255, 0.92);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            border-radius: 12px;
+            backdrop-filter: blur(2px);
+            display: none;
+        }
 
-		/* 调试区域美化 (终端风格) */
-		#debug-area {
-			background-color: #0d1117 !important;
-			border: 1px solid #30363d !important;
-			color: #ff7b72 !important;
-			/* 错误红 */
-			font-family: "Cascadia Code", Consolas, monospace;
-			border-radius: 6px;
-			font-size: 0.8rem !important;
-		}
+        /* 调试区域美化 (终端风格) */
+        #debug-area {
+            background-color: #0d1117 !important;
+            border: 1px solid #30363d !important;
+            color: #ff7b72 !important;
+            /* 错误红 */
+            font-family: "Cascadia Code", Consolas, monospace;
+            border-radius: 6px;
+            font-size: 0.8rem !important;
+        }
 
-		/* 右侧背景区 */
-		.auth-background-col {
-			position: relative;
-			background: #1e2a38;
-			overflow: hidden;
-		}
+        /* =========================================
+           [修改] 右侧背景区容器 - 使用本地图片
+           =========================================
+        */
+        .auth-background-col {
+            position: relative;
+            /* 这里使用了相对路径，对应 src/main/resources/static/assets/images/background/background-JF.jpg */
+            background: url('assets/images/background/background-JF.jpg') no-repeat center center;
+            background-size: cover;
+            overflow: hidden;
+        }
 
-		#vanta-bg canvas {
-			width: 100% !important;
-			height: 100% !important;
-		}
+        /* 增加一个半透明遮罩，让图片看起来不那么刺眼，更专业 */
+        .auth-background-col::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(30, 42, 56, 0.4);
+            /* 深蓝色遮罩 */
+            z-index: 1;
+        }
 
-		/* Toast 美化 */
-		.toast {
-			border: none;
-			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-		}
 
-		/* --- 修复 Floating Label 重叠问题 --- */
-		.form-floating .form-control::placeholder {
-			color: transparent !important;
-			/* 平常状态下：完全透明，隐藏占位符 */
-			opacity: 0;
-			/* 兼容性处理 */
-		}
-	</style>
+        /* Toast 美化 */
+        .toast {
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        /* --- 修复 Floating Label 重叠问题 --- */
+        .form-floating .form-control::placeholder {
+            color: transparent !important;
+            /* 平常状态下：完全透明，隐藏占位符 */
+            opacity: 0;
+            /* 兼容性处理 */
+        }
+    </style>
 </head>
 
 <body class="app p-0">
 
-	<div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
-		<div id="signup-toast" class="toast align-items-center shadow-lg" role="alert" aria-live="assertive"
-			aria-atomic="true">
-			<div class="d-flex">
-				<div class="toast-body d-flex align-items-center fw-bold" id="toast-body-content"
-					style="font-size: 1rem; padding: 1rem;">
-				</div>
-				<button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-			</div>
-		</div>
-	</div>
+    <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
+        <div id="signup-toast" class="toast align-items-center shadow-lg" role="alert" aria-live="assertive"
+            aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body d-flex align-items-center fw-bold" id="toast-body-content"
+                    style="font-size: 1rem; padding: 1rem;">
+                </div>
+                <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
 
-	<div class="row g-0 app-auth-wrapper">
+    <div class="row g-0 app-auth-wrapper">
 
-		<div class="col-12 col-lg-5 auth-main-col d-flex align-items-center justify-content-center">
-			<div class="app-auth-body position-relative">
+        <div class="col-12 col-lg-4 auth-main-col d-flex align-items-center justify-content-center">
+            <div class="app-auth-body position-relative">
 
-				<div id="form-loading" class="loading-overlay">
-					<div class="text-center">
-						<div class="spinner-border text-primary mb-3" role="status"
-							style="width: 3rem; height: 3rem; border-width: 3px;"></div>
-						<p class="text-muted fw-bold" style="font-family: 'Microsoft YaHei UI'">正在创建账户档案...</p>
-					</div>
-				</div>
+                <div id="form-loading" class="loading-overlay">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary mb-3" role="status"
+                            style="width: 3rem; height: 3rem; border-width: 3px;"></div>
+                        <p class="text-muted fw-bold" style="font-family: 'Microsoft YaHei UI'">正在创建账户档案...</p>
+                    </div>
+                </div>
 
-				<div class="text-center">
-					<a class="app-logo d-inline-block" href="index.html">
-						<img class="logo-icon" src="assets/images/app-logo.svg" alt="logo"
-							onerror="this.outerHTML='<i class=\'fas fa-user-plus fa-3x\' style=\'color:#1a252f\'></i>'">
-					</a>
-					<h2 class="auth-heading mt-2">账户注册</h2>
-					<p class="sub-heading">Identity Verification & Registration</p>
-				</div>
+                <div class="text-center">
+                    <a class="app-logo d-inline-block" href="index.html">
+                        <img class="logo-icon" src="assets/images/app-logo.svg" alt="logo"
+                            onerror="this.outerHTML='<i class=\'fas fa-user-plus fa-3x\' style=\'color:#1a252f\'></i>'">
+                    </a>
+                    <h2 class="auth-heading mt-2">账户注册</h2>
+                    <p class="sub-heading">Identity Verification & Registration</p>
+                </div>
 
-				<div class="auth-form-container text-start">
-					<form class="auth-form auth-signup-form">
+                <div class="auth-form-container text-start">
+                    <form class="auth-form auth-signup-form">
 
-						<div class="form-floating mb-3">
-							<input id="realName" name="realName" type="text" class="form-control" placeholder="真实姓名"
-								required="required">
-							<label for="realName"><i class="fas fa-user me-2"></i>真实姓名</label>
-						</div>
+                        <div class="form-floating mb-3">
+                            <input id="realName" name="realName" type="text" class="form-control" placeholder="真实姓名"
+                                required="required">
+                            <label for="realName"><i class="fas fa-user me-2"></i>真实姓名</label>
+                        </div>
 
-						<div class="form-floating mb-3">
-							<input id="employeeId" name="employeeId" type="text" class="form-control" placeholder="工号"
-								required="required">
-							<label for="employeeId"><i class="fas fa-id-badge me-2"></i>工号 (CT20开头)</label>
-							<div class="form-text mt-2 ms-1" style="font-size: 0.8rem; color: #7f8c8d;">
-								<i class="fas fa-info-circle me-1"></i> 用户名将自动生成为：姓名+工号
-							</div>
-						</div>
+                        <div class="form-floating mb-3">
+                            <input id="employeeId" name="employeeId" type="text" class="form-control" placeholder="工号"
+                                required="required">
+                            <label for="employeeId"><i class="fas fa-id-badge me-2"></i>工号 (CT20开头)</label>
+                            <div class="form-text mt-2 ms-1" style="font-size: 0.8rem; color: #7f8c8d;">
+                                <i class="fas fa-info-circle me-1"></i> 用户名将自动生成为：姓名+工号
+                            </div>
+                        </div>
 
-						<div class="form-floating mb-3 position-relative">
-							<input id="password" name="password" type="password" class="form-control" placeholder="设置密码"
-								required="required" style="padding-right: 45px;">
-							<label for="password"><i class="fas fa-lock me-2"></i>设置访问密码</label>
-							<span class="password-toggle" onclick="togglePasswordVisibility()">
-								<i class="fas fa-eye-slash" id="password-icon"></i>
-							</span>
-						</div>
+                        <div class="form-floating mb-3 position-relative">
+                            <input id="password" name="password" type="password" class="form-control" placeholder="设置密码"
+                                required="required" style="padding-right: 45px;">
+                            <label for="password"><i class="fas fa-lock me-2"></i>设置访问密码</label>
+                            <span class="password-toggle" onclick="togglePasswordVisibility()">
+                                <i class="fas fa-eye-slash" id="password-icon"></i>
+                            </span>
+                        </div>
 
-						<div class="form-floating mb-4">
-							<select id="identity-select" name="identity" class="form-select" required>
-								<option value="" disabled selected>请选择...</option>
-								<option value="designer">我是设计员 (Designer)</option>
-								<option value="manager">我是管理员 (Manager)</option>
-							</select>
-							<label for="identity-select"><i class="fas fa-users-cog me-2"></i>账户身份</label>
-						</div>
+                        <div class="form-floating mb-4">
+                            <select id="identity-select" name="identity" class="form-select" required>
+                                <option value="" disabled selected>请选择...</option>
+                                <option value="designer">我是设计员 (Designer)</option>
+                                <option value="manager">我是管理员 (Manager)</option>
+                            </select>
+                            <label for="identity-select"><i class="fas fa-users-cog me-2"></i>账户身份</label>
+                        </div>
 
-						<div class="extra mb-4">
-							<div class="form-check">
-								<input class="form-check-input" type="checkbox" value="" id="TermsCheckbox"
-									style="cursor: pointer;">
-								<label class="form-check-label text-muted" for="TermsCheckbox"
-									style="font-size: 0.9rem; cursor: pointer;">
-									我已阅读并同意 <a href="#" class="text-link">用户协议</a> 和 <a href="#"
-										class="text-link">隐私政策</a>
-								</label>
-							</div>
-						</div>
+                        <div class="extra mb-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="" id="TermsCheckbox"
+                                    style="cursor: pointer;">
+                                <label class="form-check-label text-muted" for="TermsCheckbox"
+                                    style="font-size: 0.9rem; cursor: pointer;">
+                                    我已阅读并同意 <a href="#" class="text-link">用户协议</a> 和 <a href="#"
+                                        class="text-link">隐私政策</a>
+                                </label>
+                            </div>
+                        </div>
 
-						<div class="text-center">
-							<button type="submit" class="btn btn-signup w-100" id="submit-btn">
-								<i class="fas fa-check-circle me-2"></i>立即注册
-							</button>
-						</div>
-					</form>
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-signup w-100" id="submit-btn">
+                                <i class="fas fa-check-circle me-2"></i>立即注册
+                            </button>
+                        </div>
+                    </form>
 
-					<div class="auth-option text-center pt-4">
-						<span class="text-muted small">已有账户？</span>
-						<a class="text-link fw-bold ms-1" href="login.html">返回登录</a>
-					</div>
+                    <div class="auth-option text-center pt-4">
+                        <span class="text-muted small">已有账户？</span>
+                        <a class="text-link fw-bold ms-1" href="login.html">返回登录</a>
+                    </div>
 
-					<div id="debug-area" class="mt-4 p-3"
-						style="display:none; text-align: left; word-break: break-all;">
-						<div class="mb-1"><strong><i class="fas fa-terminal me-2"></i>SYSTEM_ERROR_LOG:</strong></div>
-						<span id="debug-msg"></span>
-					</div>
-				</div>
-			</div>
-		</div>
+                    <div id="debug-area" class="mt-4 p-3"
+                        style="display:none; text-align: left; word-break: break-all;">
+                        <div class="mb-1"><strong><i class="fas fa-terminal me-2"></i>SYSTEM_ERROR_LOG:</strong></div>
+                        <span id="debug-msg"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-		<div class="col-12 col-lg-7 h-100 auth-background-col d-none d-lg-block" id="vanta-bg">
-		</div>
-	</div>
+        <div class="col-12 col-lg-8 h-100 auth-background-col d-none d-lg-block">
+        </div>
+    </div>
 
-	<script src="material/axios.min.js"></script>
-	<script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="material/axios.min.js"></script>
+    <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 
-	<script src="assets/plugins/vanta/three.min.js"></script>
-	<script src="assets/plugins/vanta/vanta.net.min.js"></script>
+    <script>
+        // 2. 密码显隐切换逻辑
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const passwordIcon = document.getElementById('password-icon');
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                passwordIcon.classList.remove('fa-eye-slash');
+                passwordIcon.classList.add('fa-eye');
+                passwordIcon.style.color = '#3498db';
+            } else {
+                passwordInput.type = 'password';
+                passwordIcon.classList.remove('fa-eye');
+                passwordIcon.classList.add('fa-eye-slash');
+                passwordIcon.style.color = '';
+            }
+        }
+    </script>
 
-	<script>
-		// 1. 初始化 Vanta 效果
-		document.addEventListener("DOMContentLoaded", function () {
-			if (window.VANTA) {
-				VANTA.NET({
-					el: "#vanta-bg",
-					mouseControls: true,
-					touchControls: true,
-					gyroControls: false,
-					minHeight: 200.00,
-					minWidth: 200.00,
-					scale: 1.00,
-					scaleMobile: 1.00,
-					color: 0x3498db,      // 科技蓝
-					backgroundColor: 0x1e2a38, // 深蓝灰背景
-					points: 14.00,
-					maxDistance: 22.00,
-					spacing: 16.00
-				});
-			}
-		});
+    <script>
+        // DOM 元素
+        const signupForm = document.querySelector('.auth-signup-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const loadingOverlay = document.getElementById('form-loading');
+        const debugArea = document.getElementById('debug-area');
+        const debugMsg = document.getElementById('debug-msg');
 
-		// 2. 密码显隐切换逻辑
-		function togglePasswordVisibility() {
-			const passwordInput = document.getElementById('password');
-			const passwordIcon = document.getElementById('password-icon');
-			if (passwordInput.type === 'password') {
-				passwordInput.type = 'text';
-				passwordIcon.classList.remove('fa-eye-slash');
-				passwordIcon.classList.add('fa-eye');
-				passwordIcon.style.color = '#3498db';
-			} else {
-				passwordInput.type = 'password';
-				passwordIcon.classList.remove('fa-eye');
-				passwordIcon.classList.add('fa-eye-slash');
-				passwordIcon.style.color = '';
-			}
-		}
-	</script>
+        // Toast 初始化
+        const toastEl = document.getElementById('signup-toast');
+        const toastInstance = new bootstrap.Toast(toastEl);
+        const toastBody = document.getElementById('toast-body-content');
 
-	<script>
-		// DOM 元素
-		const signupForm = document.querySelector('.auth-signup-form');
-		const submitBtn = document.getElementById('submit-btn');
-		const loadingOverlay = document.getElementById('form-loading');
-		const debugArea = document.getElementById('debug-area');
-		const debugMsg = document.getElementById('debug-msg');
+        // 配置 Axios
+        axios.defaults.timeout = 10000;
 
-		// Toast 初始化
-		const toastEl = document.getElementById('signup-toast');
-		const toastInstance = new bootstrap.Toast(toastEl);
-		const toastBody = document.getElementById('toast-body-content');
+        // Toast 显示函数
+        function showToast(type, message) {
+            toastEl.classList.remove('bg-success', 'bg-danger');
+            let icon = '';
+            if (type === 'success') {
+                toastEl.classList.add('bg-success');
+                toastEl.classList.add('text-white'); // 适配新样式
+                icon = '<i class="fas fa-check-circle fa-lg me-2"></i>';
+            } else {
+                toastEl.classList.add('bg-danger');
+                toastEl.classList.add('text-white'); // 适配新样式
+                icon = '<i class="fas fa-exclamation-circle fa-lg me-2"></i>';
+            }
+            toastBody.innerHTML = `${icon} <div>${message}</div>`;
+            toastInstance.show();
+        }
 
-		// 配置 Axios
-		axios.defaults.timeout = 10000;
+        // 调试信息显示
+        function showDebugInfo(error) {
+            debugArea.style.display = 'block';
+            let msg = new Date().toLocaleTimeString() + ' - ';
+            if (error.response) {
+                msg += `HTTP ${error.response.status}: ${JSON.stringify(error.response.data)}`;
+            } else {
+                msg += `Error: ${error.message}`;
+            }
+            debugMsg.textContent = msg;
+        }
 
-		// Toast 显示函数
-		function showToast(type, message) {
-			toastEl.classList.remove('bg-success', 'bg-danger');
-			let icon = '';
-			if (type === 'success') {
-				toastEl.classList.add('bg-success');
-				toastEl.classList.add('text-white'); // 适配新样式
-				icon = '<i class="fas fa-check-circle fa-lg me-2"></i>';
-			} else {
-				toastEl.classList.add('bg-danger');
-				toastEl.classList.add('text-white'); // 适配新样式
-				icon = '<i class="fas fa-exclamation-circle fa-lg me-2"></i>';
-			}
-			toastBody.innerHTML = `${icon} <div>${message}</div>`;
-			toastInstance.show();
-		}
+        signupForm.addEventListener('submit', function (event) {
+            event.preventDefault();
 
-		// 调试信息显示
-		function showDebugInfo(error) {
-			debugArea.style.display = 'block';
-			let msg = new Date().toLocaleTimeString() + ' - ';
-			if (error.response) {
-				msg += `HTTP ${error.response.status}: ${JSON.stringify(error.response.data)}`;
-			} else {
-				msg += `Error: ${error.message}`;
-			}
-			debugMsg.textContent = msg;
-		}
+            // 1. 协议检查
+            const termsCheckbox = document.getElementById('TermsCheckbox');
+            if (!termsCheckbox.checked) {
+                showToast('error', '请先阅读并勾选用户协议');
+                return;
+            }
 
-		signupForm.addEventListener('submit', function (event) {
-			event.preventDefault();
+            // 2. 获取值
+            const realName = document.getElementById('realName').value.trim();
+            const employeeId = document.getElementById('employeeId').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const identity = document.getElementById('identity-select').value;
 
-			// 1. 协议检查
-			const termsCheckbox = document.getElementById('TermsCheckbox');
-			if (!termsCheckbox.checked) {
-				showToast('error', '请先阅读并勾选用户协议');
-				return;
-			}
+            // 3. 基础非空校验
+            if (!realName || !employeeId || !password || !identity) {
+                showToast('error', '请填写完整所有必填项');
+                return;
+            }
 
-			// 2. 获取值 (注意这里用了新的 ID)
-			const realName = document.getElementById('realName').value.trim();
-			const employeeId = document.getElementById('employeeId').value.trim();
-			const password = document.getElementById('password').value.trim();
-			const identity = document.getElementById('identity-select').value;
+            // 4. 【核心逻辑】工号格式正则校验 (CT20 + 6位数字)
+            const empIdPattern = /^CT20\d{6}$/;
+            if (!empIdPattern.test(employeeId)) {
+                showToast('error', '<b>工号格式错误！</b><br>必须以 "CT20" 开头，后接6位数字。<br>例如: CT20117012');
+                return;
+            }
 
-			// 3. 基础非空校验
-			if (!realName || !employeeId || !password || !identity) {
-				showToast('error', '请填写完整所有必填项');
-				return;
-			}
+            // 5. 锁定 UI
+            submitBtn.disabled = true;
+            loadingOverlay.style.display = 'flex';
+            debugArea.style.display = 'none';
 
-			// 4. 【核心逻辑】工号格式正则校验 (CT20 + 6位数字)
-			// 解释: ^CT20 匹配开头, \d{6} 匹配6个数字, $ 匹配结尾
-			const empIdPattern = /^CT20\d{6}$/;
-			if (!empIdPattern.test(employeeId)) {
-				showToast('error', '<b>工号格式错误！</b><br>必须以 "CT20" 开头，后接6位数字。<br>例如: CT20117012');
-				return;
-			}
+            // 6. 构造数据
+            const registerDto = {
+                realName: realName,
+                employeeId: employeeId,
+                password: password,
+                identity: identity
+            };
 
-			// 5. 锁定 UI
-			submitBtn.disabled = true;
-			loadingOverlay.style.display = 'flex';
-			debugArea.style.display = 'none';
+            // 7. 发送请求
+            axios.post('/api/users/register', registerDto)
+                .then(function (response) {
+                    console.log('后端原始数据:', response.data);
 
-			// 6. 构造数据 (符合之前的 Java DTO 定义)
-			const registerDto = {
-				realName: realName,
-				employeeId: employeeId,
-				password: password,
-				identity: identity
-			};
+                    const res = response.data;
+                    let isSuccess = false;
+                    let successMsg = `<b>注册成功！</b><br>工号: ${employeeId}<br>正在跳转...`;
 
-			// 7. 发送请求
-			// 7. 发送请求
-			axios.post('/api/users/register', registerDto)
-				.then(function (response) {
-					console.log('后端原始数据:', response.data);
+                    // 【核心修复：全能判断逻辑】
+                    // 情况 A: 后端返回了标准 JSON 对象
+                    if (typeof res === 'object' && res !== null) {
+                        if ((res.code == 200) || (res.code === '200') || (res.success === true)) {
+                            isSuccess = true;
+                            if (res.data) successMsg = `<b>注册成功！</b><br>用户名: ${res.data}<br>正在跳转...`;
+                        }
+                    }
+                    // 情况 B: 后端直接返回了纯字符串
+                    else if (typeof res === 'string') {
+                        if (res.includes('成功') || !res.includes('失败')) {
+                            isSuccess = true;
+                        }
+                    }
 
-					const res = response.data;
-					let isSuccess = false;
-					let successMsg = `<b>注册成功！</b><br>工号: ${employeeId}<br>正在跳转...`;
+                    if (isSuccess) {
+                        showToast('success', successMsg);
+                        setTimeout(function () {
+                            window.location.href = 'login.html';
+                        }, 1500);
+                    } else {
+                        // 提取错误原因
+                        const errorReason = res.msg || res.message || res.data || (typeof res === 'string' ? res : '后端未返回具体错误原因');
+                        throw new Error(errorReason);
+                    }
+                })
+                .catch(function (error) {
+                    console.error('注册流程异常:', error);
+                    let errorMsg = '注册失败';
 
-					// 【核心修复：全能判断逻辑】
+                    if (error.response) {
+                        errorMsg = `服务器错误 (${error.response.status})`;
+                        if (error.response.data) {
+                            const d = error.response.data;
+                            errorMsg += `: ${typeof d === 'object' ? (d.msg || d.message) : d}`;
+                        }
+                    } else {
+                        errorMsg = error.message;
+                    }
 
-					// 情况 A: 后端返回了标准 JSON 对象 (检查 code)
-					if (typeof res === 'object' && res !== null) {
-						if ((res.code == 200) || (res.code === '200') || (res.success === true)) {
-							isSuccess = true;
-							// 如果后端返回了生成的用户名，我们用它
-							if (res.data) successMsg = `<b>注册成功！</b><br>用户名: ${res.data}<br>正在跳转...`;
-						}
-					}
-					// 情况 B: 后端直接返回了纯字符串 (你目前的情况)
-					else if (typeof res === 'string') {
-						// 只要字符串里包含 "成功" 二字，或者不是 "失败"，就算过
-						if (res.includes('成功') || !res.includes('失败')) {
-							isSuccess = true;
-						}
-					}
+                    showToast('error', errorMsg);
 
-					if (isSuccess) {
-						showToast('success', successMsg);
-						setTimeout(function () {
-							window.location.href = 'login.html';
-						}, 1500);
-					} else {
-						// 提取错误原因
-						const errorReason = res.msg || res.message || res.data || (typeof res === 'string' ? res : '后端未返回具体错误原因');
-						throw new Error(errorReason);
-					}
-				})
-				.catch(function (error) {
-					console.error('注册流程异常:', error);
-					let errorMsg = '注册失败';
+                    if (document.getElementById('debug-msg')) {
+                        document.getElementById('debug-area').style.display = 'block';
+                        document.getElementById('debug-msg').textContent = errorMsg;
+                    }
 
-					if (error.response) {
-						errorMsg = `服务器错误 (${error.response.status})`;
-						if (error.response.data) {
-							// 尝试读取后端返回的错误文本
-							const d = error.response.data;
-							errorMsg += `: ${typeof d === 'object' ? (d.msg || d.message) : d}`;
-						}
-					} else {
-						errorMsg = error.message;
-					}
-
-					showToast('error', errorMsg);
-
-					if (document.getElementById('debug-msg')) {
-						document.getElementById('debug-area').style.display = 'block';
-						document.getElementById('debug-msg').textContent = errorMsg;
-					}
-
-					submitBtn.disabled = false;
-					loadingOverlay.style.display = 'none';
-				});
-		});
-	</script>
+                    submitBtn.disabled = false;
+                    loadingOverlay.style.display = 'none';
+                });
+        });
+    </script>
 
 </body>
 

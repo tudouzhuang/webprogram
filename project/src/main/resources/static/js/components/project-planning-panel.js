@@ -9,7 +9,7 @@ Vue.component("project-planning-panel", {
             default: () => ({}),
         },
     },
-    template: `
+template: `
         <div class="content-wrapper" style="width:100%;height:100%">
 
             <div class="card mb-4">
@@ -32,56 +32,105 @@ Vue.component("project-planning-panel", {
                 </div>
             </div>
 
-            <div class="card" style="height: 60vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #f8f9fa; border: 2px dashed #dcdfe6;">
+            <div class="card" style="min-height: 60vh; display: flex; flex-direction: column;">
                 
-                <div class="text-center">
-                    <div class="mb-4">
-                        <i class="el-icon-reading" style="font-size: 64px; color: #409EFF;"></i>
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="el-icon-folder-opened text-primary mr-2" style="font-size: 20px;"></i>
+                        <h5 class="mb-0 font-weight-bold">策划书文件管理</h5>
+                        <el-tag size="small" class="ml-3" v-if="planningDocuments.length > 0">共 {{ planningDocuments.length }} 个文件</el-tag>
                     </div>
-                    <h3 class="mb-3 text-dark">设计策划书预览中心</h3>
-                    <p class="text-muted mb-4" style="max-width: 500px; margin: 0 auto;">
-                        当前共有 <b class="text-primary">{{ planningDocuments.length }}</b> 个设计文件。
-                        <br>点击下方按钮打开独立阅读视窗，获取最佳浏览体验。
-                    </p>
-
-                    <div class="d-flex justify-content-center gap-3">
-                         <el-upload
+                    
+                    <div class="d-flex" style="gap: 10px;">
+                        <el-upload
                             v-if="canEdit"
                             action="#" 
                             multiple
-                            class="mr-3"
                             :http-request="handleFileUpload"
                             :show-file-list="false"
                             :before-upload="beforeUpload">
-                            <el-button icon="el-icon-upload" size="medium" plain>上传新文件</el-button>
+                            <el-button size="small" type="primary" icon="el-icon-upload" plain>上传新文件</el-button>
                         </el-upload>
 
                         <el-button 
-                            type="primary" 
-                            size="medium" 
-                            icon="el-icon-data-board" 
-                            :disabled="planningDocuments.length === 0"
-                            style="
-                                background: linear-gradient(135deg, #409EFF 0%, #0575E6 100%);
-                                border: none;
-                                font-weight: 800;
-                                letter-spacing: 1px;
-                                border-radius: 50px;
-                                padding: 12px 36px;
-                                box-shadow: 0 8px 16px rgba(64, 158, 255, 0.35);
-                                font-size: 16px;
-                                transition: all 0.3s ease;
-                            "
-                            @click="openFullscreenModal">
-                            {{ planningDocuments.length > 0 ? '进入沉浸式阅读模式' : '暂无文件可预览' }}
+                            v-if="planningDocuments.length > 0"
+                            size="small" 
+                            type="success" 
+                            icon="el-icon-download" 
+                            plain 
+                            @click="handleExport">
+                            下载当前
                         </el-button>
+
+                        <el-button 
+                            v-if="canEdit && childFiles.length > 0" 
+                            size="small" 
+                            type="danger" 
+                            icon="el-icon-delete" 
+                            plain 
+                            @click="handleClearSplitFiles">
+                            清空分割子文件
+                        </el-button>
+
+                        <el-button size="small" icon="el-icon-refresh" circle @click="fetchData" title="刷新列表"></el-button>
                     </div>
                 </div>
 
+                <div class="card-body d-flex flex-column justify-content-center align-items-center bg-light" style="flex-grow: 1; border-top: 1px solid #ebeef5;">
+                    
+                    <div v-if="planningDocuments.length === 0" class="text-center text-muted">
+                        <i class="el-icon-document-remove mb-3" style="font-size: 48px; color: #dcdfe6;"></i>
+                        <p>暂无策划书文件，请点击右上角上传。</p>
+                    </div>
+
+                    <div v-else class="text-center w-100">
+                        <div class="mb-5 d-flex justify-content-center flex-wrap" style="gap: 15px;">
+                            <div v-for="(file, index) in planningDocuments.slice(0, 3)" :key="file.id" 
+                                class="bg-white px-3 py-2 rounded shadow-sm border d-flex align-items-center" 
+                                style="min-width: 200px;">
+                                <i v-if="file.documentType.startsWith('PLANNING_DOCUMENT')" class="el-icon-s-grid text-primary mr-2"></i>
+                                <i v-else class="el-icon-document text-warning mr-2"></i>
+                                <span class="text-truncate" style="max-width: 150px;" :title="file.fileName">{{ file.fileName }}</span>
+                            </div>
+                            <div v-if="planningDocuments.length > 3" class="d-flex align-items-center text-muted">
+                                ... 等 {{ planningDocuments.length }} 个文件
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <i class="el-icon-reading" style="font-size: 64px; color: #409EFF; margin-bottom: 20px; display: block;"></i>
+                            <h3 class="mb-3 text-dark">准备好阅读了吗？</h3>
+                            <p class="text-muted mb-4">进入全屏专注模式以获得最佳的表格浏览与操作体验。</p>
+                            
+                            <el-button 
+                                type="primary" 
+                                size="medium" 
+                                icon="el-icon-data-board" 
+                                style="
+                                    background: linear-gradient(135deg, #409EFF 0%, #0575E6 100%);
+                                    border: none;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    border-radius: 50px;
+                                    padding: 14px 40px;
+                                    box-shadow: 0 8px 20px rgba(64, 158, 255, 0.4);
+                                    font-size: 18px;
+                                    transform: translateY(0);
+                                    transition: all 0.3s;
+                                "
+                                @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
+                                @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
+                                @click="openFullscreenModal">
+                                进入沉浸式阅读模式
+                            </el-button>
+                        </div>
+                    </div>
+
+                </div>
             </div>
 
             <el-dialog
-                :title="isPartiallyFailed ? '处理完成 (部分缺失)' : '智能分割中'"
+                :title="isPartiallyFailed ? '处理完成 (部分缺失)' : '智能文件分割中'"
                 :visible.sync="showProgressDialog"
                 width="480px"
                 :close-on-click-modal="false"
@@ -108,7 +157,7 @@ Vue.component("project-planning-panel", {
                     <div v-else>
                         <p class="mb-3 text-muted" style="min-height: 24px;">
                             <span v-if="splitProgress < 100">
-                                <i class="el-icon-cpu"></i> 正在处理... {{ splitProgress }}%
+                                <i class="el-icon-cpu"></i> 文件较大,正在自动分割处理... {{ splitProgress }}%
                             </span>
                             <span v-else class="text-success font-weight-bold">
                                 <i class="el-icon-upload"></i> 处理成功!
