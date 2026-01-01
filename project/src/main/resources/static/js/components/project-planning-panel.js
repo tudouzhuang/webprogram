@@ -142,7 +142,7 @@ Vue.component("project-planning-panel", {
                         </el-tooltip>
                         
                         <el-tooltip content="清理所有分割产生的临时Sheet" placement="bottom">
-                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清理缓存</el-button>
+                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清理分割子文件</el-button>
                         </el-tooltip>
 
                         <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
@@ -209,50 +209,105 @@ Vue.component("project-planning-panel", {
     `,
     // CSS 样式注入
     mounted() {
-        // ... (原有的mounted逻辑保持不变)
+        // ... (原有的mounted逻辑保持不变，如有其他初始化代码请保留)
 
-        // 动态注入样式，美化全屏阅读器
+        // ============================================================
+        // 1. 动态注入样式 (核心修复：强制全屏无滚动条布局)
+        // ============================================================
         const style = document.createElement('style');
         style.innerHTML = `
-            .reader-dialog .el-dialog__header {
-                padding: 0; 
-                background: #2b3245; /* 深色顶栏 */
-            }
-            .reader-dialog .el-dialog__body {
-                padding: 0;
-                height: 100vh;
+            /* --- 1. 重置 Element UI Dialog 的外层容器 --- */
+            /* 强制弹窗占满视口，并杀掉最外层滚动条 */
+            .reader-dialog {
                 display: flex;
                 flex-direction: column;
+                margin: 0 !important;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden !important; 
+                border-radius: 0 !important;
             }
+
+            /* --- 2. 顶栏样式 --- */
+            .reader-dialog .el-dialog__header {
+                padding: 0 !important; 
+                margin: 0 !important;
+                background: #2b3245; /* 深色背景 */
+                flex-shrink: 0;      /* 禁止被压缩 */
+                height: 60px;        /* 固定高度 */
+                overflow: hidden;
+            }
+
             .reader-header {
                 height: 60px;
                 padding: 0 20px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                display: flex; 
+                justify-content: space-between;
+                align-items: center; 
             }
+
+            /* --- 3. 内容主体样式 (关键计算) --- */
+            .reader-dialog .el-dialog__body {
+                padding: 0 !important;
+                margin: 0 !important;
+                /* 高度 = 屏幕总高 - 顶栏高度 */
+                height: calc(100vh - 60px) !important; 
+                width: 100%;
+                overflow: hidden !important; /* 禁止 Body 产生滚动条 */
+                display: flex; /* 开启 Flex 布局让左右分栏 */
+            }
+
+            /* --- 4. 左右分栏布局 --- */
             .reader-body {
-                flex-grow: 1;
-                overflow: hidden;
-                height: calc(100vh - 60px);
+                flex: 1; 
+                width: 100%;
+                height: 100%; 
+                display: flex; 
+                overflow: hidden; 
             }
+
+            /* 左侧侧边栏 */
             .reader-sidebar {
-                width: 280px;
+                width: 260px;
+                height: 100%;
                 background: #f5f7fa;
                 border-right: 1px solid #e4e7ed;
                 display: flex;
                 flex-direction: column;
+                flex-shrink: 0; /* 宽度固定 */
+                z-index: 10;
             }
+
             .sidebar-title {
-                padding: 15px 20px;
+                padding: 0 20px;
+                height: 50px;
+                line-height: 50px;
                 font-weight: bold;
                 color: #606266;
                 border-bottom: 1px solid #ebeef5;
                 background: #fff;
+                flex-shrink: 0;
             }
+
             .file-list {
                 flex-grow: 1;
-                overflow-y: auto;
+                overflow-y: auto; /* 只有这里允许垂直滚动 */
                 padding: 10px 0;
             }
+
+            /* 右侧内容区 (Iframe 容器) */
+            .reader-content {
+                flex-grow: 1;
+                height: 100%;
+                width: 0; /* 防止 Iframe 撑破 Flex 容器 */
+                position: relative;
+                background: #fff;
+            }
+
+            /* --- 5. 文件列表项交互样式 --- */
             .file-item {
                 padding: 12px 20px;
                 cursor: pointer;
@@ -260,6 +315,8 @@ Vue.component("project-planning-panel", {
                 border-left: 3px solid transparent;
                 color: #606266;
                 font-size: 14px;
+                display: flex;
+                align-items: center;
             }
             .file-item:hover {
                 background-color: #e6f7ff;
@@ -274,6 +331,7 @@ Vue.component("project-planning-panel", {
                 display: none;
                 color: #ff4d4f;
                 padding: 4px;
+                margin-left: auto; /* 靠右对齐 */
             }
             .file-item:hover .delete-icon {
                 display: block;
@@ -285,18 +343,26 @@ Vue.component("project-planning-panel", {
         `;
         document.head.appendChild(style);
 
-        // ... (Scroll Guardian 逻辑) ...
+        // ============================================================
+        // 2. 启动 Scroll Guardian (滚动守护神)
+        // ============================================================
         console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
+
         this._scrollGuardian = {
             lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
             isUserScrolling: false,
             scrollTimeoutId: null,
             animationFrameId: null
         };
+
         const guardianLoop = () => {
             if (this && this._scrollGuardian) {
                 const currentScrollY = window.scrollY;
-                // 当打开全屏阅读器时，禁用滚动锁定
+
+                // 核心逻辑：
+                // 1. 如果是用户主动滚动 (isUserScrolling)，允许。
+                // 2. 如果全屏模态框打开了 (showFullscreenModal)，允许 (因为此时主页面被遮住了，怎么滚都无所谓，且全屏模式下 overflow: hidden 实际上也没法滚)。
+                // 3. 否则，强行锁死位置。
                 if (this._scrollGuardian.isUserScrolling || this.showFullscreenModal) {
                     this._scrollGuardian.lastKnownScrollY = currentScrollY;
                 } else {
@@ -307,19 +373,29 @@ Vue.component("project-planning-panel", {
                 this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
             }
         };
+        // 启动循环
         guardianLoop();
+
+        // ============================================================
+        // 3. 全局事件监听
+        // ============================================================
+
+        // 滚轮事件监听 (用于敌我识别)
         this.handleWheel = () => {
             this._scrollGuardian.isUserScrolling = true;
             clearTimeout(this._scrollGuardian.scrollTimeoutId);
+
+            // 200ms 后认为停止滚动
             this._scrollGuardian.scrollTimeoutId = setTimeout(() => {
                 this._scrollGuardian.isUserScrolling = false;
             }, 200);
         };
         window.addEventListener('wheel', this.handleWheel, { passive: true });
+
+        // Iframe 消息监听
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
     },
-
     data() {
         return {
             isLoading: false,
@@ -474,16 +550,31 @@ Vue.component("project-planning-panel", {
         },
 
         previewWithTimeout(file) {
+            // 【新增】安全机制：如果之前有正在跑的定时器，先清除，防止多重触发
+            if (this.previewTimer) {
+                clearTimeout(this.previewTimer);
+                this.previewTimer = null;
+            }
+
+            console.log('[Timeout] 启动10秒熔断倒计时...');
+
             // 启动10秒超时熔断
             this.previewTimer = setTimeout(() => {
+                // 标记为“已放弃”，这样即使后面 Luckysheet 加载出来了，也不会再处理
                 this.isPreviewAbandoned = true;
+                this.previewTimer = null;
+
                 this.$notify({
                     title: '加载响应较慢',
                     message: '文件解析超时 (10s)，系统已自动切换为分割模式。',
                     type: 'warning',
                     duration: 4500
                 });
-                this.handleSplitFile(file);
+
+                // 只有在没被销毁的情况下才执行分割，防止组件已关闭报错
+                if (this.handleSplitFile) {
+                    this.handleSplitFile(file);
+                }
             }, 10000);
 
             this.loadActiveFileToFullscreen();
@@ -645,8 +736,19 @@ Vue.component("project-planning-panel", {
                             if (data.progress >= 100) {
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'success';
-                                location.reload();
-                            } else if (data.progress === -1) {
+
+                                setTimeout(() => {
+                                    self.$alert('文件智能分割已全部完成！点击确定将刷新页面以加载生成的子文件。', '处理成功', {
+                                        confirmButtonText: '确定刷新',
+                                        type: 'success',
+                                        showClose: false, // 禁止关闭，强制用户点击刷新
+                                        callback: () => {
+                                            location.reload();
+                                        }
+                                    });
+                                }, 300);
+                            } 
+                            else if (data.progress === -1) {
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'exception';
                                 self.isSplitting = false;
