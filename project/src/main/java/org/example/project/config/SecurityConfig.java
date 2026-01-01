@@ -36,7 +36,7 @@ public class SecurityConfig {
                 // 【保留您已有的所有 permitAll 规则，不做任何修改】
                 .antMatchers(
                     // 1. 纯静态页面和公共路由
-                    "/login", "/signup", "/reset", "/404", "/index", "/",
+                    "/login", "/signup", "/reset", "/404",
                 
                     // 2. 【核心修正】只放行登录和注册接口，不要放行整个 /api/users/**
                     "/api/users/signin", 

@@ -344,18 +344,18 @@
         <div class="auth-form-container">
           <form class="auth-form login-form" id="login-form">
             <div class="form-floating mb-3">
-              <input id="username" name="username" type="text" class="form-control" placeholder="用户名"
+              <input id="username" name="username" type="text" class="form-control" placeholder=""
                 required="required" autocomplete="username">
-              <label for="username"><i class="fas fa-user me-2"></i>账号 ID</label>
+              <label for="username"><i class="fas fa-user me-2"></i>工号</label>
             </div>
 
             <div class="password-group mb-4">
               <div class="form-floating position-relative">
-                <input id="password" name="password" type="password" class="form-control" placeholder="密码"
+                <input id="password" name="password" type="password" class="form-control" placeholder=""
                   required="required" autocomplete="current-password" style="padding-right: 50px;">
-                <label for="password"><i class="fas fa-key me-2"></i>访问密钥</label>
+                <label for="password"><i class="fas fa-key me-2"></i>密码</label>
 
-                <span class="password-toggle" onclick="togglePasswordVisibility()" title="显示/隐藏密码">
+                <span class="password-toggle" onclick="togglePasswordVisibility()" title="">
                   <i class="fas fa-eye-slash" id="password-icon"></i>
                 </span>
               </div>
@@ -364,7 +364,7 @@
                 <div class="col-6">
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" value="" id="RememberPassword" />
-                    <label class="form-check-label text-muted small" for="RememberPassword">记住凭证</label>
+                    <label class="text-decoration-none small" for="RememberPassword">记住账号密码</label>
                   </div>
                 </div>
                 <div class="col-6">

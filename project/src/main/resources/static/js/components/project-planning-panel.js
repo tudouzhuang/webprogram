@@ -37,65 +37,64 @@ Vue.component("project-planning-panel", {
             <div class="card" style="height: 80%; display: flex; flex-direction: column;">
                 <div class="card-header bg-white pb-0">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-primary-light text-primary rounded d-flex align-items-center justify-content-center mr-3" 
-                                 style="width: 40px; height: 40px; background-color: #ecf5ff; border-radius: 8px;">
-                                <i class="el-icon-reading" style="font-size: 20px; color: #409EFF;"></i>
-                            </div>
-                            
-                            <div>
-                                <h5 class="mb-0 font-weight-bold" style="color: #303133; font-size: 16px; line-height: 1.2;">
-                                    设计策划书预览
-                                </h5>
-                                <div class="text-muted mt-1" style="font-size: 12px;">
-                                    <i class="el-icon-mouse"></i> 点击下方标签切换 Sheet 文件
-                                </div>
-                            </div>
+                    <div class="d-flex align-items-center">
+                        <div class="bg-primary-light text-primary rounded d-flex align-items-center justify-content-center mr-3" 
+                            style="width: 40px; height: 40px; background-color: #ecf5ff; border-radius: 8px;">
+                            <i class="el-icon-reading" style="font-size: 20px; color: #409EFF;"></i>
                         </div>
                         
-                        <div class="d-flex" style="gap: 10px;">
-                            <el-upload
-                                v-if="canEdit"
-                                action="#" 
-                                multiple
-                                :http-request="handleFileUpload"
-                                :show-file-list="false"
-                                :before-upload="beforeUpload">
-                                <el-button type="primary" size="small" icon="el-icon-upload">上传</el-button>
-                            </el-upload>
-
-                            <el-button 
-                                v-if="canEdit && mainFile" 
-                                type="warning" 
-                                size="small" 
-                                icon="el-icon-scissors" 
-                                @click="handleSplitFile(mainFile)">
-                                智能分割
-                            </el-button>
-
-                            <el-button 
-                                v-if="canEdit && childFiles.length > 0" 
-                                type="danger" 
-                                size="small" 
-                                icon="el-icon-delete" 
-                                plain
-                                @click="handleClearSplitFiles">
-                                清空分割
-                            </el-button>
-                            
-                            <el-button 
-                                v-if="planningDocuments.length > 0" 
-                                type="success" 
-                                size="small" 
-                                icon="el-icon-download" 
-                                plain
-                                @click="handleExport">
-                                下载
-                            </el-button>
-
-                            <el-button size="small" icon="el-icon-refresh" circle @click="fetchData"></el-button>
+                        <div>
+                            <h5 class="mb-0 font-weight-bold" style="color: #303133; font-size: 16px; line-height: 1.2;">
+                                设计策划书预览
+                            </h5>
                         </div>
+
+                        <el-button 
+                            v-if="planningDocuments.length > 0 && !showLargeFileConfirm"
+                            class="ml-4" 
+                            size="small" 
+                            type="primary" 
+                            icon="el-icon-full-screen" 
+                            style="font-weight: bold; box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3); margin-left: 20px"
+                            @click="openFullscreenModal">
+                            全屏浏览
+                        </el-button>
                     </div>
+                    
+                    <div class="d-flex" style="gap: 10px;">
+                        <el-upload
+                            v-if="canEdit"
+                            action="#" 
+                            multiple
+                            :http-request="handleFileUpload"
+                            :show-file-list="false"
+                            :before-upload="beforeUpload">
+                            <el-button type="primary" size="small" icon="el-icon-upload">上传</el-button>
+                        </el-upload>
+
+                        <el-button 
+                            v-if="planningDocuments.length > 0" 
+                            type="success" 
+                            size="small" 
+                            icon="el-icon-download" 
+                            plain
+                            @click="handleExport">
+                            下载
+                        </el-button>
+
+                        <el-button 
+                            v-if="canEdit && childFiles.length > 0" 
+                            type="danger" 
+                            size="small" 
+                            icon="el-icon-delete" 
+                            plain
+                            @click="handleClearSplitFiles">
+                            清空Sheet
+                        </el-button>
+                        
+                        <el-button size="small" icon="el-icon-refresh" circle @click="fetchData"></el-button>
+                    </div>
+                </div>
 
                     <el-tabs class="custom-tabs" v-model="activeFileId" @tab-click="handleTabClick">
                         <el-tab-pane 
@@ -221,7 +220,39 @@ Vue.component("project-planning-panel", {
 
                 </div>
             </el-dialog>
-            
+            <el-dialog
+                :visible.sync="showFullscreenModal"
+                fullscreen
+                :show-close="false"
+                custom-class="luckysheet-fullscreen-dialog"
+                append-to-body>
+                
+                <div slot="title" class="d-flex justify-content-between align-items-center" style="padding: 10px 20px; background: #fff; border-bottom: 1px solid #eee;">
+                    <div class="d-flex align-items-center">
+                        <i class="el-icon-full-screen text-primary mr-2" style="font-size: 20px;"></i>
+                        <span style="font-size: 16px; font-weight: bold; color: #303133;">
+                            {{ previewingFileName || '文件预览' }}
+                        </span>
+                        <el-tag size="mini" type="info" class="ml-2">专注模式</el-tag>
+                    </div>
+                    <div>
+                        <span class="text-muted mr-3" style="font-size: 12px;">
+                            <i class="el-icon-info"></i> 按住 Ctrl + 滚轮 可缩放视图
+                        </span>
+                        <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
+                    </div>
+                </div>
+
+                <div style="height: 100vh; width: 100%;">
+                    <iframe 
+                        v-if="showFullscreenModal"
+                        ref="fullscreenIframe"
+                        src="/luckysheet-iframe-loader.html"
+                        @load="onFullscreenIframeLoad"
+                        style="width: 100%; height: 100%; border: none;">
+                    </iframe>
+                </div>
+            </el-dialog>
         </div>
     `,
 
@@ -257,7 +288,7 @@ Vue.component("project-planning-panel", {
             previewTimer: null,
             // 【新增】标记是否已因超时放弃当前预览
             isPreviewAbandoned: false,
-
+            showFullscreenModal: false,
 
         };
     },
@@ -955,7 +986,51 @@ Vue.component("project-planning-panel", {
             link.click();
             document.body.removeChild(link);
         },
+// 【插入开始】打开全屏模态框
+openFullscreenModal() {
+    const activeFile = this.planningDocuments.find(
+        (f) => f.id.toString() === this.activeFileId
+    );
+    if (!activeFile) {
+        this.$message.warning('当前没有选中的文件！');
+        return;
+    }
+    this.previewingFileName = activeFile.fileName;
+    this.showFullscreenModal = true;
+},
 
+// 【插入开始】全屏 Iframe 加载逻辑
+onFullscreenIframeLoad() {
+    const activeFile = this.planningDocuments.find(
+        (f) => f.id.toString() === this.activeFileId
+    );
+    if (!activeFile) return;
+
+    const iframe = this.$refs.fullscreenIframe;
+    if (iframe && iframe.contentWindow) {
+        const fileUrl = `/api/files/content/${activeFile.id}?t=${new Date().getTime()}`;
+        
+        // 关键：开启 showtoolbar 以允许缩放
+        iframe.contentWindow.postMessage(
+            {
+                type: "LOAD_SHEET",
+                payload: {
+                    fileUrl: fileUrl,
+                    fileName: activeFile.fileName,
+                    options: { 
+                        lang: "zh", 
+                        allowUpdate: false, 
+                        showtoolbar: true,  // ★ 开启工具栏 = 允许 Ctrl+滚轮
+                        showsheetbar: true, 
+                        showstatisticBar: true
+                    }, 
+                },
+            },
+            window.location.origin
+        );
+    }
+},
+// 【插入结束】
     },
 
     mounted() {
@@ -979,10 +1054,9 @@ Vue.component("project-planning-panel", {
                 const currentScrollY = window.scrollY;
 
                 // 【【【核心逻辑】】】
-                if (this._scrollGuardian.isUserScrolling) {
-                    // 如果是用户在滚动，我们不干涉，只更新记录
+                if (this._scrollGuardian.isUserScrolling || this.showFullscreenModal) {
                     this._scrollGuardian.lastKnownScrollY = currentScrollY;
-                } else {
+                }else {
                     // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
                     if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
                         console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
