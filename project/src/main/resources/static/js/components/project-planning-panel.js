@@ -99,7 +99,6 @@ template: `
 
                         <div class="mb-4">
                             <i class="el-icon-reading" style="font-size: 64px; color: #409EFF; margin-bottom: 20px; display: block;"></i>
-                            <h3 class="mb-3 text-dark">准备好阅读了吗？</h3>
                             <p class="text-muted mb-4">进入全屏专注模式以获得最佳的表格浏览与操作体验。</p>
                             
                             <el-button 
@@ -121,7 +120,7 @@ template: `
                                 @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
                                 @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
                                 @click="openFullscreenModal">
-                                进入沉浸式阅读模式
+                                进入全屏文件浏览模式
                             </el-button>
                         </div>
                     </div>
@@ -130,7 +129,7 @@ template: `
             </div>
 
             <el-dialog
-                :title="isPartiallyFailed ? '处理完成 (部分缺失)' : '智能文件分割中'"
+                :title="isPartiallyFailed ? '处理完成 (部分缺失)' : '文件加载中'"
                 :visible.sync="showProgressDialog"
                 width="480px"
                 :close-on-click-modal="false"
@@ -157,7 +156,7 @@ template: `
                     <div v-else>
                         <p class="mb-3 text-muted" style="min-height: 24px;">
                             <span v-if="splitProgress < 100">
-                                <i class="el-icon-cpu"></i> 文件较大,正在自动分割处理... {{ splitProgress }}%
+                                <i class="el-icon-cpu"></i> 文件较大，正在加载中... {{ splitProgress }}%
                             </span>
                             <span v-else class="text-success font-weight-bold">
                                 <i class="el-icon-upload"></i> 处理成功!
@@ -191,7 +190,7 @@ template: `
                         </el-tooltip>
                         
                         <el-tooltip content="清理所有分割产生的临时Sheet" placement="bottom">
-                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清理分割子文件</el-button>
+                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清理所有Sheet文件</el-button>
                         </el-tooltip>
 
                         <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
@@ -589,7 +588,7 @@ template: `
                     this.$message.warning('该大文件已完成分割，请点击左侧列表中的子Sheet查看。');
                     return;
                 }
-                this.$message.info('文件较大，系统正在为您智能分割...');
+                this.$message.info('文件较大，系统正在为您加载中...');
                 this.handleSplitFile(file);
                 return;
             }
@@ -787,8 +786,8 @@ template: `
                                 self.progressStatus = 'success';
 
                                 setTimeout(() => {
-                                    self.$alert('文件智能分割已全部完成！点击确定将刷新页面以加载生成的子文件。', '处理成功', {
-                                        confirmButtonText: '确定刷新',
+                                    self.$alert('文件已全部加载完成！', '处理成功', {
+                                        confirmButtonText: '确定',
                                         type: 'success',
                                         showClose: false, // 禁止关闭，强制用户点击刷新
                                         callback: () => {
