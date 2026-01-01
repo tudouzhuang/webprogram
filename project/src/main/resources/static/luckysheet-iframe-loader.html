@@ -44,11 +44,11 @@
     <script src="/js/libs/exceljs.min.js"></script>
 
     <script type="module">
-// --- [0. 全局异常熔断 (增强版)] ---
+        // --- [0. 全局异常熔断 (增强版)] ---
         // 捕获 Promise 也就是 Luckysheet 内部抛出的致命异步错误
-        window.addEventListener('unhandledrejection', function(event) {
+        window.addEventListener('unhandledrejection', function (event) {
             console.error("[Iframe] ⚠️ 捕获到未处理的 Promise 异常:", event.reason);
-            
+
             const reason = event.reason || {};
             const message = (reason.message || reason.toString() || "").toLowerCase();
             const name = reason.name || "";
@@ -57,10 +57,10 @@
             // 1. 字体解析错误 (SyntaxError: FontFaceSet...)
             // 2. 内部计算崩溃 (TypeError: Cannot read properties...) -> 你遇到的这个
             if (
-                name === 'SyntaxError' || 
-                name === 'TypeError' || 
-                message.includes('fontfaceset') || 
-                message.includes('could not resolve') || 
+                name === 'SyntaxError' ||
+                name === 'TypeError' ||
+                message.includes('fontfaceset') ||
+                message.includes('could not resolve') ||
                 message.includes('cannot read properties') || // 👈 针对本次报错
                 message.includes('reading')                   // 👈 针对本次报错
             ) {
@@ -68,7 +68,7 @@
                 const container = document.getElementById('luckysheet-container');
                 if (container) {
                     let userFriendlyMsg = "渲染引擎内部逻辑崩溃";
-                    
+
                     if (message.includes('font')) {
                         userFriendlyMsg = "浏览器无法应用字体设置";
                     } else if (message.includes('cannot read') || message.includes('reading')) {
@@ -83,10 +83,10 @@
                         </div>
                     `;
                 }
-                
+
                 // 通知父窗口停止 Loading
-                window.parent.postMessage({ 
-                    type: 'LUCKYSHEET_RENDER_FINISHED', 
+                window.parent.postMessage({
+                    type: 'LUCKYSHEET_RENDER_FINISHED',
                     status: 'error',
                     message: "渲染崩溃: " + (reason.message || "未知内部错误")
                 }, window.location.origin);
@@ -290,9 +290,9 @@
                 data: validData,
                 title: fileName,
                 lang: 'zh',
-                
+
                 // --- 【核心修复】强制指定默认字体配置，防止 '12px default' 报错 ---
-                defaultFontSize: 14, 
+                defaultFontSize: 14,
                 limitSheetNameLength: false, // 允许长文件名
                 fontList: [
                     { "fontName": "微软雅黑", "url": "" },
@@ -390,11 +390,26 @@
                             // 1. 获取 Blob 数据
                             return clonedResponse.blob().then(fileBlob => {
 
-                                // 2. 定义超时竞速 Promise (10秒)
+                                // 🔥🔥🔥【插入侦探代码开始】🔥🔥🔥
+                                console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
+                                console.log("   - 大小:", fileBlob.size, "字节");
+                                console.log("   - 类型:", fileBlob.type);
+
+                                // 如果文件小于 1KB，极有可能不是 Excel，而是后端报错文本
+                                if (fileBlob.size < 1000) {
+                                    const reader = new FileReader();
+                                    reader.onload = function () {
+                                        console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
+                                    }
+                                    reader.readAsText(fileBlob);
+                                }
+
+                                // 🔥🔥🔥【插入侦探代码结束】🔥🔥🔥
+                                // 2. 定义超时竞速 Promise (1000秒)
                                 const timeoutPromise = new Promise((_, reject) => {
                                     setTimeout(() => {
                                         reject(new Error('TIMEOUT'));
-                                    }, 10000);
+                                    }, 1000000);
                                 });
 
                                 // 3. 定义解析 Promise (包裹 LuckyExcel)
@@ -559,53 +574,47 @@
             window.parent.postMessage({ type: 'IFRAME_CLICKED' }, window.location.origin);
         }, true);
 
-        // --- [新增功能：Ctrl + 滚轮缩放] ---
+        // --- [新增功能：Ctrl + 滚轮缩放 (防抖 + 阻止滚动版)] ---
+        // 使用 capture: true (捕获模式) 确保我们在 Luckysheet 内部逻辑之前拦截事件
         document.addEventListener('wheel', function (event) {
-            // 1. 检查是否按住 Ctrl 键
-            if (!event.ctrlKey) return;
 
-            // 2. 阻止浏览器默认的页面缩放
-            event.preventDefault();
+            // 1. 只有按住 Ctrl 时才介入
+            if (event.ctrlKey) {
 
-            // 3. 安全检查
-            if (!window.luckysheet || !window.luckysheet.getluckysheetfile) return;
+                // 【核心修正】三连击，彻底杀灭滚动事件
+                event.preventDefault();           // 1. 阻止浏览器默认的页面滚动
+                event.stopPropagation();          // 2. 阻止事件向上冒泡
+                event.stopImmediatePropagation(); // 3. 【关键】阻止 Luckysheet 内部的滚动监听器执行
 
-            // 4. 获取底层数据引用
-            let file = luckysheet.getluckysheetfile();
+                // --- 下面是节流与缩放逻辑 (保持不变) ---
 
-            // 5. 找到当前激活的 Sheet
-            let currentSheet = file.find(s => s.status === 1);
-            if (!currentSheet) return;
+                // 节流锁检查
+                if (window._isZoomLocked) return;
 
-            // 6. 计算新的缩放比例
-            let currentRatio = currentSheet.zoomRatio || 1;
-            let step = 0.1;
+                const btnMinus = document.getElementById('luckysheet-zoom-minus');
+                const btnPlus = document.getElementById('luckysheet-zoom-plus');
 
-            if (event.deltaY < 0) {
-                currentRatio += step; // 向上滚，放大
-            } else {
-                currentRatio -= step; // 向下滚，缩小
+                if (!btnMinus || !btnPlus) return;
+
+                // 上锁
+                window._isZoomLocked = true;
+
+                // 执行缩放
+                // console.log(`[Zoom] 触发缩放 (已拦截滚动)`);
+                if (event.deltaY < 0) {
+                    btnPlus.click();
+                } else {
+                    btnMinus.click();
+                }
+
+                // 100ms 后解锁
+                setTimeout(() => {
+                    window._isZoomLocked = false;
+                }, 100);
             }
+            // 如果没按 Ctrl，什么都不做，让 Luckysheet 正常处理滚动
 
-            // 7. 限制范围
-            if (currentRatio < 0.1) currentRatio = 0.1;
-            if (currentRatio > 4.0) currentRatio = 4.0;
-
-            // 修正浮点数精度
-            currentRatio = Math.round(currentRatio * 100) / 100;
-
-            console.log(`[Zoom] 调整缩放: ${currentRatio}`);
-
-            // 8. 修改数据并刷新
-            currentSheet.zoomRatio = currentRatio;
-
-            try {
-                luckysheet.refresh();
-            } catch (e) {
-                console.error("[Zoom] 刷新失败:", e);
-            }
-
-        }, { passive: false, capture: true }); // 使用捕获模式确保拦截
+        }, { passive: false, capture: true }); // ★ capture: true 非常重要，保证我们第一个拿到事件
 
         console.log('[Iframe] 加载器已就绪，等待消息...');
 

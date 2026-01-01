@@ -283,6 +283,67 @@
       z-index: 5;
     }
 
+    .action-item {
+      display: inline-flex;
+      align-items: center;
+      height: 32px;
+      padding: 0 12px;
+      font-size: 12px;
+      line-height: 1;
+      color: #6c757d;
+      text-decoration: none;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .action-item:hover {
+      background-color: #f1f3f5;
+      color: #495057;
+    }
+
+    /* 隐藏原生 checkbox，但保留可用性 */
+    .action-checkbox {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* 自定义 checkbox 外观 */
+    .checkbox-ui {
+      width: 14px;
+      height: 14px;
+      border: 1.5px solid #adb5bd;
+      border-radius: 3px;
+      margin-right: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+
+    /* 选中态 */
+    .action-checkbox:checked+.checkbox-ui {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+
+    .action-checkbox:checked+.checkbox-ui::after {
+      content: "";
+      width: 6px;
+      height: 3px;
+      border-left: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      transform: rotate(-45deg);
+    }
+
+    /* 文本 */
+    .action-text {
+      white-space: nowrap;
+    }
+
+
+
     @media (max-width: 991px) {
       .auth-background-col {
         display: none;
@@ -344,8 +405,8 @@
         <div class="auth-form-container">
           <form class="auth-form login-form" id="login-form">
             <div class="form-floating mb-3">
-              <input id="username" name="username" type="text" class="form-control" placeholder=""
-                required="required" autocomplete="username">
+              <input id="username" name="username" type="text" class="form-control" placeholder="" required="required"
+                autocomplete="username">
               <label for="username"><i class="fas fa-user me-2"></i>工号</label>
             </div>
 
@@ -360,19 +421,22 @@
                 </span>
               </div>
 
-              <div class="extra mt-3 row justify-content-between align-items-center">
-                <div class="col-6">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" value="" id="RememberPassword" />
-                    <label class="text-decoration-none small" for="RememberPassword">记住账号密码</label>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="forgot-password text-end">
-                    <a href="/signup" class="text-decoration-none small">注册账号</a>
-                  </div>
-                </div>
+              <div class="extra mt-3 d-flex justify-content-between">
+                <!-- 记住账号密码 -->
+                <label class="action-item">
+                  <input type="checkbox" id="RememberPassword" name="remember" class="action-checkbox" />
+                  <span class="checkbox-ui"></span>
+                  <span class="action-text">记住账号密码</span>
+                </label>
+
+                <!-- 注册账号 -->
+                <a href="/signup" class="action-item">
+                  注册账号
+                </a>
               </div>
+
+
+
             </div>
 
             <div class="d-grid gap-2 mt-4">
@@ -428,6 +492,21 @@
           maxDistance: 23.00,   // 连接距离
           spacing: 18.00        // 间距
         });
+      }
+
+      const savedUser = localStorage.getItem('audit_saved_user');
+      const savedPass = localStorage.getItem('audit_saved_pass'); // 注意：本地存密码有安全风险，生产环境建议只存账号
+      const savedCheck = localStorage.getItem('audit_remember_check');
+
+      if (savedCheck === 'true' && savedUser) {
+        document.getElementById('username').value = savedUser;
+        // 简单的 Base64 解码回显（防君子不防小人，仅用于内部便捷）
+        if (savedPass) {
+          try {
+            document.getElementById('password').value = atob(savedPass);
+          } catch (e) { console.error('密码解析失败'); }
+        }
+        document.getElementById('RememberPassword').checked = true;
       }
     });
   </script>
@@ -515,6 +594,17 @@
       attemptLogin(params)
         .then(function (response) {
           if (response.data && response.data.success) {
+
+            const isRemember = document.getElementById('RememberPassword').checked;
+            if (isRemember) {
+              localStorage.setItem('audit_remember_check', 'true');
+              localStorage.setItem('audit_saved_user', username);
+              localStorage.setItem('audit_saved_pass', btoa(password));
+            } else {
+              localStorage.removeItem('audit_remember_check');
+              localStorage.removeItem('audit_saved_user');
+              localStorage.removeItem('audit_saved_pass');
+            }
             const userRole = response.data.role;
             if (userRole) sessionStorage.setItem('userRole', userRole);
 
