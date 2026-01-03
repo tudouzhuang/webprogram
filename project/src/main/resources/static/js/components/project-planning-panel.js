@@ -90,7 +90,7 @@ template: `
                                 style="min-width: 200px;">
                                 <i v-if="file.documentType.startsWith('PLANNING_DOCUMENT')" class="el-icon-s-grid text-primary mr-2"></i>
                                 <i v-else class="el-icon-document text-warning mr-2"></i>
-                                <span class="text-truncate" style="max-width: 150px;" :title="file.fileName">{{ file.fileName }}</span>
+                                <span class="text-truncate" style="max-width: 150px;" :title="getCleanFileName(file)">{{ getCleanFileName(file) }}</span>
                             </div>
                             <div v-if="planningDocuments.length > 3" class="d-flex align-items-center text-muted">
                                 ... 等 {{ planningDocuments.length }} 个文件
@@ -215,8 +215,8 @@ template: `
                                     <i v-if="file.documentType.startsWith('PLANNING_DOCUMENT')" class="el-icon-s-grid mr-2 text-primary"></i>
                                     <i v-else class="el-icon-document mr-2 text-warning"></i>
                                     
-                                    <span class="file-name text-truncate" :title="file.fileName">
-                                        {{ file.fileName }}
+                                    <span class="file-name text-truncate" :title="getCleanFileName(file)">
+                                        {{ getCleanFileName(file) }}
                                     </span>
                                     
                                     <i v-if="canEdit" class="el-icon-delete delete-icon ml-auto" @click.stop="deleteFile(file)"></i>
@@ -633,7 +633,7 @@ template: `
             if (!file) return;
 
             // 更新文件名显示
-            this.previewingFileName = file.fileName;
+            this.previewingFileName = this.getCleanFileName(file);
 
             const iframe = this.$refs.fullscreenIframe;
             if (iframe && iframe.contentWindow) {
@@ -644,7 +644,7 @@ template: `
                     type: "LOAD_SHEET",
                     payload: {
                         fileUrl: fileUrl,
-                        fileName: file.fileName,
+                        fileName: cleanName,
                         options: {
                             lang: "zh",
                             allowUpdate: false,
@@ -673,6 +673,9 @@ template: `
             const activeFile = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
             if (!activeFile) return;
 
+            let cleanName = this.getCleanFileName(activeFile);
+            // 确保后缀名存在
+            if (!cleanName.endsWith('.xlsx')) cleanName += '.xlsx';
             // 如果处于大文件拦截界面，直接下载原文件
             if (this.showLargeFileConfirm) {
                 this.downloadSourceFile(activeFile);
@@ -831,6 +834,29 @@ template: `
                         this.fetchData();
                     } finally { loading.close(); }
                 });
+        },
+
+        // 【新增】文件名清洗函数：去除前缀和重复后缀
+        getCleanFileName(file) {
+            if (!file || !file.fileName) return '未知文件';
+            
+            let name = file.fileName;
+
+            // 1. 去除 "PLANNING_DOCUMENT_" 前缀
+            name = name.replace(/^PLANNING_DOCUMENT_/, '');
+
+            // 2. 修复特殊的重复后缀问题
+            // 针对你的例子： "...V1.7.XLSX-ST8项目...xlsx"
+            // 逻辑：如果检测到 ".XLSX-" 这种奇怪的分隔符，取横杠后面的部分（通常那是干净的原名）
+            if (name.match(/\.XLSX-/i) || name.match(/\.xlsx-/i)) {
+                const parts = name.split(/\.xlsx-/i); 
+                // 取最后一部分，通常是完整的文件名
+                if (parts.length > 1) {
+                    name = parts[parts.length - 1];
+                }
+            }
+
+            return name;
         },
         // 【新增】注入缩放控制逻辑 (手术刀式集成)
         // 【调试版】注入缩放控制逻辑
