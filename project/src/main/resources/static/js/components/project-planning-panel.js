@@ -9,7 +9,7 @@ Vue.component("project-planning-panel", {
             default: () => ({}),
         },
     },
-template: `
+    template: `
         <div class="content-wrapper" style="width:100%;height:100%">
 
             <div class="card mb-4">
@@ -59,7 +59,7 @@ template: `
                             icon="el-icon-download" 
                             plain 
                             @click="handleExport">
-                            下载当前
+                            下载策划书
                         </el-button>
 
                         <el-button 
@@ -69,7 +69,7 @@ template: `
                             icon="el-icon-delete" 
                             plain 
                             @click="handleClearSplitFiles">
-                            清空分割子文件
+                            清空Excel文件
                         </el-button>
 
                         <el-button size="small" icon="el-icon-refresh" circle @click="fetchData" title="刷新列表"></el-button>
@@ -84,17 +84,29 @@ template: `
                     </div>
 
                     <div v-else class="text-center w-100">
-                        <div class="mb-5 d-flex justify-content-center flex-wrap" style="gap: 15px;">
-                            <div v-for="(file, index) in planningDocuments.slice(0, 3)" :key="file.id" 
-                                class="bg-white px-3 py-2 rounded shadow-sm border d-flex align-items-center" 
-                                style="min-width: 200px;">
-                                <i v-if="file.documentType.startsWith('PLANNING_DOCUMENT')" class="el-icon-s-grid text-primary mr-2"></i>
-                                <i v-else class="el-icon-document text-warning mr-2"></i>
-                                <span class="text-truncate" style="max-width: 150px;" :title="getCleanFileName(file)">{{ getCleanFileName(file) }}</span>
+                        <div class="mb-5 w-100 px-4">
+                                
+                            <div class="d-flex flex-column align-items-center mb-4" style="gap: 12px;">
+                                <div v-for="file in planningDocuments.filter(f => f.documentType.startsWith('PLANNING_DOCUMENT'))" 
+                                    :key="file.id" 
+                                    class="bg-white rounded border d-flex align-items-start text-left" 
+                                    style="width: 100%; max-width: 650px; padding: 16px 20px; border-left: 5px solid #409EFF !important;"
+                                > 
+                                    <div class="mr-3 pt-1" style="flex-shrink: 0;">
+                                        <i class="el-icon-s-grid text-primary" style="font-size: 24px;"></i>
+                                    </div>
+
+                                    <div style="flex-grow: 1;">
+                                        <div style="font-size: 15px; font-weight: 600; color: #303133; line-height: 1.6; word-break: break-all; white-space: normal;">
+                                            {{ getCleanFileName(file) }}
+                                        </div>
+                                        <div class="text-muted mt-2" style="font-size: 12px;">
+                                            <i class="el-icon-document"></i> 主策划文件 <span v-if="file.fileSize"> | {{ formatFileSize(file.fileSize) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div v-if="planningDocuments.length > 3" class="d-flex align-items-center text-muted">
-                                ... 等 {{ planningDocuments.length }} 个文件
-                            </div>
+
                         </div>
 
                         <div class="mb-4">
@@ -190,7 +202,7 @@ template: `
                         </el-tooltip>
                         
                         <el-tooltip content="清理所有分割产生的临时Sheet" placement="bottom">
-                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清理所有Sheet文件</el-button>
+                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清空Excel文件</el-button>
                         </el-tooltip>
 
                         <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
@@ -544,15 +556,19 @@ template: `
                 this.$message.warning("暂无文件");
                 return;
             }
+
             // 确保有选中的文件
             if (!this.activeFileId) {
                 this.activeFileId = this.planningDocuments[0].id.toString();
             }
+
+            // 【关键】先强制显示弹窗，再加载内容
+            // 防止后面的逻辑报错导致弹窗出不来
             this.showFullscreenModal = true;
 
-            // 延迟加载 iframe 内容
+            // 延迟执行加载逻辑，确保 DOM 已渲染
             this.$nextTick(() => {
-                this.handleTabClick(); // 触发加载逻辑
+                this.handleTabClick();
             });
         },
 
@@ -562,41 +578,53 @@ template: `
             this.handleTabClick();
         },
 
-        // --- 核心：加载逻辑 (合并了之前的 handleTabClick 和 loadActiveFile) ---
+        // --- 核心：加载逻辑 (优化版：自动处理已分割文件) ---
         handleTabClick() {
-            const file = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
+            let file = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
             if (!file) return;
 
-            // 1. 重置状态
+            // 重置状态
             this.showLargeFileConfirm = false;
             this.isPreviewAbandoned = false;
             if (this.previewTimer) clearTimeout(this.previewTimer);
 
-            // 2. 检查是否为子文件 (直接加载)
+            // A. 如果是已经拆分的子文件 -> 直接加载
             if (file.documentType === 'SPLIT_CHILD_SHEET' || /_\d+\.xlsx$/.test(file.fileName)) {
                 this.loadActiveFileToFullscreen();
                 return;
             }
 
-            // 3. 检查大文件
+            // B. 检查是否是大文件
             const size = file.fileSize || file.size || 0;
             const THRESHOLD = 20 * 1024 * 1024; // 20MB
+
             if (size > THRESHOLD) {
-                // 检查是否已分割
-                const hasSplitChildren = this.fileList.some(f => f.parentId === file.id);
-                if (hasSplitChildren) {
-                    this.$message.warning('该大文件已完成分割，请点击左侧列表中的子Sheet查看。');
+                // 检查是否已存在分割后的子文件
+                const firstChild = this.fileList.find(f => f.parentId === file.id);
+
+                if (firstChild) {
+                    // 【优化体验】如果找到了子文件，不要报错拦截，直接自动切过去！
+                    this.$message.success('检测到该文件已优化，正在为您打开第一个子 Sheet...');
+
+                    // 切换选中 ID 为第一个子文件
+                    this.activeFileId = firstChild.id.toString();
+
+                    // 递归调用自己，重新走流程加载子文件
+                    this.$nextTick(() => {
+                        this.handleTabClick();
+                    });
                     return;
                 }
-                this.$message.info('文件较大，系统正在为您加载中...');
+
+                // 如果是大文件且没分割，显示分割引导页
+                this.$message.info('文件较大，需要进行智能分割...');
                 this.handleSplitFile(file);
                 return;
             }
 
-            // 4. 普通文件：带超时加载
+            // C. 普通文件 -> 正常加载
             this.previewWithTimeout(file);
         },
-
         previewWithTimeout(file) {
             // 【新增】安全机制：如果之前有正在跑的定时器，先清除，防止多重触发
             if (this.previewTimer) {
@@ -627,12 +655,11 @@ template: `
 
             this.loadActiveFileToFullscreen();
         },
-
         loadActiveFileToFullscreen() {
             const file = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
             if (!file) return;
 
-            // 更新文件名显示
+            // 【修复点】定义 previewingFileName
             this.previewingFileName = this.getCleanFileName(file);
 
             const iframe = this.$refs.fullscreenIframe;
@@ -644,11 +671,11 @@ template: `
                     type: "LOAD_SHEET",
                     payload: {
                         fileUrl: fileUrl,
-                        fileName: cleanName,
+                        fileName: this.previewingFileName, // 【修复点】使用正确的变量名
                         options: {
                             lang: "zh",
                             allowUpdate: false,
-                            showtoolbar: true, // 允许全屏缩放
+                            showtoolbar: true,
                             showsheetbar: true,
                             showstatisticBar: true
                         },
@@ -673,11 +700,17 @@ template: `
             const activeFile = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
             if (!activeFile) return;
 
+            // 1. 获取清洗后的文件名
             let cleanName = this.getCleanFileName(activeFile);
-            // 确保后缀名存在
+            // 2. 确保后缀名存在
             if (!cleanName.endsWith('.xlsx')) cleanName += '.xlsx';
+
             // 如果处于大文件拦截界面，直接下载原文件
             if (this.showLargeFileConfirm) {
+                // 这里稍微 hack 一下，临时改名下载后再改回来比较麻烦，直接传参给 downloadSourceFile 更好，
+                // 但为了手术刀修改，这里我们假设 downloadSourceFile 下载的是原始流，文件名由浏览器决定。
+                // 如果需要强行改名下载，需要后端支持或者前端 Blob 转换。
+                // 暂时保持原逻辑调用
                 this.downloadSourceFile(activeFile);
                 return;
             }
@@ -688,7 +721,7 @@ template: `
                 iframe.contentWindow.postMessage({
                     type: 'EXPORT_SHEET',
                     payload: {
-                        fileName: activeFile.fileName.endsWith('.xlsx') ? activeFile.fileName : (activeFile.fileName + '.xlsx')
+                        fileName: cleanName // ✅ 修正：使用清洗后的 cleanName，而不是 activeFile.fileName
                     }
                 }, window.location.origin);
                 this.$message.success('已发送导出请求...');
@@ -788,17 +821,33 @@ template: `
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'success';
 
+                                // 1. 启动 10 秒倒计时遮罩，提示同步中
+                                const loading = self.$loading({
+                                    lock: true,
+                                    text: '文件处理完毕，请稍等 (预计 10 秒)...',
+                                    spinner: 'el-icon-loading',
+                                    background: 'rgba(0, 0, 0, 0.7)'
+                                });
+
+                                // 2. 10 秒后执行弹窗逻辑
                                 setTimeout(() => {
-                                    self.$alert('文件已全部加载完成！', '处理成功', {
+                                    loading.close(); // 关闭遮罩
+
+                                    self.$alert('Excel文件已加载完成！点击确定刷新网页。', '加载成功', {
                                         confirmButtonText: '确定',
                                         type: 'success',
-                                        showClose: false, // 禁止关闭，强制用户点击刷新
+                                        showClose: false,
                                         callback: () => {
-                                            location.reload();
+                                            // 关闭进度条弹窗
+                                            self.showProgressDialog = false;
+                                            self.isSplitting = false;
+                                            
+                                            // 重新拉取数据
+                                            self.fetchData(); 
                                         }
                                     });
-                                }, 300);
-                            } 
+                                }, 10000); // 10000 毫秒 = 10 秒
+                            }
                             else if (data.progress === -1) {
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'exception';
@@ -823,23 +872,81 @@ template: `
                 }).catch(() => { });
         },
         handleClearSplitFiles() {
-            const count = this.childFiles.length;
-            if (count === 0) return;
-            this.$confirm(`确定清空所有 ${count} 个子文件吗？`, '提示', { type: 'error' })
-                .then(async () => {
-                    const loading = this.$loading({ lock: true, text: '清理中...' });
-                    try {
-                        await Promise.all(this.childFiles.map(f => axios.delete(`/api/files/${f.id}`)));
-                        this.$message.success('清理完成');
-                        this.fetchData();
-                    } finally { loading.close(); }
-                });
+            // 安全检查
+            if (this.planningDocuments.length === 0) return;
+
+            const childCount = this.childFiles.length;
+            const totalCount = this.planningDocuments.length;
+
+            // 使用 distinguishCancelAndClose 属性区分 "取消" 和 "关闭"
+            // 这样我们就可以把 "取消按钮" 变成 "全部删除按钮"
+            this.$confirm('请选择您要执行的清理操作：', '清理确认', {
+                distinguishCancelAndClose: true, // 关键配置：开启三向区分
+                confirmButtonText: `仅清理Sheet文件 (${childCount})`,
+                cancelButtonText: `清空所有文件 (${totalCount})`,
+                confirmButtonClass: 'el-button--warning', // 黄色按钮（温和）
+                cancelButtonClass: 'el-button--danger',   // 红色按钮（危险）
+                type: 'warning',
+                center: true,
+                dangerouslyUseHTMLString: true,
+                message: `
+                    <div style="text-align: left; line-height: 1.6;">
+                        <p><b>当前共有${totalCount - childCount}个Excel文件和 ${childCount} 个Sheet文件。</b></p>
+                        <p style="margin-top:10px; color:#606266;">请选择清理模式：</p>
+                        <ul style="color:#606266; padding-left:20px; margin: 5px 0;">
+                            <li style="color: #F56C6C;"><b>清空所有文件</b>：删除主策划书及所有Sheet文件（整个项目清空）。</li>
+                            <li><b>仅清理Sheet文件</b>：保留主策划书，仅删除自动拆分出的Sheet。</li>
+                        </ul>
+                    </div>
+                `
+            })
+            .then(() => {
+                // 【A. 点击了确认按钮】 -> 仅清理子文件
+                this.executeBatchDelete(this.childFiles, '正在清理子文件...');
+            })
+            .catch(action => {
+                // 【B. 点击了取消按钮 (被我们改成了全部删除)】
+                if (action === 'cancel') {
+                    this.executeBatchDelete(this.planningDocuments, '正在清空所有文件...');
+                }
+                // 【C. 点击了关闭(X)或遮罩】 -> 什么都不做 (action === 'close')
+            });
+        },
+
+        // 【新增】通用批量删除辅助函数
+        async executeBatchDelete(filesToDelete, loadingMsg) {
+            if (!filesToDelete || filesToDelete.length === 0) {
+                this.$message.info("没有需要删除的文件。");
+                return;
+            }
+
+            const loading = this.$loading({ lock: true, text: loadingMsg });
+            try {
+                // 并发执行删除请求
+                await Promise.all(filesToDelete.map(f => axios.delete(`/api/files/${f.id}`)));
+                
+                this.$message.success('清理操作完成');
+                
+                // 如果当前选中的文件被删除了，重置选中状态
+                if (filesToDelete.some(f => f.id.toString() === this.activeFileId)) {
+                    this.activeFileId = '';
+                    this.showFullscreenModal = false; // 如果在全屏模式下删除了主文件，最好关闭弹窗
+                }
+                
+                // 刷新列表
+                this.fetchData();
+            } catch (e) {
+                console.error(e);
+                this.$message.error('删除过程中出现错误，请重试');
+            } finally {
+                loading.close();
+            }
         },
 
         // 【新增】文件名清洗函数：去除前缀和重复后缀
         getCleanFileName(file) {
             if (!file || !file.fileName) return '未知文件';
-            
+
             let name = file.fileName;
 
             // 1. 去除 "PLANNING_DOCUMENT_" 前缀
@@ -849,7 +956,7 @@ template: `
             // 针对你的例子： "...V1.7.XLSX-ST8项目...xlsx"
             // 逻辑：如果检测到 ".XLSX-" 这种奇怪的分隔符，取横杠后面的部分（通常那是干净的原名）
             if (name.match(/\.XLSX-/i) || name.match(/\.xlsx-/i)) {
-                const parts = name.split(/\.xlsx-/i); 
+                const parts = name.split(/\.xlsx-/i);
                 // 取最后一部分，通常是完整的文件名
                 if (parts.length > 1) {
                     name = parts[parts.length - 1];
@@ -933,6 +1040,15 @@ template: `
 
                 }
             }, { passive: false });
+        },
+
+        formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            // 保留2位小数
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         },
     },
 
