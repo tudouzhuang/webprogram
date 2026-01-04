@@ -58,12 +58,12 @@ Vue.component("project-planning-panel", {
                             type="success" 
                             icon="el-icon-download" 
                             plain 
-                            @click="handleExport">
+                            @click="handleDownloadPlanningDoc">
                             下载策划书
                         </el-button>
 
                         <el-button 
-                            v-if="canEdit && childFiles.length > 0" 
+                            v-if="canEdit && planningDocuments.length > 0" 
                             size="small" 
                             type="danger" 
                             icon="el-icon-delete" 
@@ -101,7 +101,7 @@ Vue.component("project-planning-panel", {
                                             {{ getCleanFileName(file) }}
                                         </div>
                                         <div class="text-muted mt-2" style="font-size: 12px;">
-                                            <i class="el-icon-document"></i> 主策划文件 <span v-if="file.fileSize"> | {{ formatFileSize(file.fileSize) }}</span>
+                                            <i class="el-icon-document"></i> 策划书文件 <span v-if="file.fileSize"> | {{ formatFileSize(file.fileSize) }}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -141,18 +141,22 @@ Vue.component("project-planning-panel", {
             </div>
 
             <el-dialog
-                :title="isPartiallyFailed ? '处理完成 (部分缺失)' : '文件加载中'"
                 :visible.sync="showProgressDialog"
-                width="480px"
+                width="420px"
+                custom-class="progress-modern-modal"
+                top="0"
                 :close-on-click-modal="false"
                 :show-close="false"
-                center
                 append-to-body>
-                <div class="text-center">
-                    <div v-if="isPartiallyFailed" class="text-warning">
-                        <i class="el-icon-warning" style="font-size: 60px; color: #E6A23C; margin-bottom: 20px;"></i>
-                        <h4 style="color: #303133; margin-bottom: 10px;">文件处理完成，但有遗漏</h4>
-                        <div class="text-left p-3 mb-4" style="background-color: #fdf6ec; border: 1px solid #faecd8; border-radius: 4px; max-height: 150px; overflow-y: auto;">
+                
+                <div class="text-center" style="padding: 10px 0;">
+                    
+                    <h3 class="mb-4" style="font-weight: 700; color: #303133; font-size: 18px;">
+                        {{ isPartiallyFailed ? '处理完成 (部分缺失)' : '文件加载中' }}
+                    </h3>
+                    <div v-if="isPartiallyFailed" class="text-warning mb-4">
+                        <i class="el-icon-warning" style="font-size: 50px; color: #E6A23C; margin-bottom: 20px; display: block;"></i>
+                        <div class="text-left p-3 mb-4" style="background-color: #fdf6ec; border: 1px solid #faecd8; border-radius: 8px; max-height: 150px; overflow-y: auto;">
                             <p class="mb-2 font-weight-bold" style="color: #E6A23C; font-size: 13px;">
                                 <i class="el-icon-circle-close"></i> 以下 {{ skippedSheetsList.length }} 个表格因图片过多被跳过：
                             </p>
@@ -160,21 +164,31 @@ Vue.component("project-planning-panel", {
                                 <li v-for="name in skippedSheetsList" :key="name">{{ name }}</li>
                             </ul>
                         </div>
-                        <div class="d-flex justify-content-center">
-                            <el-button type="warning" @click="handleConfirmPartialSuccess">我知道了</el-button>
-                        </div>
+                        <el-button type="warning" size="medium" round @click="handleConfirmPartialSuccess">我知道了</el-button>
                     </div>
 
                     <div v-else>
-                        <p class="mb-3 text-muted" style="min-height: 24px;">
-                            <span v-if="splitProgress < 100">
-                                <i class="el-icon-cpu"></i> 文件较大，正在加载中... {{ splitProgress }}%
+                        <div class="mb-4">
+                            <el-progress 
+                                type="circle" 
+                                :width="130"
+                                :stroke-width="10"
+                                :percentage="splitProgress" 
+                                :status="splitProgress >= 100 ? 'success' : null">
+                            </el-progress>
+                        </div>
+
+                        <p class="mb-0" style="font-size: 15px; min-height: 24px;">
+                            <span v-if="splitProgress < 90" style="color: #409EFF; font-weight: bold;">
+                                <i class="el-icon-cpu"></i> 文件较大，正在加载中，请耐心等待...
+                            </span>
+                            <span v-else-if="splitProgress < 100" style="color: #409EFF; font-weight: bold;">
+                                <i class="el-icon-loading"></i> 文件较大，正在加载中，请耐心等待...
                             </span>
                             <span v-else class="text-success font-weight-bold">
-                                <i class="el-icon-upload"></i> 处理成功!
+                                <i class="el-icon-check"></i> 加载完成!
                             </span>
                         </p>
-                        <el-progress type="circle" :percentage="splitProgress" :status="progressStatus"></el-progress>
                     </div>
                 </div>
             </el-dialog>
@@ -198,11 +212,11 @@ Vue.component("project-planning-panel", {
                     </div>
                     <div>
                         <el-tooltip content="导出当前表格" placement="bottom">
-                            <el-button type="text" class="text-white mr-3" icon="el-icon-download" @click="handleExport">下载</el-button>
+                            <el-button type="text" class="text-white mr-3" icon="el-icon-download" @click="handleDownloadPlanningDoc">下载</el-button>
                         </el-tooltip>
                         
                         <el-tooltip content="清理所有分割产生的临时Sheet" placement="bottom">
-                            <el-button v-if="canEdit && childFiles.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清空Excel文件</el-button>
+                            <el-button v-if="canEdit && planningDocuments.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清空Excel文件</el-button>
                         </el-tooltip>
 
                         <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
@@ -400,6 +414,27 @@ Vue.component("project-planning-panel", {
                 background: rgba(255, 77, 79, 0.1);
                 border-radius: 4px;
             }
+                /* --- 进度弹窗美化样式 (绝对居中 + 圆角) --- */
+            .progress-modern-modal {
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                margin: 0 !important; 
+                
+                border-radius: 16px !important; /* 圆角 */
+                box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2) !important; /* 阴影 */
+                overflow: hidden; 
+            }
+
+            /* 隐藏默认 Header，使用我们在 Body 里写的 h3 */
+            .progress-modern-modal .el-dialog__header {
+                display: none !important;
+            }
+
+            .progress-modern-modal .el-dialog__body {
+                padding: 30px 25px !important;
+            }
         `;
         document.head.appendChild(style);
 
@@ -473,6 +508,7 @@ Vue.component("project-planning-panel", {
             skippedSheetsList: [],
             isPartiallyFailed: false,
             isSplitting: false,
+
             showProgressDialog: false,
             splitProgress: 0,
             progressStatus: null,
@@ -700,43 +736,77 @@ Vue.component("project-planning-panel", {
             const activeFile = this.planningDocuments.find(f => f.id.toString() === this.activeFileId);
             if (!activeFile) return;
 
-            // 1. 获取清洗后的文件名
+            // 1. 获取清洗后的文件名 (用于下载保存)
             let cleanName = this.getCleanFileName(activeFile);
-            // 2. 确保后缀名存在
             if (!cleanName.endsWith('.xlsx')) cleanName += '.xlsx';
 
-            // 如果处于大文件拦截界面，直接下载原文件
-            if (this.showLargeFileConfirm) {
-                // 这里稍微 hack 一下，临时改名下载后再改回来比较麻烦，直接传参给 downloadSourceFile 更好，
-                // 但为了手术刀修改，这里我们假设 downloadSourceFile 下载的是原始流，文件名由浏览器决定。
-                // 如果需要强行改名下载，需要后端支持或者前端 Blob 转换。
-                // 暂时保持原逻辑调用
-                this.downloadSourceFile(activeFile);
+            // 2. 直接调用源文件下载 (并传入清洗后的名字)
+            // 理由：策划书可能包含复杂格式，下载源文件最保险，且我们可以通过 Blob 强制改名
+            this.downloadSourceFile(activeFile, cleanName);
+        },
+
+        // ✂️ 替换位置：源文件下载 (支持强制重命名)
+        async downloadSourceFile(file, customFileName) {
+            if (!file) return;
+
+            const fileName = customFileName || file.fileName; // 优先使用清洗后的名字
+            const loading = this.$loading({
+                lock: true,
+                text: `正在准备下载 ${fileName}...`,
+                spinner: 'el-icon-loading',
+                background: 'rgba(0, 0, 0, 0.7)'
+            });
+
+            try {
+                // 1. 使用 axios 获取文件流 (关键：responseType: 'blob')
+                const response = await axios.get(`/api/files/content/${file.id}`, {
+                    responseType: 'blob',
+                    headers: { 'Cache-Control': 'no-cache' } // 防止缓存旧名
+                });
+
+                // 2. 创建 Blob 对象
+                const blob = new Blob([response.data], {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+
+                // 3. 创建临时下载链接
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.download = fileName; // ✅ 这里强制应用了清洗后的文件名
+
+                // 4. 触发下载
+                document.body.appendChild(link);
+                link.click();
+
+                // 5. 清理内存
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(link.href);
+
+                this.$message.success('下载已开始');
+            } catch (error) {
+                console.error('下载失败', error);
+                this.$message.error('文件下载失败，请检查网络');
+            } finally {
+                loading.close();
+            }
+        },
+
+        handleDownloadPlanningDoc() {
+            // 1. 在文件列表中查找主策划书
+            const mainFile = this.planningDocuments.find(f => f.documentType && f.documentType.startsWith('PLANNING_DOCUMENT'));
+            
+            if (!mainFile) {
+                this.$message.warning("当前项目未找到主策划书文件");
                 return;
             }
 
-            // 否则通过 Luckysheet 导出 (保留格式)
-            const iframe = this.$refs.fullscreenIframe;
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({
-                    type: 'EXPORT_SHEET',
-                    payload: {
-                        fileName: cleanName // ✅ 修正：使用清洗后的 cleanName，而不是 activeFile.fileName
-                    }
-                }, window.location.origin);
-                this.$message.success('已发送导出请求...');
-            }
-        },
+            // 2. 获取清洗后的文件名
+            let cleanName = this.getCleanFileName(mainFile);
+            if (!cleanName.endsWith('.xlsx')) cleanName += '.xlsx';
 
-        downloadSourceFile(file) {
-            const link = document.createElement("a");
-            link.href = `/api/files/content/${file.id}`;
-            link.download = file.fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // 3. 调用源文件下载 (复用之前写的 Blob 下载逻辑)
+            this.downloadSourceFile(mainFile, cleanName);
         },
-
         // --- Iframe 消息监听 ---
         // 【修改后】监听 Iframe 发来的消息
         messageEventListener(event) {
@@ -806,57 +876,78 @@ Vue.component("project-planning-panel", {
                 this.$message.error("启动分割失败");
             });
         },
+        // ✂️ 替换位置：带“尾部缓冲”的进度轮询
         pollProgress(fileId) {
             const self = this;
+            // 清除可能存在的旧定时器
             if (self._pollTimer) clearInterval(self._pollTimer);
+            if (self._fakeTimer) clearInterval(self._fakeTimer);
+
             self.skippedSheetsList = [];
+            self.progressStatus = null;
+
+            // 延迟一点启动，给后端反应时间
             setTimeout(() => {
+                // === 第一阶段：轮询后端真实进度 (目标 0% -> 90%) ===
                 self._pollTimer = setInterval(() => {
                     axios.get(`/api/files/${fileId}/split-progress?t=${new Date().getTime()}`)
                         .then(res => {
                             const data = res.data;
                             if (!data) return;
-                            self.splitProgress = data.progress;
-                            if (data.progress >= 100) {
-                                clearInterval(self._pollTimer);
-                                self.progressStatus = 'success';
 
-                                // 1. 启动 10 秒倒计时遮罩，提示同步中
-                                const loading = self.$loading({
-                                    lock: true,
-                                    text: '文件处理完毕，请稍等 (预计 10 秒)...',
-                                    spinner: 'el-icon-loading',
-                                    background: 'rgba(0, 0, 0, 0.7)'
-                                });
-
-                                // 2. 10 秒后执行弹窗逻辑
-                                setTimeout(() => {
-                                    loading.close(); // 关闭遮罩
-
-                                    self.$alert('Excel文件已加载完成！点击确定刷新网页。', '加载成功', {
-                                        confirmButtonText: '确定',
-                                        type: 'success',
-                                        showClose: false,
-                                        callback: () => {
-                                            // 关闭进度条弹窗
-                                            self.showProgressDialog = false;
-                                            self.isSplitting = false;
-                                            
-                                            // 重新拉取数据
-                                            self.fetchData(); 
-                                        }
-                                    });
-                                }, 10000); // 10000 毫秒 = 10 秒
-                            }
-                            else if (data.progress === -1) {
+                            if (data.progress === -1) {
+                                // 异常处理
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'exception';
                                 self.isSplitting = false;
                                 self.$alert(data.errorMessage || '未知错误');
+                                return;
+                            }
+
+                            if (data.progress >= 100) {
+                                // === 后端处理完了 ===
+                                clearInterval(self._pollTimer);
+
+                                // 强制设为 90%，准备开始最后 10秒 的冲刺
+                                self.splitProgress = 90;
+                                self.runFinalTenSeconds();
+                            } else {
+                                // 还在处理中，更新进度，但视觉上最高封顶 90%
+                                // 避免后端还没完，前端先跑满了
+                                self.splitProgress = Math.min(data.progress, 90);
                             }
                         });
                 }, 1000);
             }, 500);
+        },
+
+        // 【新增】最后 10% 的缓冲动画 (1秒跑1%)
+        runFinalTenSeconds() {
+            const self = this;
+            if (self._fakeTimer) clearInterval(self._fakeTimer);
+
+            self._fakeTimer = setInterval(() => {
+                // 每秒 +1%
+                if (self.splitProgress < 100) {
+                    self.splitProgress += 1;
+                } else {
+                    // === 跑满 100% ===
+                    clearInterval(self._fakeTimer);
+                    self.progressStatus = 'success'; // 变绿
+
+                    // 弹出最终完成框
+                    self.$alert('文件数据已全部加载就绪。', '加载完成', {
+                        confirmButtonText: '确定',
+                        type: 'success',
+                        showClose: false,
+                        callback: () => {
+                            self.showProgressDialog = false;
+                            self.isSplitting = false;
+                            self.fetchData(); // 刷新列表
+                        }
+                    });
+                }
+            }, 1000); // 1000ms = 1秒
         },
         handleConfirmPartialSuccess() {
             this.showProgressDialog = false;
@@ -871,45 +962,26 @@ Vue.component("project-planning-panel", {
                     });
                 }).catch(() => { });
         },
+        // 简化的清理逻辑 (全删)
         handleClearSplitFiles() {
-            // 安全检查
             if (this.planningDocuments.length === 0) return;
 
-            const childCount = this.childFiles.length;
-            const totalCount = this.planningDocuments.length;
-
-            // 使用 distinguishCancelAndClose 属性区分 "取消" 和 "关闭"
-            // 这样我们就可以把 "取消按钮" 变成 "全部删除按钮"
-            this.$confirm('请选择您要执行的清理操作：', '清理确认', {
-                distinguishCancelAndClose: true, // 关键配置：开启三向区分
-                confirmButtonText: `仅清理Sheet文件 (${childCount})`,
-                cancelButtonText: `清空所有文件 (${totalCount})`,
-                confirmButtonClass: 'el-button--warning', // 黄色按钮（温和）
-                cancelButtonClass: 'el-button--danger',   // 红色按钮（危险）
-                type: 'warning',
-                center: true,
-                dangerouslyUseHTMLString: true,
-                message: `
-                    <div style="text-align: left; line-height: 1.6;">
-                        <p><b>当前共有${totalCount - childCount}个Excel文件和 ${childCount} 个Sheet文件。</b></p>
-                        <p style="margin-top:10px; color:#606266;">请选择清理模式：</p>
-                        <ul style="color:#606266; padding-left:20px; margin: 5px 0;">
-                            <li style="color: #F56C6C;"><b>清空所有文件</b>：删除主策划书及所有Sheet文件（整个项目清空）。</li>
-                            <li><b>仅清理Sheet文件</b>：保留主策划书，仅删除自动拆分出的Sheet。</li>
-                        </ul>
-                    </div>
-                `
-            })
-            .then(() => {
-                // 【A. 点击了确认按钮】 -> 仅清理子文件
-                this.executeBatchDelete(this.childFiles, '正在清理子文件...');
-            })
-            .catch(action => {
-                // 【B. 点击了取消按钮 (被我们改成了全部删除)】
-                if (action === 'cancel') {
-                    this.executeBatchDelete(this.planningDocuments, '正在清空所有文件...');
+            this.$confirm(
+                `确定要清空当前项目下的所有策划书文件吗？<br><span style="color:#F56C6C; font-size:12px;">此操作不可恢复！</span>`,
+                '高风险操作警告',
+                {
+                    confirmButtonText: '确定全部清空',
+                    cancelButtonText: '取消',
+                    confirmButtonClass: 'el-button--danger',
+                    type: 'warning',
+                    dangerouslyUseHTMLString: true,
+                    center: true
                 }
-                // 【C. 点击了关闭(X)或遮罩】 -> 什么都不做 (action === 'close')
+            ).then(() => {
+                // 直接传入所有文件进行删除
+                this.executeBatchDelete(this.planningDocuments, '正在清空所有文件...');
+            }).catch(() => {
+                // 取消操作，无事发生
             });
         },
 
@@ -924,15 +996,15 @@ Vue.component("project-planning-panel", {
             try {
                 // 并发执行删除请求
                 await Promise.all(filesToDelete.map(f => axios.delete(`/api/files/${f.id}`)));
-                
+
                 this.$message.success('清理操作完成');
-                
+
                 // 如果当前选中的文件被删除了，重置选中状态
                 if (filesToDelete.some(f => f.id.toString() === this.activeFileId)) {
                     this.activeFileId = '';
                     this.showFullscreenModal = false; // 如果在全屏模式下删除了主文件，最好关闭弹窗
                 }
-                
+
                 // 刷新列表
                 this.fetchData();
             } catch (e) {
