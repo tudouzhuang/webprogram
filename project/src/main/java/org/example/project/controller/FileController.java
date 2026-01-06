@@ -318,6 +318,7 @@ public class FileController {
                 // C. 流程结束
                 NativeExcelSplitterServiceImpl.PROGRESS_MAP.put(fileId, 100);
                 log.info("【异步任务】流程全部结束 ID={}", fileId);
+                NativeExcelSplitterServiceImpl.STATUS_MESSAGE_MAP.put(fileId, "流程全部结束");
 
             } catch (Exception e) {
                 log.error("【异步任务】异常中断", e);
@@ -329,23 +330,33 @@ public class FileController {
         return ResponseEntity.ok("任务已启动");
     }
 
-// FileController.java
-    @GetMapping("/{fileId}/split-progress")
+@GetMapping("/{fileId}/split-progress")
     public ResponseEntity<Map<String, Object>> getSplitProgress(@PathVariable Long fileId) {
         // 打印日志，确认接口被调用
-        System.out.println("【Debug】正在处理进度查询 ID: " + fileId);
+        // System.out.println("【Debug】正在处理进度查询 ID: " + fileId);
 
         Map<String, Object> response = new HashMap<>();
 
-        // 1. 从 Service 的静态 Map 中获取进度
+        // 1. 获取进度数字
         Integer progress = NativeExcelSplitterServiceImpl.PROGRESS_MAP.getOrDefault(fileId, 0);
         response.put("progress", progress);
 
-        // 2. 获取跳过列表
+        // =======================================================
+        // 🔥【核心修复】获取状态文字 (这是前端判定完成的关键) 🔥
+        // =======================================================
+        // 从 Service 刚才定义的 STATUS_MESSAGE_MAP 中取出 "流程全部结束" 这类文字
+        String statusMsg = NativeExcelSplitterServiceImpl.STATUS_MESSAGE_MAP.get(fileId);
+        
+        // 放入响应中，前端通过 data.message 读取
+        response.put("message", statusMsg != null ? statusMsg : ""); 
+
+        // 3. 获取跳过列表
         List<String> skipped = NativeExcelSplitterServiceImpl.SKIPPED_SHEETS_MAP.get(fileId);
         if (skipped != null) {
             response.put("skipped_sheets", skipped);
         }
+
+        // 4. 处理错误情况
         if (progress == -1) {
             // 从 Service 的 ERROR_MESSAGE_MAP 中取出报错原因
             String errorMsg = NativeExcelSplitterServiceImpl.ERROR_MESSAGE_MAP.get(fileId);
@@ -364,5 +375,4 @@ public class FileController {
 
         return ResponseEntity.ok(response);
     }
-
 }
