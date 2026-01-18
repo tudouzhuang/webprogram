@@ -448,27 +448,89 @@ Vue.component('process-record-panel', {
         selectedTemplateKeys() { this.hasUnsavedChanges = true; }
     },
     mounted() {
-        // 1. 注入 CSS
         const style = document.createElement('style');
         style.innerHTML = `
+            /* --- 容器：更清爽的蓝，左侧加重音条 --- */
             .draft-status-bar {
-                background-color: #e6f7ff; 
-                padding: 10px 15px;
+                background: #f0f9ff; /* 比之前的 e6f7ff 更淡一点，不刺眼 */
+                border: 1px solid #d9ecff;
+                border-left: 4px solid #409EFF; /* 左侧加一条深蓝重音线，提升专业感 */
                 border-radius: 4px;
-                border: 1px solid #bae7ff;
+                padding: 12px 24px;
+                box-sizing: border-box;
+                transition: all 0.3s;
             }
+    
+            /* --- 左侧区域布局 --- */
+            .status-left {
+                display: flex;
+                align-items: baseline; /* 文字基线对齐，看着更舒服 */
+            }
+    
+            /* --- ID 徽章：设计成代码胶囊样式 --- */
             .project-badge {
+                background: #fff;
+                border: 1px solid #cff5ff;
                 color: #1890ff;
-                font-family: monospace;
+                padding: 4px 12px;
+                border-radius: 100px; /* 胶囊圆角 */
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace; /* 等宽字体 */
                 font-size: 14px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.02); /* 极微弱的立体感 */
+                display: flex;
+                align-items: center;
+            }
+    
+            .project-badge i {
+                font-size: 12px;
+                opacity: 0.8;
+            }
+    
+            /* --- 时间文字：弱化显示 --- */
+            .text-muted {
+                color: #606266;
+                font-size: 13px;
+                margin-left: 10px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            }
+            .text-muted i {
+                color: #909399;
+                margin-right: 4px;
+            }
+    
+            /* --- 按钮微调 --- */
+            .status-right .el-button {
+                font-weight: 500;
+                padding: 9px 20px;
+                box-shadow: 0 2px 6px rgba(64, 158, 255, 0.2); /* 给按钮一点点投影 */
+            }
+            .status-right .el-button.is-disabled {
+                box-shadow: none;
+                background-color: #eef2f7;
+                border-color: #eef2f7;
+                color: #c0c4cc;
             }
         `;
         document.head.appendChild(style);
-    
-        // 2. 尝试加载 (以防 watch 没触发)
-        if (this.projectId) this.loadFromCache(this.projectId);
+        this.$watch('recordForm', (newVal) => {
+            const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
+            
+            if (this.initialSnapshot && currentString !== this.initialSnapshot) {
+                this.hasUnsavedChanges = true;
+                
+                if (this._saveTimer) clearTimeout(this._saveTimer);
+                this._saveTimer = setTimeout(() => {
+                    // 【修改点】：传入 true，表示这是自动保存 (静默)
+                    this.saveToCache(this.projectId, true);
+                }, 2000);
+            }
+        }, { deep: true });
+
+        // 监听模板选择变化
+        this.$watch('selectedTemplateKeys', () => { this.hasUnsavedChanges = true; });
     },
-    
     beforeDestroy() {
         // 离开页面时，如果有未保存，强制存一次以防万一
         if (this.hasUnsavedChanges) {
@@ -485,40 +547,6 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
-        // 【修正后的保存】：剔除 File 对象，防止存入 "{}" 导致的数据损坏
-        saveToCache(pid) {
-            if (!pid) return;
-
-            // 1. 创建副本，把 sheetFiles 里的 file 对象置空
-            // 因为 localStorage 存不了二进制文件，必须去掉，否则读取时会变成空对象报错
-            const cleanSheetFiles = this.recordForm.sheetFiles.map(item => ({
-                ...item,
-                file: null, // 强制置空，下次需重新上传
-                isTemplate: item.isTemplate
-            }));
-
-            const cleanRecordForm = { ...this.recordForm, sheetFiles: cleanSheetFiles };
-
-            const draftData = {
-                recordForm: cleanRecordForm,
-                selectedTemplateKeys: this.selectedTemplateKeys,
-                customSheetName: this.customSheetName,
-                timestamp: new Date().toLocaleString()
-            };
-
-            const key = `ProcessRecordDraft_${pid}`;
-            localStorage.setItem(key, JSON.stringify(draftData));
-
-            // 更新状态
-            this.lastSavedTime = draftData.timestamp;
-            this.hasUnsavedChanges = false;
-            // 更新快照 (排除文件影响)
-            this.initialSnapshot = JSON.stringify({ ...cleanRecordForm, sheetFiles: [] });
-
-            console.log(`[Cache] 已保存草稿 (文件需重新上传): ${key}`);
-            this.$message.success('草稿已保存 (注意：为了安全，文件附件不会被保存，请重新上传)。');
-        },
-
         // 【修正后的读取】：安全恢复
         loadFromCache(pid) {
             if (!pid) return;
@@ -563,36 +591,55 @@ Vue.component('process-record-panel', {
 
         // 【新增】：手动保存按钮点击事件
         handleManualSave() {
-            this.saveToCache(this.projectId);
+            this.saveToCache(this.projectId, false);
             this.$message.success('草稿保存成功！');
         },
-        // 【新增】: 提取保存逻辑
         // 【核心修改】：使用 IndexedDB 保存 (支持 File 对象!)
-        async saveToCache(pid) {
+        async saveToCache(pid, isAuto = false) {
             if (!pid) return;
 
-            // 直接保存整个对象，不需要剔除文件！IndexedDB 支持 Blob/File
+            // 1. 清除 pending 的倒计时
+            if (this._saveTimer) {
+                clearTimeout(this._saveTimer);
+                this._saveTimer = null;
+            }
+            
             const draftData = {
                 recordForm: this.recordForm,
                 selectedTemplateKeys: this.selectedTemplateKeys,
                 customSheetName: this.customSheetName,
                 timestamp: new Date().toLocaleString()
             };
-
+            
             try {
                 await DraftDB.setItem(pid, draftData);
-
+                
                 this.lastSavedTime = draftData.timestamp;
                 this.hasUnsavedChanges = false;
-
-                // 使用自定义 replacer 解决 JSON.stringify 处理 file 对象报错的问题(用于对比)
+                
+                // 更新快照 (处理 File 对象)
                 this.initialSnapshot = JSON.stringify(this.recordForm, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
+                
+                console.log(`[Cache DB] 保存成功 (含文件): ${pid}, 模式: ${isAuto ? '自动' : '手动'}`);
 
-                console.log(`[Cache DB] 保存成功 (含文件): ${pid}`);
-                this.$message.success('草稿保存成功！关闭浏览器也不会丢失。');
+                // 2. 只有【手动保存】时才弹窗
+                if (!isAuto) {
+                    // 【修改点】：这里改成了弹窗
+                    this.$alert('草稿保存成功！', '保存成功', {
+                        confirmButtonText: '确定',
+                        type: 'success',
+                        showClose: false, // 禁止点右上角X关闭，强制点确定
+                        center: true
+                    });
+                }
             } catch (e) {
                 console.error("保存失败", e);
-                this.$message.error('草稿保存失败，可能是存储空间不足。');
+                if (!isAuto) {
+                    this.$alert('保存失败，请检查浏览器存储空间。', '错误', {
+                        confirmButtonText: '关闭',
+                        type: 'error'
+                    });
+                }
             }
         },
 

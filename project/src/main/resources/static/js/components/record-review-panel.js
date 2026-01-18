@@ -46,25 +46,77 @@ template: `
                     </div>
                 </div>
 
-                <div class="card" v-if="!showFullscreen" style="height: 500px; display: flex; align-items: center; justify-content: center; background: #fcfcfc;">
-                    <div class="text-center">
-                        <div class="mb-4">
-                            <i class="el-icon-s-claim" style="font-size: 80px; color: #409EFF;"></i>
-                        </div>
-                        <h3 class="mb-2">准备好开始审核了吗？</h3>
-                        <p class="text-muted mb-4" style="font-size: 14px;">
-                            当前共有 <strong class="text-primary">{{ excelFiles.length }}</strong> 个文件及表单数据等待查阅
-                        </p>
+                <div class="card" v-if="!showFullscreen" style="min-height: 600px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
+                    <div class="card-body w-100 d-flex flex-column align-items-center justify-content-center" style="padding: 40px;">
                         
-                        <el-button 
-                            type="primary" 
-                            size="medium" 
-                            icon="el-icon-full-screen" 
-                            round
-                            style="padding: 12px 40px; font-weight: bold; font-size: 16px; box-shadow: 0 8px 20px rgba(64,158,255,0.3);"
-                            @click="showFullscreen = true">
-                            进入沉浸式审核工作台
-                        </el-button>
+                        <div class="text-center mb-4">
+                            <div class="mb-3 d-inline-block p-3 rounded-circle" style="background: #ecf5ff;">
+                                <i class="el-icon-s-check" style="font-size: 48px; color: #409EFF;"></i>
+                            </div>
+                            <h2 style="font-weight: 700; color: #303133; margin-bottom: 10px;">审核工作台</h2>
+                            <p class="text-muted" style="font-size: 14px; margin: 0;">
+                                待审核内容包含 <span class="text-primary font-weight-bold" style="font-size: 16px;">{{ excelFiles.length }}</span> 个 Excel 文件及相关表单数据
+                            </p>
+                        </div>
+
+                        <div class="mb-5">
+                            <el-button 
+                                type="primary" 
+                                size="medium" 
+                                icon="el-icon-full-screen" 
+                                round
+                                style="
+                                    background: linear-gradient(135deg, #409EFF 0%, #0575E6 100%);
+                                    border: none;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    padding: 14px 50px;
+                                    box-shadow: 0 8px 20px rgba(64, 158, 255, 0.4);
+                                    font-size: 16px;
+                                    transform: translateY(0);
+                                    transition: all 0.3s;
+                                "
+                                @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
+                                @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
+                                @click="showFullscreen = true">
+                                进入沉浸式审核工作台
+                            </el-button>
+                        </div>
+            
+                        <div class="w-100" style="max-width: 650px;">
+                            
+                            <div v-if="excelFiles.length === 0" class="text-center text-muted p-4 border rounded dashed" style="background: #fafafa;">
+                                暂无需要审核的文件
+                            </div>
+                
+                            <div v-else class="d-flex flex-column" style="gap: 12px;">
+                                <div v-for="file in excelFiles" 
+                                    :key="file.id" 
+                                    class="bg-white rounded border d-flex align-items-center text-left shadow-sm hover-effect" 
+                                    style="padding: 16px 20px; border-left: 5px solid #409EFF !important; transition: all 0.3s;"
+                                > 
+                                    <div class="mr-3 pt-1" style="flex-shrink: 0;">
+                                        <i class="el-icon-s-grid text-primary" style="font-size: 24px;"></i>
+                                    </div>
+                
+                                    <div style="flex-grow: 1; overflow: hidden;">
+                                        <div class="text-truncate" style="font-size: 15px; font-weight: 600; color: #303133; margin-bottom: 4px;" :title="file.fileName || file.documentType">
+                                            {{ file.documentType }} <span v-if="file.fileName" class="text-muted font-weight-normal">({{ file.fileName }})</span>
+                                        </div>
+                                        <div class="text-muted" style="font-size: 12px;">
+                                            <i class="el-icon-document"></i> 
+                                            <span v-if="file.fileSize"> {{ (file.fileSize / 1024).toFixed(2) }} KB</span>
+                                            <span v-else> 待审核文件</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="ml-3 text-muted">
+                                        <i class="el-icon-view" style="font-size: 18px;"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 

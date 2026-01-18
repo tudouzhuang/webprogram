@@ -88,27 +88,79 @@ Vue.component('record-workspace-panel', {
                 <!-- 2. 内容区域 (Tab切换) -->
                 <!-- 2. 内容区域：动态Tab页 -->
                 <div>
-                <div class="card" v-if="!isLoading && recordInfo && !showFullscreen" style="min-height: 500px; display: flex; align-items: center; justify-content: center;">
-                    <div class="text-center">
-                        <div class="mb-4">
-                            <i class="el-icon-s-platform" style="font-size: 80px; color: #409EFF;"></i>
+                    <div class="card" v-if="!isLoading && recordInfo && !showFullscreen" style="min-height: 600px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
+                        <div class="card-body w-100 d-flex flex-column align-items-center justify-content-center" style="padding: 40px;">
+                                
+                            <div class="text-center mb-4">
+                                <div class="mb-3 d-inline-block p-3 rounded-circle" style="background: #ecf5ff;">
+                                    <i class="el-icon-s-platform" style="font-size: 48px; color: #409EFF;"></i>
+                                </div>
+                                <h2 style="font-weight: 700; color: #303133; margin-bottom: 10px;">过程记录工作台</h2>
+                                <p class="text-muted" style="font-size: 14px; margin: 0;">
+                                    当前记录包含 <span class="text-primary font-weight-bold" style="font-size: 16px;">{{ excelFiles.length }}</span> 个 Excel 文件及相关问题记录
+                                </p>
+                            </div>
+
+                            <div class="mb-5">
+                                <el-button 
+                                    type="primary" 
+                                    size="medium" 
+                                    icon="el-icon-full-screen" 
+                                    round
+                                    style="
+                                        background: linear-gradient(135deg, #409EFF 0%, #0575E6 100%);
+                                        border: none;
+                                        font-weight: 800;
+                                        letter-spacing: 1px;
+                                        padding: 14px 50px;
+                                        box-shadow: 0 8px 20px rgba(64, 158, 255, 0.4);
+                                        font-size: 16px;
+                                        transform: translateY(0);
+                                        transition: all 0.3s;
+                                    "
+                                    @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
+                                    @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
+                                    @click="showFullscreen = true">
+                                    进入沉浸式全屏工作台
+                                </el-button>
+                            </div>
+                
+                            <div class="w-100" style="max-width: 650px;">
+                                
+                                <div v-if="excelFiles.length === 0" class="text-center text-muted p-4 border rounded dashed" style="background: #fafafa;">
+                                    暂无关联的 Excel 文件
+                                </div>
+                    
+                                <div v-else class="d-flex flex-column" style="gap: 12px;">
+                                    <div v-for="file in excelFiles" 
+                                        :key="file.id" 
+                                        class="bg-white rounded border d-flex align-items-center text-left shadow-sm hover-effect" 
+                                        style="padding: 16px 20px; border-left: 5px solid #409EFF !important; transition: all 0.3s;"
+                                    > 
+                                        <div class="mr-3 pt-1" style="flex-shrink: 0;">
+                                            <i class="el-icon-s-grid text-primary" style="font-size: 24px;"></i>
+                                        </div>
+                    
+                                        <div style="flex-grow: 1; overflow: hidden;">
+                                            <div class="text-truncate" style="font-size: 15px; font-weight: 600; color: #303133; margin-bottom: 4px;" :title="file.fileName || file.documentType">
+                                                {{ file.documentType }} <span v-if="file.fileName" class="text-muted font-weight-normal">({{ file.fileName }})</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12px;">
+                                                <i class="el-icon-document"></i> 
+                                                <span v-if="file.fileSize"> {{ (file.fileSize / 1024).toFixed(2) }} KB</span>
+                                                <span v-else> 关联表格文件</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="ml-3 text-muted">
+                                            <i class="el-icon-check"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
-                        <h3 class="mb-2">过程记录工作台</h3>
-                        <p class="text-muted mb-4" style="font-size: 14px;">
-                            包含表单元数据、问题记录及 {{ excelFiles.length }} 个关联的 Excel 文件
-                        </p>
-                        
-                        <el-button 
-                            type="primary" 
-                            size="medium" 
-                            icon="el-icon-full-screen" 
-                            round
-                            style="padding: 12px 35px; font-weight: bold; box-shadow: 0 8px 20px rgba(64,158,255,0.3);"
-                            @click="showFullscreen = true">
-                            进入全屏工作台
-                        </el-button>
                     </div>
-                </div>
             
                     <el-dialog 
                         :visible.sync="showFullscreen" 
@@ -173,7 +225,7 @@ Vue.component('record-workspace-panel', {
                                     </div>
                         
                                     <div style="height: 1px; background: #ebeef5; margin: 8px 15px;"></div>
-                                    <div style="padding: 5px 20px; font-size: 12px; color: #909399;">关联文件</div>
+                                    <div style="padding: 5px 20px; font-size: 12px; color: #909399;">设计记录表文件</div>
                         
                                     <div v-for="file in excelFiles" 
                                         :key="file.id"
