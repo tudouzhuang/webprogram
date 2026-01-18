@@ -1,4 +1,45 @@
-// public/js/components/process-record-panel.js
+const DraftDB = {
+    DB_NAME: 'ProcessRecord_DB_V1',
+    STORE_NAME: 'drafts',
+    async getDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.DB_NAME, 1);
+            request.onupgradeneeded = (e) => {
+                if (!e.target.result.objectStoreNames.contains(this.STORE_NAME)) {
+                    e.target.result.createObjectStore(this.STORE_NAME);
+                }
+            };
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = (e) => reject(e);
+        });
+    },
+    async setItem(key, value) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.STORE_NAME, 'readwrite');
+            tx.objectStore(this.STORE_NAME).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = (e) => reject(e);
+        });
+    },
+    async getItem(key) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.STORE_NAME, 'readonly');
+            const req = tx.objectStore(this.STORE_NAME).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = (e) => reject(e);
+        });
+    },
+    async removeItem(key) {
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.STORE_NAME, 'readwrite');
+            tx.objectStore(this.STORE_NAME).delete(key);
+            tx.oncomplete = () => resolve();
+        });
+    }
+};
 
 // 【缓存机制 1】: 初始化全局缓存对象
 if (!window._ProcessRecordDrafts) {
@@ -16,6 +57,29 @@ Vue.component('process-record-panel', {
             <div class="main-panel" style="width:100%;height:100%">
                 <div class="content-wrapper">
                     <div class="card">
+                        <div class="draft-status-bar d-flex justify-content-between align-items-center mb-4">
+                            <div class="status-left d-flex align-items-center">
+                                <div class="project-badge mr-3">
+                                    <i class="el-icon-price-tag mr-1"></i>
+                                    <span style="font-weight: bold;">{{ projectId }}</span>
+                                </div>
+                                
+                                <span class="text-muted" v-if="lastSavedTime" style="font-size: 13px;">
+                                    <i class="el-icon-time"></i> 上次保存: {{ lastSavedTime }}
+                                </span>
+                            </div>
+                            
+                            <div class="status-right">
+                                <el-button 
+                                    type="primary" 
+                                    size="small" 
+                                    icon="el-icon-folder-checked" 
+                                    :disabled="!hasUnsavedChanges"
+                                    @click="handleManualSave">
+                                    {{ hasUnsavedChanges ? '保存草稿' : '已保存' }}
+                                </el-button>
+                            </div>
+                        </div>
                         <div class="card-body">
                             <h4 class="card-title">新建设计过程记录表</h4>
                             <p class="card-description">
@@ -283,10 +347,13 @@ Vue.component('process-record-panel', {
         };
 
         return {
+            hasUnsavedChanges: false, // 是否有未保存的修改
+            lastSavedTime: '',        // 上次保存时间
+            initialSnapshot: '',      // 用于比对数据变更的快照
             isSubmitting: false,
-            isTemplateLoading: false, 
+            isTemplateLoading: false,
             selectedTemplateKeys: [],
-            customSheetName: '', 
+            customSheetName: '',
             recordForm: {
                 partName: '',
                 processName: '',
@@ -349,37 +416,64 @@ Vue.component('process-record-panel', {
                 actualWeight: [{ required: true, message: '实际重量不能为空', trigger: 'blur' }, { validator: validateNumber, trigger: 'blur' }],
                 sheetFiles: [
                     { type: 'array', required: true },
-                    { validator: validateSheetFiles, trigger: 'change' } 
+                    { validator: validateSheetFiles, trigger: 'change' }
                 ]
             }
         }
     },
-    
-    // 【缓存机制 2】: 在组件挂载时尝试恢复数据
-    mounted() {
-        console.log("[Cache v3] Mounted. ProjectID:", this.projectId);
-        
-        // 从 window 全局对象获取缓存
-        const draft = window._ProcessRecordDrafts[this.projectId];
-        
-        if (draft) {
-            console.log("[Cache v3] 发现项目[" + this.projectId + "]的草稿，正在恢复...", draft);
-            
-            // 恢复表单数据 (注意：这里使用解构赋值来确保响应式更新)
-            this.recordForm = { ...draft.recordForm };
-            this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
-            this.customSheetName = draft.customSheetName || '';
-            
-            this.$message.info('已恢复上次未提交的编辑内容。');
-        } else {
-            console.log("[Cache v3] No draft found for projectId:", this.projectId);
-        }
-    },
+    watch: {
+        // 自动加载逻辑
+        projectId: {
+            immediate: true,
+            handler(newId) {
+                if (newId) this.loadFromCache(newId);
+            }
+        },
+        // 脏检查 + 自动保存
+        recordForm: {
+            handler(newVal) {
+                const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
+                if (this.initialSnapshot && currentString !== this.initialSnapshot) {
+                    this.hasUnsavedChanges = true;
 
-    // 【缓存机制 3】: 在组件销毁前保存数据 (处理路由切换/页面关闭)
+                    // 防抖自动保存 (2秒)
+                    if (this._saveTimer) clearTimeout(this._saveTimer);
+                    this._saveTimer = setTimeout(() => {
+                        this.saveToCache(this.projectId);
+                    }, 2000);
+                }
+            },
+            deep: true
+        },
+        selectedTemplateKeys() { this.hasUnsavedChanges = true; }
+    },
+    mounted() {
+        // 1. 注入 CSS
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .draft-status-bar {
+                background-color: #e6f7ff; 
+                padding: 10px 15px;
+                border-radius: 4px;
+                border: 1px solid #bae7ff;
+            }
+            .project-badge {
+                color: #1890ff;
+                font-family: monospace;
+                font-size: 14px;
+            }
+        `;
+        document.head.appendChild(style);
+    
+        // 2. 尝试加载 (以防 watch 没触发)
+        if (this.projectId) this.loadFromCache(this.projectId);
+    },
+    
     beforeDestroy() {
-        console.log("[Cache v3] beforeDestroy triggered. ProjectID:", this.projectId);
-        this.saveToCache(this.projectId);
+        // 离开页面时，如果有未保存，强制存一次以防万一
+        if (this.hasUnsavedChanges) {
+            this.saveToCache(this.projectId);
+        }
     },
 
     computed: {
@@ -391,223 +485,350 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
-    // 【新增】: 提取保存逻辑
-    saveToCache(pid) {
-        if (!pid) return;
-        // 无论内容多少，强制缓存当前状态
-        window._ProcessRecordDrafts[pid] = {
-            recordForm: this.recordForm, 
-            selectedTemplateKeys: this.selectedTemplateKeys,
-            customSheetName: this.customSheetName
-        };
-        console.log(`[Cache v3] Saved draft for Project ${pid}`, window._ProcessRecordDrafts[pid]);
-    },
+        // 【修正后的保存】：剔除 File 对象，防止存入 "{}" 导致的数据损坏
+        saveToCache(pid) {
+            if (!pid) return;
 
-    // 【新增】: 提取加载逻辑
-    loadFromCache(pid) {
-        if (!pid) return;
-        const draft = window._ProcessRecordDrafts[pid];
-        if (draft) {
-            console.log(`[Cache v3] Loading draft for Project ${pid}...`);
-            // 使用解构赋值触发响应式更新
-            this.recordForm = { ...draft.recordForm };
-            this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
-            this.customSheetName = draft.customSheetName || '';
-            this.$message.info(`已恢复项目 ${pid} 的草稿。`);
-        } else {
-            console.log(`[Cache v3] No draft found for Project ${pid}.`);
-        }
-    },
-
-    // 【新增】: 仅清空状态，不删缓存
-    clearFormState() {
-        // 重置为 data() 中的初始状态（除了 sheetFiles，需要显式清空）
-        this.recordForm = {
-            partName: '', processName: '', material: '', thickness: '',
-            tensileStrength: '', customerName: '', moldDrawingNumber: '', 
-            equipment: '', subEquipment: '', // 【新增】重置 subEquipment
-            quoteSize: { length: '', width: '', height: '' }, quoteWeight: '',
-            actualSize: { length: '', width: '', height: '' }, actualWeight: '',
-            designerName: '', designerDate: new Date(),
-            checkerName: null, checkerDate: null, auditorName: null, auditorDate: null,
-            sheetFiles: []
-        };
-        this.selectedTemplateKeys = [];
-        this.customSheetName = '';
-        // 清除校验结果
-        if (this.$refs.recordForm) {
-            this.$nextTick(() => this.$refs.recordForm.clearValidate());
-        }
-    },
-
-    isItemAlreadyAdded(keyOrName) {
-        const trimmedValue = keyOrName.trim();
-        return this.recordForm.sheetFiles.some(item => item.key.trim() === trimmedValue);
-    },
-    
-    async addSelectedTemplates() {
-        if (!this.selectedTemplateKeys || this.selectedTemplateKeys.length === 0) {
-            this.$message.warning('请至少勾选一个模板。');
-            return;
-        }
-        
-        const keysToAdd = this.selectedTemplateKeys.filter(key => !this.isItemAlreadyAdded(key));
-        
-        if (keysToAdd.length === 0) {
-            this.$message.warning('所选模板均已添加。');
-            this.selectedTemplateKeys = []; 
-            return;
-        }
-
-        this.isTemplateLoading = true;
-        let successCount = 0;
-        let failCount = 0;
-
-        try {
-            await Promise.all(keysToAdd.map(async (key) => {
-                const template = this.availableSheetTemplates.find(t => t.key === key);
-                if (!template) return;
-
-                try {
-                    const fileName = template.name + '.xlsx'; 
-                    const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`; 
-
-                    const response = await axios.get(fileUrl, { 
-                        responseType: 'blob', 
-                        validateStatus: status => status === 200 
-                    });
-
-                    const file = new File([response.data], fileName, { 
-                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        lastModified: new Date().getTime()
-                    });
-
-                    this.recordForm.sheetFiles.push({
-                        key: template.key,
-                        name: template.name,
-                        file: file, 
-                        isTemplate: true 
-                    });
-                    successCount++;
-
-                } catch (error) {
-                    console.error(`加载模板 "${template.name}" 失败:`, error);
-                    failCount++;
-                    this.recordForm.sheetFiles.push({
-                        key: template.key,
-                        name: template.name,
-                        file: null,
-                        isTemplate: false
-                    });
-                }
+            // 1. 创建副本，把 sheetFiles 里的 file 对象置空
+            // 因为 localStorage 存不了二进制文件，必须去掉，否则读取时会变成空对象报错
+            const cleanSheetFiles = this.recordForm.sheetFiles.map(item => ({
+                ...item,
+                file: null, // 强制置空，下次需重新上传
+                isTemplate: item.isTemplate
             }));
 
-            if (successCount > 0) {
-                this.$message.success(`成功添加 ${successCount} 个模板项。`);
+            const cleanRecordForm = { ...this.recordForm, sheetFiles: cleanSheetFiles };
+
+            const draftData = {
+                recordForm: cleanRecordForm,
+                selectedTemplateKeys: this.selectedTemplateKeys,
+                customSheetName: this.customSheetName,
+                timestamp: new Date().toLocaleString()
+            };
+
+            const key = `ProcessRecordDraft_${pid}`;
+            localStorage.setItem(key, JSON.stringify(draftData));
+
+            // 更新状态
+            this.lastSavedTime = draftData.timestamp;
+            this.hasUnsavedChanges = false;
+            // 更新快照 (排除文件影响)
+            this.initialSnapshot = JSON.stringify({ ...cleanRecordForm, sheetFiles: [] });
+
+            console.log(`[Cache] 已保存草稿 (文件需重新上传): ${key}`);
+            this.$message.success('草稿已保存 (注意：为了安全，文件附件不会被保存，请重新上传)。');
+        },
+
+        // 【修正后的读取】：安全恢复
+        loadFromCache(pid) {
+            if (!pid) return;
+
+            const key = `ProcessRecordDraft_${pid}`;
+            const draftStr = localStorage.getItem(key);
+
+            if (draftStr) {
+                try {
+                    const draft = JSON.parse(draftStr);
+
+                    // 恢复数据
+                    this.recordForm = { ...draft.recordForm };
+                    this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
+                    this.customSheetName = draft.customSheetName || '';
+                    this.lastSavedTime = draft.timestamp || '';
+
+                    // 确保恢复回来的 sheetFiles 里的 file 确实是 null
+                    if (this.recordForm.sheetFiles) {
+                        this.recordForm.sheetFiles.forEach(item => {
+                            item.file = null; // 确保 UI 显示“选择文件”而不是错误的已上传状态
+                        });
+                    }
+
+                    // 恢复后更新快照
+                    this.initialSnapshot = JSON.stringify({ ...this.recordForm, sheetFiles: [] });
+                    this.hasUnsavedChanges = false;
+
+                    console.log(`[Cache] 恢复成功: ${key}`);
+                    // 只有当真的恢复了数据（例如有填写的字段）才提示，避免每次刷新都弹窗干扰
+                    if (this.recordForm.partName || this.recordForm.sheetFiles.length > 0) {
+                        this.$message.info(`已恢复上次(${this.lastSavedTime})填写的表单内容，请重新上传附件。`);
+                    }
+                } catch (e) {
+                    console.error("[Cache] 解析失败:", e);
+                }
+            } else {
+                // 没有缓存，初始化快照
+                this.initialSnapshot = JSON.stringify({ ...this.recordForm, sheetFiles: [] });
             }
-            if (failCount > 0) {
-                this.$message.warning(`${failCount} 个模板文件加载失败，已添加空项请手动上传。`);
+        },
+
+        // 【新增】：手动保存按钮点击事件
+        handleManualSave() {
+            this.saveToCache(this.projectId);
+            this.$message.success('草稿保存成功！');
+        },
+        // 【新增】: 提取保存逻辑
+        // 【核心修改】：使用 IndexedDB 保存 (支持 File 对象!)
+        async saveToCache(pid) {
+            if (!pid) return;
+
+            // 直接保存整个对象，不需要剔除文件！IndexedDB 支持 Blob/File
+            const draftData = {
+                recordForm: this.recordForm,
+                selectedTemplateKeys: this.selectedTemplateKeys,
+                customSheetName: this.customSheetName,
+                timestamp: new Date().toLocaleString()
+            };
+
+            try {
+                await DraftDB.setItem(pid, draftData);
+
+                this.lastSavedTime = draftData.timestamp;
+                this.hasUnsavedChanges = false;
+
+                // 使用自定义 replacer 解决 JSON.stringify 处理 file 对象报错的问题(用于对比)
+                this.initialSnapshot = JSON.stringify(this.recordForm, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
+
+                console.log(`[Cache DB] 保存成功 (含文件): ${pid}`);
+                this.$message.success('草稿保存成功！关闭浏览器也不会丢失。');
+            } catch (e) {
+                console.error("保存失败", e);
+                this.$message.error('草稿保存失败，可能是存储空间不足。');
+            }
+        },
+
+        // 【核心修改】：从 IndexedDB 读取
+        async loadFromCache(pid) {
+            if (!pid) return;
+
+            try {
+                const draft = await DraftDB.getItem(pid);
+
+                if (draft) {
+                    console.log(`[Cache DB] 发现本地草稿 (ID:${pid})，正在恢复...`);
+
+                    // 恢复数据 (包括文件!)
+                    this.recordForm = draft.recordForm;
+                    this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
+                    this.customSheetName = draft.customSheetName || '';
+                    this.lastSavedTime = draft.timestamp || '';
+
+                    this.initialSnapshot = JSON.stringify(this.recordForm, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
+                    this.hasUnsavedChanges = false;
+
+                    this.$notify({
+                        title: '草稿已恢复',
+                        message: `已自动加载上次(${this.lastSavedTime})未提交的内容`,
+                        type: 'success',
+                        position: 'bottom-right'
+                    });
+                } else {
+                    // 没有草稿，初始化快照
+                    this.initialSnapshot = JSON.stringify(this.recordForm);
+                }
+            } catch (e) {
+                console.error("读取草稿失败", e);
+            }
+        },
+
+        handleManualSave() {
+            this.saveToCache(this.projectId);
+        },
+
+
+
+        // 【新增】: 仅清空状态，不删缓存
+        clearFormState() {
+            // 重置为 data() 中的初始状态（除了 sheetFiles，需要显式清空）
+            this.recordForm = {
+                partName: '', processName: '', material: '', thickness: '',
+                tensileStrength: '', customerName: '', moldDrawingNumber: '',
+                equipment: '', subEquipment: '', // 【新增】重置 subEquipment
+                quoteSize: { length: '', width: '', height: '' }, quoteWeight: '',
+                actualSize: { length: '', width: '', height: '' }, actualWeight: '',
+                designerName: '', designerDate: new Date(),
+                checkerName: null, checkerDate: null, auditorName: null, auditorDate: null,
+                sheetFiles: []
+            };
+            this.selectedTemplateKeys = [];
+            this.customSheetName = '';
+            // 清除校验结果
+            if (this.$refs.recordForm) {
+                this.$nextTick(() => this.$refs.recordForm.clearValidate());
+            }
+        },
+
+        isItemAlreadyAdded(keyOrName) {
+            const trimmedValue = keyOrName.trim();
+            return this.recordForm.sheetFiles.some(item => item.key.trim() === trimmedValue);
+        },
+
+        async addSelectedTemplates() {
+            if (!this.selectedTemplateKeys || this.selectedTemplateKeys.length === 0) {
+                this.$message.warning('请至少勾选一个模板。');
+                return;
             }
 
-            this.selectedTemplateKeys = []; 
+            const keysToAdd = this.selectedTemplateKeys.filter(key => !this.isItemAlreadyAdded(key));
+
+            if (keysToAdd.length === 0) {
+                this.$message.warning('所选模板均已添加。');
+                this.selectedTemplateKeys = [];
+                return;
+            }
+
+            this.isTemplateLoading = true;
+            let successCount = 0;
+            let failCount = 0;
+
+            try {
+                await Promise.all(keysToAdd.map(async (key) => {
+                    const template = this.availableSheetTemplates.find(t => t.key === key);
+                    if (!template) return;
+
+                    try {
+                        const fileName = template.name + '.xlsx';
+                        const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`;
+
+                        const response = await axios.get(fileUrl, {
+                            responseType: 'blob',
+                            validateStatus: status => status === 200
+                        });
+
+                        const file = new File([response.data], fileName, {
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            lastModified: new Date().getTime()
+                        });
+
+                        this.recordForm.sheetFiles.push({
+                            key: template.key,
+                            name: template.name,
+                            file: file,
+                            isTemplate: true
+                        });
+                        successCount++;
+
+                    } catch (error) {
+                        console.error(`加载模板 "${template.name}" 失败:`, error);
+                        failCount++;
+                        this.recordForm.sheetFiles.push({
+                            key: template.key,
+                            name: template.name,
+                            file: null,
+                            isTemplate: false
+                        });
+                    }
+                }));
+
+                if (successCount > 0) {
+                    this.$message.success(`成功添加 ${successCount} 个模板项。`);
+                }
+                if (failCount > 0) {
+                    this.$message.warning(`${failCount} 个模板文件加载失败，已添加空项请手动上传。`);
+                }
+
+                this.selectedTemplateKeys = [];
+                this.$refs.recordForm.validateField('sheetFiles');
+
+            } catch (error) {
+                console.error("批量添加模板过程发生错误:", error);
+                this.$message.error("批量添加过程中发生错误。");
+            } finally {
+                this.isTemplateLoading = false;
+            }
+        },
+
+        addCustomSheetItem() {
+            const name = this.customSheetName.trim();
+            if (!name) {
+                this.$message.warning('请输入有效的自定义检查项名称。');
+                return;
+            }
+            if (this.isItemAlreadyAdded(name)) {
+                this.$message.error(`检查项 "${name}" 已存在，请勿重复添加。`);
+                return;
+            }
+            this.recordForm.sheetFiles.push({ key: name, name: name, file: null, isTemplate: false });
+            this.customSheetName = '';
             this.$refs.recordForm.validateField('sheetFiles');
+        },
 
-        } catch (error) {
-            console.error("批量添加模板过程发生错误:", error);
-            this.$message.error("批量添加过程中发生错误。");
-        } finally {
-            this.isTemplateLoading = false;
-        }
-    },
-    
-    addCustomSheetItem() {
-        const name = this.customSheetName.trim();
-        if (!name) {
-            this.$message.warning('请输入有效的自定义检查项名称。');
-            return;
-        }
-        if (this.isItemAlreadyAdded(name)) {
-            this.$message.error(`检查项 "${name}" 已存在，请勿重复添加。`);
-            return;
-        }
-        this.recordForm.sheetFiles.push({ key: name, name: name, file: null, isTemplate: false });
-        this.customSheetName = '';
-        this.$refs.recordForm.validateField('sheetFiles');
-    },
+        removeSheetFileItem(sheetKeyToRemove) {
+            this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+                const index = this.recordForm.sheetFiles.findIndex(item => item.key === sheetKeyToRemove);
+                if (index !== -1) {
+                    this.recordForm.sheetFiles.splice(index, 1);
+                    this.$message.success('检查项已移除。');
+                    this.$refs.recordForm.validateField('sheetFiles');
+                }
+            }).catch(() => { });
+        },
 
-    removeSheetFileItem(sheetKeyToRemove) {
-        this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning'
-        }).then(() => {
-            const index = this.recordForm.sheetFiles.findIndex(item => item.key === sheetKeyToRemove);
+        handleFileChange(file, sheetKey) {
+            const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
             if (index !== -1) {
-                this.recordForm.sheetFiles.splice(index, 1);
-                this.$message.success('检查项已移除。');
+                const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw, isTemplate: false };
+                this.$set(this.recordForm.sheetFiles, index, updatedSheet);
+                this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
                 this.$refs.recordForm.validateField('sheetFiles');
             }
-        }).catch(() => {});
-    },
-        
-    handleFileChange(file, sheetKey) {
-        const index = this.recordForm.sheetFiles.findIndex(sheet => sheet.key === sheetKey);
-        if (index !== -1) {
-            const updatedSheet = { ...this.recordForm.sheetFiles[index], file: file.raw, isTemplate: false }; 
-            this.$set(this.recordForm.sheetFiles, index, updatedSheet);
-            this.$message.success(`已为 "${updatedSheet.name}" 选择文件: ${file.name}`);
-            this.$refs.recordForm.validateField('sheetFiles');
-        }
-    },
+        },
 
-    handleFileExceed(sheetKey) {
-        this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
-    },
+        handleFileExceed(sheetKey) {
+            this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
+        },
 
-    submitRecord() {
-        this.$refs.recordForm.validate((valid) => {
-            if (valid) {
-                this.isSubmitting = true;
-                const formData = new FormData();
-                const metaData = { ...this.recordForm };
-                delete metaData.sheetFiles;
-                formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
-                this.recordForm.sheetFiles.forEach(sheetFile => {
-                    if (sheetFile.file) {
-                        formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
-                    }
-                });
-                axios.post(`/api/projects/${this.projectId}/process-records-multi-file`, formData)
-                .then(() => {
-                    this.$message.success('提交成功！');
-                    this.$emit('record-created');
-                    
-                    // 【缓存机制 4】: 提交成功后，删除当前项目的缓存
-                    console.log("[Cache v3] Submission success, clearing cache for project:", this.projectId);
-                    delete window._ProcessRecordDrafts[this.projectId];
-                    
-                    this.resetForm();
-                }).catch(error => {
-                    this.$message.error(error.response?.data?.message || '提交失败');
-                }).finally(() => {
-                    this.isSubmitting = false;
-                });
-            } else {
-                this.$message.error('表单验证失败，请检查必填项！');
-            }
-        });
-    },
+        submitRecord() {
+            this.$refs.recordForm.validate((valid) => {
+                if (valid) {
+                    this.isSubmitting = true;
+                    const formData = new FormData();
+                    const metaData = { ...this.recordForm };
+                    delete metaData.sheetFiles;
+                    formData.append('recordMeta', new Blob([JSON.stringify(metaData)], { type: 'application/json' }));
+                    this.recordForm.sheetFiles.forEach(sheetFile => {
+                        if (sheetFile.file) {
+                            formData.append(sheetFile.key, sheetFile.file, sheetFile.file.name);
+                        }
+                    });
+                    axios.post(`/api/projects/${this.projectId}/process-records-multi-file`, formData)
+                        .then(() => {
+                            this.$message.success('提交成功！');
+                            this.$emit('record-created');
 
-    resetForm() {
-        this.$refs.recordForm.resetFields();
-        this.recordForm.sheetFiles = [];
-        this.selectedTemplateKeys = []; 
-        this.customSheetName = ''; 
-        this.recordForm.designerDate = new Date();
-        
-        // 【缓存机制 5】: 用户手动重置时，删除缓存
-        console.log("[Cache v3] Resetting form, clearing cache for project:", this.projectId);
-        delete window._ProcessRecordDrafts[this.projectId];
-    },
+                            // 【缓存机制 4】: 提交成功后，删除当前项目的缓存
+                            console.log("[Cache v3] Submission success, clearing cache for project:", this.projectId);
+                            delete window._ProcessRecordDrafts[this.projectId];
+
+                            this.resetForm();
+                        }).catch(error => {
+                            this.$message.error(error.response?.data?.message || '提交失败');
+                        }).finally(() => {
+                            this.isSubmitting = false;
+                        });
+                } else {
+                    this.$message.error('表单验证失败，请检查必填项！');
+                }
+            });
+        },
+
+        // 【修改】：resetForm 中也要清理
+        async resetForm() {
+            this.$refs.recordForm.resetFields();
+            this.recordForm.sheetFiles = [];
+            this.selectedTemplateKeys = [];
+            this.customSheetName = '';
+            this.recordForm.designerDate = new Date();
+
+            // 清除数据库
+            await DraftDB.removeItem(this.projectId);
+
+            this.hasUnsavedChanges = false;
+            this.lastSavedTime = '';
+            this.initialSnapshot = JSON.stringify(this.recordForm);
+        },
     }
 });

@@ -338,7 +338,10 @@ Vue.component('record-workspace-panel', {
             return this.excelFiles.find(f => f.documentType === this.activeTab);
         },
         canWithdraw() {
-            return true;
+            if (!this.recordInfo) return false;
+            // 假设状态为 'PENDING_REVIEW' 时允许撤回
+            // 请根据你实际后端的枚举值修改这里，比如可能是 'SUBMITTED', 'AUDITING' 等
+            return this.recordInfo.status === 'PENDING_REVIEW'; 
         }
     },
 
@@ -780,7 +783,7 @@ Vue.component('record-workspace-panel', {
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
     mounted() {
         const style = document.createElement('style');
-        style.innerHTML = `
+            style.innerHTML = `
             /* 1. 弹窗基础重置 */
             .reader-dialog .el-dialog__header {
                 padding: 0 !important;
