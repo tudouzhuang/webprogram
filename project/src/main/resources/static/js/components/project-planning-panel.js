@@ -435,15 +435,6 @@ Vue.component("project-planning-panel", {
             .progress-modern-modal .el-dialog__body {
                 padding: 30px 25px !important;
             }
-
-            .split-success-alert-position {
-                /* 核心：使用 transform 向下平移 */
-                /* 180px 是个经验值，刚好能露出中间的圆环，你可以根据实际情况调整 */
-                transform: translateY(180px) !important; 
-                
-                /* 可选：加个阴影让它在下层看起来更明显 */
-                box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
-            }
         `;
         document.head.appendChild(style);
 
@@ -885,25 +876,27 @@ Vue.component("project-planning-panel", {
                 this.$message.error("启动分割失败");
             });
         },
-
+        // ✂️ 替换位置：带“尾部缓冲”的进度轮询
         pollProgress(fileId) {
             const self = this;
+            // 清除可能存在的旧定时器
             if (self._pollTimer) clearInterval(self._pollTimer);
-            
-            // 初始化状态
-            self.skippedSheetsList = [];
-            self.progressStatus = null; 
+            if (self._fakeTimer) clearInterval(self._fakeTimer);
 
-            // 延迟 500ms 启动轮询
+            self.skippedSheetsList = [];
+            self.progressStatus = null;
+
+            // 延迟一点启动，给后端反应时间
             setTimeout(() => {
+                // === 第一阶段：轮询后端真实进度 (目标 0% -> 90%) ===
                 self._pollTimer = setInterval(() => {
                     axios.get(`/api/files/${fileId}/split-progress?t=${new Date().getTime()}`)
                         .then(res => {
                             const data = res.data;
                             if (!data) return;
 
-                            // 1. 异常处理 (保持原样)
                             if (data.progress === -1) {
+                                // 异常处理
                                 clearInterval(self._pollTimer);
                                 self.progressStatus = 'exception';
                                 self.isSplitting = false;
@@ -911,63 +904,23 @@ Vue.component("project-planning-panel", {
                                 return;
                             }
 
-                            // 2. 获取后端返回的消息字段 
-                            // ⚠️ 注意：请确认后端返回的字段名是 message, msg 还是 log？
-                            // 这里做了防御性编程，拼接所有可能文本进行搜索
-                            const backendText = (data.message || data.msg || data.log || data.description || "").toString();
-
-                            // 3. 【核心修改】判定成功的唯一标准：也就是那句“暗号”
-                            const isMagicWordReceived = backendText.includes("流程全部结束");
-
-                            if (isMagicWordReceived) {
-                                // === A. 收到暗号：直接宣布胜利 ===
+                            if (data.progress >= 100) {
+                                // === 后端处理完了 ===
                                 clearInterval(self._pollTimer);
-                                
-                                // 立即拉满进度条
-                                self.splitProgress = 100;
 
-                                setTimeout(() => {
-                                    self.handleSplitSuccess();
-                                }, 1500);
-                                
+                                // 强制设为 90%，准备开始最后 10秒 的冲刺
+                                self.splitProgress = 90;
+                                self.runFinalTenSeconds();
                             } else {
-                                // === B. 未收到暗号：继续等待 ===
-                                
-                                // 即使后端传回 100 (数字)，只要没那句话，我们就在前端卡在 99%
-                                // 这样用户就会看到进度条满了但在等待最后一步
-                                let visualProgress = data.progress;
-                                if (visualProgress >= 90) {
-                                    visualProgress = 90; 
-                                }
-                                
-                                self.splitProgress = visualProgress;
+                                // 还在处理中，更新进度，但视觉上最高封顶 90%
+                                // 避免后端还没完，前端先跑满了
+                                self.splitProgress = Math.min(data.progress, 90);
                             }
-                        })
-                        .catch(e => {
-                            console.error("轮询出错", e);
-                            // 轮询偶尔失败不中断，继续下一次即可
                         });
-                }, 1000); // 1秒轮询一次
+                }, 1000);
             }, 500);
         },
 
-        handleSplitSuccess() {
-            const self = this;
-            self.progressStatus = 'success'; 
-
-            self.$alert('文件数据已全部加载就绪 (流程全部结束)。', '加载完成', {
-                confirmButtonText: '确定',
-                type: 'success',
-                showClose: false,
-                // ✂️ 【核心修改】加入自定义类名，专门控制这个弹窗的位置
-                customClass: 'split-success-alert-position', 
-                callback: () => {
-                    self.showProgressDialog = false;
-                    self.isSplitting = false;
-                    self.fetchData(); 
-                }
-            });
-        },
         // 【新增】最后 10% 的缓冲动画 (1秒跑1%)
         runFinalTenSeconds() {
             const self = this;
