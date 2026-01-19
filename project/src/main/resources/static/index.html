@@ -913,7 +913,8 @@
                         case 'project-planning-panel':
                         case 'process-record-list-panel':
                         case 'process-record-panel':
-                            return { projectId: this.currentProjectId };
+                            return { projectId: this.currentProjectId,
+                                     projectNumber: this.currentProjectNumber};
 
                         case 'record-workspace-panel':
                         case 'record-review-panel':

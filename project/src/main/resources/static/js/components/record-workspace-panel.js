@@ -95,7 +95,7 @@ Vue.component('record-workspace-panel', {
                                 <div class="mb-3 d-inline-block p-3 rounded-circle" style="background: #ecf5ff;">
                                     <i class="el-icon-s-platform" style="font-size: 48px; color: #409EFF;"></i>
                                 </div>
-                                <h2 style="font-weight: 700; color: #303133; margin-bottom: 10px;">过程记录工作台</h2>
+                                <h2 style="font-weight: 700; color: #303133; margin-bottom: 10px;">设计过程记录表</h2>
                                 <p class="text-muted" style="font-size: 14px; margin: 0;">
                                     当前记录包含 <span class="text-primary font-weight-bold" style="font-size: 16px;">{{ excelFiles.length }}</span> 个 Excel 文件及相关问题记录
                                 </p>
@@ -121,7 +121,7 @@ Vue.component('record-workspace-panel', {
                                     @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
                                     @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
                                     @click="showFullscreen = true">
-                                    进入沉浸式全屏工作台
+                                    进入全屏工作台
                                 </el-button>
                             </div>
                 
@@ -175,7 +175,7 @@ Vue.component('record-workspace-panel', {
                                     <i class="el-icon-s-cooperation text-white" style="font-size: 24px;"></i>
                                 </div>
                                 <div class="text-white">
-                                    <div style="font-size: 16px; font-weight: bold; letter-spacing: 1px;">过程记录工作台</div>
+                                    <div style="font-size: 16px; font-weight: bold; letter-spacing: 1px;">设计过程记录表</div>
                                     <div style="font-size: 12px; opacity: 0.8;">
                                         {{ recordInfo ? recordInfo.partName : 'Loading...' }} 
                                         <span class="ml-2" style="background: rgba(255,255,255,0.2); padding: 0 5px; border-radius: 2px;">{{ recordInfo ? recordInfo.status : '' }}</span>
@@ -228,14 +228,34 @@ Vue.component('record-workspace-panel', {
                                     <div style="padding: 5px 20px; font-size: 12px; color: #909399;">设计记录表文件</div>
                         
                                     <div v-for="file in excelFiles" 
-                                        :key="file.id"
-                                        class="file-item"
-                                        :class="{ 'active': activeTab === file.documentType }"
-                                        @click="activeTab = file.documentType"> <div class="d-flex align-items-center w-100">
-                                            <i class="el-icon-s-grid mr-2 text-primary"></i>
-                                            <span class="file-name text-truncate" :title="file.fileName">
+                                            :key="file.id"
+                                            class="file-item"
+                                            :class="{ 'active': activeTab === file.documentType }"
+                                            @click="activeTab = file.documentType">
+                                        
+                                        <div class="d-flex align-items-center w-100" style="overflow: hidden;">
+                                            <i class="el-icon-s-grid mr-2 text-primary" style="flex-shrink: 0;"></i>
+                                            
+                                            <span class="file-name text-truncate" :title="file.fileName" style="flex-grow: 1; margin-right: 5px;">
                                                 {{ file.documentType }}
                                             </span>
+                                    
+                                            <el-upload
+                                                v-if="canEdit"
+                                                action="#"
+                                                :http-request="(options) => handleReplaceFile(options, file)"
+                                                :show-file-list="false"
+                                                accept=".xlsx,.xls"
+                                                @click.native.stop> <el-tooltip content="上传新文件替换当前表格" placement="right" :enterable="false">
+                                                    <el-button 
+                                                        type="text" 
+                                                        icon="el-icon-upload2" 
+                                                        size="small" 
+                                                        class="replace-btn"
+                                                        style="padding: 2px; color: #909399;">
+                                                    </el-button>
+                                                </el-tooltip>
+                                            </el-upload>
                                         </div>
                                     </div>
                                 </div>
@@ -327,6 +347,9 @@ Vue.component('record-workspace-panel', {
                                     
                                     <iframe
                                         :ref="'iframe-' + file.id"
+                                        
+                                        :key="'iframe-' + file.id + '-' + (fileRefreshKeys[file.id] || 0)"
+                                        
                                         src="/luckysheet-iframe-loader.html" 
                                         @load="() => loadSheetInIframe(file)"
                                         style="width: 100%; height: 100%; border: none; display: block;">
@@ -364,6 +387,7 @@ Vue.component('record-workspace-panel', {
             currentLiveStats: null,
             personnelCache: null, // 【保留】用于“挪用”和缓存人员信息
             isWithdrawing: false,
+            fileRefreshKeys: {},
         }
     },
 
@@ -393,7 +417,7 @@ Vue.component('record-workspace-panel', {
             if (!this.recordInfo) return false;
             // 假设状态为 'PENDING_REVIEW' 时允许撤回
             // 请根据你实际后端的枚举值修改这里，比如可能是 'SUBMITTED', 'AUDITING' 等
-            return this.recordInfo.status === 'PENDING_REVIEW'; 
+            return this.recordInfo.status === 'PENDING_REVIEW';
         }
     },
 
@@ -541,11 +565,8 @@ Vue.component('record-workspace-panel', {
             });
         },
 
-        // --- 【第4步】: 新增在线保存和提交的核心逻辑 ---
-
         /**
                  * 【【最终修正版】】 "保存在线修改" 按钮的处理器。
-                 * 此方法只负责向 iframe 发送获取数据的指令，真正的保存逻辑在 messageEventListener 中处理。
                  */
         handleSaveDraft() {
             // 1. 前置状态检查
@@ -554,35 +575,35 @@ Vue.component('record-workspace-panel', {
                 return;
             }
 
-            // 2. 查找当前激活的文件和对应的 iframe 实例
-            const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
-            if (!activeFile) {
-                this.$message.error('错误：当前没有可保存的Excel文件！');
+            // 2. 【修复点】直接使用 computed 属性，不再重复定义局部变量
+            // 同时增加空值检查，防止 activeFile 为 undefined
+            if (!this.activeFile) {
+                this.$message.error('错误：当前没有可保存的文件！');
                 return;
             }
 
-            // 【语法修正】修复了字符串拼接中的额外单引号
-            const iframeRef = this.$refs['iframe-' + activeFile.id];
+            // 3. 获取 iframe 引用
+            const iframeRef = this.$refs['iframe-' + this.activeFile.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+
             if (!targetIframe) {
                 this.$message.error('错误：无法找到对应的编辑器实例！');
                 return;
             }
 
-            // 3. 更新UI状态，并向用户显示提示
+            // 4. 更新UI状态，并向用户显示提示
             this.isSaving = true;
-            this.$message.info(`正在从编辑器获取 "${activeFile.documentType}" 的最新数据...`);
+            this.$message.info(`正在从编辑器获取 "${this.activeFile.documentType}" 的最新数据...`);
 
             console.log('【父组件】准备发送 GET_DATA_AND_IMAGES 指令给 iframe...');
 
-            // 4. 【核心】只发送一次指令给 iframe，然后函数结束。
-            // 后续的数据处理和文件上传，将由 messageEventListener 异步接管。
+            // 5. 发送指令
             targetIframe.contentWindow.postMessage({
                 type: 'GET_DATA_AND_IMAGES',
                 payload: {
                     purpose: 'save-draft',
-                    fileId: activeFile.id,
-                    documentType: activeFile.documentType
+                    fileId: this.activeFile.id,
+                    documentType: this.activeFile.documentType
                 }
             }, window.location.origin);
 
@@ -829,13 +850,64 @@ Vue.component('record-workspace-panel', {
             }).catch(() => { });
         },
 
+        // 【新增方法】替换文件逻辑
+        async handleReplaceFile(options, fileInfo) {
+            const { file } = options;
+
+            // 1. 二次确认（防止误操作）
+            try {
+                await this.$confirm(`确定要用新文件 "${file.name}" 替换 "${fileInfo.documentType}" 吗？\n此操作将覆盖原有数据且不可恢复。`, '替换确认', {
+                    confirmButtonText: '确定替换',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                });
+            } catch (e) {
+                return; // 用户取消
+            }
+
+            // 2. 准备上传
+            const loading = this.$loading({
+                lock: true,
+                text: '正在上传并替换文件...',
+                spinner: 'el-icon-loading',
+                background: 'rgba(0, 0, 0, 0.7)'
+            });
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                await axios.post(`/api/process-records/${this.recordId}/files/${fileInfo.id}`, formData);
+
+                this.$message.success('文件替换成功！');
+
+                // 4. 【核心修改】：通过更新 Key 强制销毁并重建 iframe
+                // 这比手动调用 loadSheetInIframe 更彻底，能清除所有 Luckysheet 的残留状态
+                if (this.activeTab === fileInfo.documentType) {
+                    const currentCount = this.fileRefreshKeys[fileInfo.id] || 0;
+                    this.$set(this.fileRefreshKeys, fileInfo.id, currentCount + 1);
+                    
+                    console.log(`[Workspace] 文件 ${fileInfo.id} 已替换，触发组件重绘 (Key: ${currentCount + 1})`);
+                }
+
+                // 5. 刷新列表元数据 (如文件大小更新)
+                this.fetchData();
+
+            } catch (error) {
+                console.error(error);
+                this.$message.error('替换失败: ' + (error.response?.data?.message || '服务器错误'));
+            } finally {
+                loading.close();
+            }
+        },
+
 
     },
 
     // 【第5步】: 添加 mounted 和 beforeDestroy 钩子来管理事件监听器
     mounted() {
         const style = document.createElement('style');
-            style.innerHTML = `
+        style.innerHTML = `
             /* 1. 弹窗基础重置 */
             .reader-dialog .el-dialog__header {
                 padding: 0 !important;
@@ -888,6 +960,18 @@ Vue.component('record-workspace-panel', {
                 height: 100%;
                 overflow-y: auto;
                 padding: 20px;
+            }
+
+            /* 让替换按钮默认隐藏，悬停时显示 */
+            .file-item .replace-btn {
+                display: none;
+            }
+            .file-item:hover .replace-btn {
+                display: inline-block;
+            }
+            .file-item .replace-btn:hover {
+                color: #409EFF !important; /* 悬停变蓝 */
+                transform: scale(1.2);
             }
         `;
         document.head.appendChild(style);

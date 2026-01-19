@@ -79,7 +79,7 @@ template: `
                                 @mouseover.native="$event.target.style.transform = 'translateY(-2px)'"
                                 @mouseleave.native="$event.target.style.transform = 'translateY(0)'"
                                 @click="showFullscreen = true">
-                                进入沉浸式审核工作台
+                                进入审核工作台
                             </el-button>
                         </div>
             

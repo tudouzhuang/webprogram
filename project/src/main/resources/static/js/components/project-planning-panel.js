@@ -245,7 +245,7 @@ Vue.component("project-planning-panel", {
                                         {{ getCleanFileName(file) }}
                                     </span>
                                     
-                                    <i v-if="canEdit" class="el-icon-delete delete-icon ml-auto" @click.stop="deleteFile(file)"></i>
+                                    <i v-if="canEdit && file.documentType !== 'SPLIT_CHILD_SHEET'" class="el-icon-delete delete-icon ml-auto" @click.stop="deleteFile(file)"></i>
                                 </div>
                             </div>
                         </div>
@@ -794,7 +794,7 @@ Vue.component("project-planning-panel", {
         handleDownloadPlanningDoc() {
             // 1. 在文件列表中查找主策划书
             const mainFile = this.planningDocuments.find(f => f.documentType && f.documentType.startsWith('PLANNING_DOCUMENT'));
-            
+
             if (!mainFile) {
                 this.$message.warning("当前项目未找到主策划书文件");
                 return;
@@ -953,14 +953,49 @@ Vue.component("project-planning-panel", {
             this.showProgressDialog = false;
             location.reload();
         },
+        // 【修改】：双重确认删除逻辑
         deleteFile(file) {
-            this.$confirm(`确定删除 "${file.fileName}" 吗？`, "提示", { type: "warning" })
-                .then(() => {
-                    axios.delete(`/api/files/${file.id}`).then(() => {
-                        this.$message.success("删除成功");
-                        this.fetchData();
+            // --- 第一重确认：常规询问 ---
+            this.$confirm(`您确定要删除文件 "${file.fileName}" 吗？`, '删除确认', {
+                confirmButtonText: '继续',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+
+                // 加一个微小的延时，让第一个弹窗完全关闭，给用户反应时间
+                setTimeout(() => {
+                    // --- 第二重确认：高危警告 ---
+                    this.$confirm(`⚠️ 严重警告：此操作不可恢复！\n\n确认要永久删除该文件吗？`, '最终确认', {
+                        confirmButtonText: '确定永久删除',
+                        cancelButtonText: '放弃',
+                        confirmButtonClass: 'el-button--danger', // 按钮变红
+                        type: 'error',
+                        center: true, // 居中显示更醒目
+                        lockScroll: false // 防止抖动
+                    }).then(() => {
+
+                        // --- 执行删除 ---
+                        const loading = this.$loading({ lock: true, text: '正在删除...' });
+
+                        axios.delete(`/api/files/${file.id}`)
+                            .then(() => {
+                                this.$message.success("删除成功");
+                                // 如果删的是当前正在预览的文件，关闭预览窗口防止报错
+                                if (this.activeFileId === file.id.toString()) {
+                                    this.activeFileId = '';
+                                    this.showFullscreenModal = false;
+                                }
+                                this.fetchData();
+                            })
+                            .catch(() => this.$message.error("删除失败"))
+                            .finally(() => loading.close());
+
+                    }).catch(() => {
+                        this.$message.info('已取消操作');
                     });
-                }).catch(() => { });
+                }, 300); // 300ms 缓冲
+
+            }).catch(() => { });
         },
         // 简化的清理逻辑 (全删)
         handleClearSplitFiles() {

@@ -51,6 +51,10 @@ Vue.component('process-record-panel', {
         projectId: {
             type: [String, Number],
             required: true
+        },
+        projectNumber: {
+            type: String,
+            default: ''
         }
     },
     template: `
@@ -61,14 +65,15 @@ Vue.component('process-record-panel', {
                             <div class="status-left d-flex align-items-center">
                                 <div class="project-badge mr-3">
                                     <i class="el-icon-price-tag mr-1"></i>
-                                    <span style="font-weight: bold;">{{ projectId }}</span>
+                                    <span style="font-weight: bold;">
+                                        {{ recordInfo ? (recordInfo.projectNumber || recordInfo.project_number) : projectId }}
+                                    </span>
                                 </div>
                                 
                                 <span class="text-muted" v-if="lastSavedTime" style="font-size: 13px;">
                                     <i class="el-icon-time"></i> 上次保存: {{ lastSavedTime }}
                                 </span>
                             </div>
-                            
                             <div class="status-right">
                                 <el-button 
                                     type="primary" 
@@ -514,12 +519,20 @@ Vue.component('process-record-panel', {
             }
         `;
         document.head.appendChild(style);
+
+        // 1. 拦截关闭/刷新 (防止误操作直接关掉)
+        window.addEventListener('beforeunload', this.handleBeforeUnload);
+
+        // 2. 页面不可见时立即保存 (例如最小化、切Tab)
+        document.addEventListener('visibilitychange', this.handleVisibilityChange);
+
+
         this.$watch('recordForm', (newVal) => {
             const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
-            
+
             if (this.initialSnapshot && currentString !== this.initialSnapshot) {
                 this.hasUnsavedChanges = true;
-                
+
                 if (this._saveTimer) clearTimeout(this._saveTimer);
                 this._saveTimer = setTimeout(() => {
                     // 【修改点】：传入 true，表示这是自动保存 (静默)
@@ -532,9 +545,13 @@ Vue.component('process-record-panel', {
         this.$watch('selectedTemplateKeys', () => { this.hasUnsavedChanges = true; });
     },
     beforeDestroy() {
-        // 离开页面时，如果有未保存，强制存一次以防万一
+        // 【核心修改】：移除监听器
+        window.removeEventListener('beforeunload', this.handleBeforeUnload);
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+
+        // (原有逻辑) 离开页面组件时，如果有未保存，强制存一次
         if (this.hasUnsavedChanges) {
-            this.saveToCache(this.projectId);
+            this.saveToCache(this.projectId, true);
         }
     },
 
@@ -547,6 +564,21 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
+        handleBeforeUnload(e) {
+            // 只有当有未保存修改时才拦截
+            if (this.hasUnsavedChanges) {
+                // 触发浏览器默认的警告弹窗
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        },
+        handleVisibilityChange() {
+            if (document.visibilityState === 'hidden' && this.hasUnsavedChanges) {
+                console.log('[Cache] 页面隐藏，触发紧急保存...');
+                this.saveToCache(this.projectId, true); // true = 静默保存
+            }
+        },
         // 【修正后的读取】：安全恢复
         loadFromCache(pid) {
             if (!pid) return;
@@ -603,23 +635,23 @@ Vue.component('process-record-panel', {
                 clearTimeout(this._saveTimer);
                 this._saveTimer = null;
             }
-            
+
             const draftData = {
                 recordForm: this.recordForm,
                 selectedTemplateKeys: this.selectedTemplateKeys,
                 customSheetName: this.customSheetName,
                 timestamp: new Date().toLocaleString()
             };
-            
+
             try {
                 await DraftDB.setItem(pid, draftData);
-                
+
                 this.lastSavedTime = draftData.timestamp;
                 this.hasUnsavedChanges = false;
-                
+
                 // 更新快照 (处理 File 对象)
                 this.initialSnapshot = JSON.stringify(this.recordForm, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
-                
+
                 console.log(`[Cache DB] 保存成功 (含文件): ${pid}, 模式: ${isAuto ? '自动' : '手动'}`);
 
                 // 2. 只有【手动保存】时才弹窗
