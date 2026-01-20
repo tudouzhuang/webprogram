@@ -215,9 +215,6 @@ Vue.component("project-planning-panel", {
                             <el-button type="text" class="text-white mr-3" icon="el-icon-download" @click="handleDownloadPlanningDoc">下载</el-button>
                         </el-tooltip>
                         
-                        <el-tooltip content="清理所有分割产生的临时Sheet" placement="bottom">
-                            <el-button v-if="canEdit && planningDocuments.length > 0" type="text" class="text-warning mr-3" icon="el-icon-delete" @click="handleClearSplitFiles">清空Excel文件</el-button>
-                        </el-tooltip>
 
                         <el-button type="danger" size="small" icon="el-icon-close" circle @click="showFullscreenModal = false"></el-button>
                     </div>
@@ -953,47 +950,56 @@ Vue.component("project-planning-panel", {
             this.showProgressDialog = false;
             location.reload();
         },
-        // 【修改】：双重确认删除逻辑
+        // 【修改】：删除主文件及其关联的子文件
         deleteFile(file) {
-            // --- 第一重确认：常规询问 ---
-            this.$confirm(`您确定要删除文件 "${file.fileName}" 吗？`, '删除确认', {
-                confirmButtonText: '继续',
-                cancelButtonText: '取消',
-                type: 'warning'
-            }).then(() => {
+            // 1. 在所有文件列表中，查找 parentId 等于当前文件 ID 的子文件
+            const children = this.fileList.filter(f => f.parentId === file.id);
 
-                // 加一个微小的延时，让第一个弹窗完全关闭，给用户反应时间
+            // 2. 构造删除列表：[主文件, ...所有子文件]
+            const filesToDelete = [file, ...children];
+
+            // 3. 构建提示语 (如果有子文件，提示更明确)
+            const subMsg = children.length > 0
+                ? `<br><span style="color:#E6A23C; font-size:12px;">(注意：该文件包含 ${children.length} 个关联的子Sheet文件，将一并被永久删除)</span>`
+                : '';
+
+            // --- 第一重确认 ---
+            this.$confirm(
+                `您确定要删除文件 "${file.fileName}" 吗？${subMsg}`,
+                '删除确认 (1/2)',
+                {
+                    confirmButtonText: '继续',
+                    cancelButtonText: '取消',
+                    type: 'warning',
+                    dangerouslyUseHTMLString: true // 允许使用 HTML 显示子文件提示
+                }
+            ).then(() => {
+
                 setTimeout(() => {
-                    // --- 第二重确认：高危警告 ---
-                    this.$confirm(`⚠️ 严重警告：此操作不可恢复！\n\n确认要永久删除该文件吗？`, '最终确认', {
+                    // --- 第二重确认 ---
+                    this.$confirm(`⚠️ 严重警告：此操作不可恢复！\n\n确认要永久删除这 ${filesToDelete.length} 个文件吗？`, '最终确认 (2/2)', {
                         confirmButtonText: '确定永久删除',
                         cancelButtonText: '放弃',
-                        confirmButtonClass: 'el-button--danger', // 按钮变红
+                        confirmButtonClass: 'el-button--danger',
                         type: 'error',
-                        center: true, // 居中显示更醒目
-                        lockScroll: false // 防止抖动
+                        center: true,
+                        lockScroll: false
                     }).then(() => {
 
-                        // --- 执行删除 ---
-                        const loading = this.$loading({ lock: true, text: '正在删除...' });
+                        // --- 【核心修改】：调用 executeBatchDelete 执行批量删除 ---
+                        // 复用你已有的 executeBatchDelete 方法，它会处理 loading 和刷新
+                        this.executeBatchDelete(filesToDelete, '正在清理主文件及关联数据...');
 
-                        axios.delete(`/api/files/${file.id}`)
-                            .then(() => {
-                                this.$message.success("删除成功");
-                                // 如果删的是当前正在预览的文件，关闭预览窗口防止报错
-                                if (this.activeFileId === file.id.toString()) {
-                                    this.activeFileId = '';
-                                    this.showFullscreenModal = false;
-                                }
-                                this.fetchData();
-                            })
-                            .catch(() => this.$message.error("删除失败"))
-                            .finally(() => loading.close());
+                        // 如果删的是当前正在预览的文件，关闭弹窗
+                        if (this.activeFileId === file.id.toString()) {
+                            this.activeFileId = '';
+                            this.showFullscreenModal = false;
+                        }
 
                     }).catch(() => {
                         this.$message.info('已取消操作');
                     });
-                }, 300); // 300ms 缓冲
+                }, 300);
 
             }).catch(() => { });
         },

@@ -152,9 +152,6 @@ Vue.component('record-workspace-panel', {
                                             </div>
                                         </div>
                                         
-                                        <div class="ml-3 text-muted">
-                                            <i class="el-icon-check"></i>
-                                        </div>
                                     </div>
                                 </div>
                             </div>

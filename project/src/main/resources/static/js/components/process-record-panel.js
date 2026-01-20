@@ -521,7 +521,7 @@ Vue.component('process-record-panel', {
         document.head.appendChild(style);
 
         // 1. 拦截关闭/刷新 (防止误操作直接关掉)
-        window.addEventListener('beforeunload', this.handleBeforeUnload);
+
 
         // 2. 页面不可见时立即保存 (例如最小化、切Tab)
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -546,7 +546,6 @@ Vue.component('process-record-panel', {
     },
     beforeDestroy() {
         // 【核心修改】：移除监听器
-        window.removeEventListener('beforeunload', this.handleBeforeUnload);
         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
 
         // (原有逻辑) 离开页面组件时，如果有未保存，强制存一次
@@ -564,15 +563,7 @@ Vue.component('process-record-panel', {
         }
     },
     methods: {
-        handleBeforeUnload(e) {
-            // 只有当有未保存修改时才拦截
-            if (this.hasUnsavedChanges) {
-                // 触发浏览器默认的警告弹窗
-                e.preventDefault();
-                e.returnValue = '';
-                return '';
-            }
-        },
+
         handleVisibilityChange() {
             if (document.visibilityState === 'hidden' && this.hasUnsavedChanges) {
                 console.log('[Cache] 页面隐藏，触发紧急保存...');
