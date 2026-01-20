@@ -13,7 +13,7 @@ Vue.component('record-review-panel', {
         }
     },
     // 【模板】: 完整模板，包含iframe和按钮
-template: `
+    template: `
         <div class="content-wrapper" style="width:100%;height:100%">
             <div v-if="isLoading" class="card">
                 <div class="card-body text-center p-5">
@@ -262,7 +262,8 @@ template: `
                             <div v-if="activeTab === 'problemRecord'" class="scrollable-tab-content">
                                 <problem-record-table
                                     :record-id="Number(recordId)"
-                                    mode="reviewer">
+                                    :mode="reviewer" 
+                                    @trigger-submit="handleTriggerReview">
                                 </problem-record-table>
                             </div>
 
@@ -296,15 +297,76 @@ template: `
             scrollTopBeforeClick: 0,
             currentLiveStats: null,
             currentSessionSeconds: 0,
-            
+
             // --- 修正部分 ---
-            isMetaDataLoading: false, 
+            isMetaDataLoading: false,
             metaDataContent: null, // 统一使用这个变量存储元数据
             // 移除了重复的 metaData
         }
     },
     // 修改后
     computed: {
+        // 【核心修复】动态判断问题面板的模式 (支持 Admin 超级模式)
+        // 【核心修复 + 调试版】动态判断问题面板的模式
+        // 【核心修复】更强壮的用户获取逻辑
+        problemPanelMode() {
+            // 🔥🔥🔥 1. 全方位尝试获取用户数据 🔥🔥🔥
+            let user = {};
+
+            try {
+                // 尝试 1: 全局变量 (有些老系统用这个)
+                if (window.currentUser) user = window.currentUser;
+
+                // 尝试 2: sessionStorage (Key 可能是 'user' 或 'userInfo')
+                else if (sessionStorage.getItem('user')) user = JSON.parse(sessionStorage.getItem('user'));
+                else if (sessionStorage.getItem('userInfo')) user = JSON.parse(sessionStorage.getItem('userInfo'));
+
+                // 尝试 3: localStorage (最常见的情况，Key 可能是 'user' 或 'userInfo')
+                else if (localStorage.getItem('user')) user = JSON.parse(localStorage.getItem('user'));
+                else if (localStorage.getItem('userInfo')) user = JSON.parse(localStorage.getItem('userInfo'));
+
+                // 尝试 4: Vuex (如果你用了 Vuex)
+                // else if (this.$store && this.$store.state.user) user = this.$store.state.user;
+
+            } catch (e) {
+                console.error("解析用户信息失败:", e);
+            }
+
+            // 🔥🔥🔥 [调试信息] 🔥🔥🔥
+            console.group("🕵️‍♂️ [权限调试 - 修复版]");
+            console.log("1. 捕获到的用户对象:", user);
+            console.log("   -> 角色:", user.role || user.roles); // 有些系统用 roles 数组
+            console.log("   -> 用户名:", user.username || user.name);
+
+            // 2. 判断是否是管理员/经理
+            // 注意：增加对 'manager' 或其他大小写变体的兼容
+            const role = (user.role || '').toLowerCase(); // 转小写比较更安全
+            const isManager = role === 'admin' || role === 'manager' || role === 'administrator';
+
+            console.log(`2. 管理员判定 (isManager): ${isManager} (当前角色: ${role})`);
+
+            if (isManager) {
+                console.log("✅ 匹配管理员，返回 'admin'");
+                console.groupEnd();
+                return 'admin';
+            }
+
+            // 3. 判断是否是指定审核人
+            const currentUserName = user.username || user.name;
+            const auditorName = this.recordInfo ? this.recordInfo.auditorName : '';
+            const isAuditor = currentUserName && auditorName && currentUserName === auditorName;
+
+            if (isAuditor) {
+                console.log("✅ 匹配审核人，返回 'reviewer'");
+                console.groupEnd();
+                return 'reviewer';
+            }
+
+            // 4. 默认
+            console.log("⬇️ 无权限，返回 'designer'");
+            console.groupEnd();
+            return 'designer';
+        },
         excelFiles() {
             // 【【【 核心修正：增加安全检查 】】】
             // 1. 确保 allFiles 是一个数组
@@ -337,6 +399,22 @@ template: `
         }
     },
     methods: {
+        async handleTriggerReview() {
+            this.isSubmitting = true;
+            try {
+                // 调用后端接口触发状态流转
+                await axios.post(`/api/process-records/${this.recordId}/trigger-review`);
+
+                this.$message.success("已成功重新提交审核！");
+
+                // 提交后通常需要刷新页面或返回列表
+                this.goBack();
+            } catch (error) {
+                this.$message.error("提交失败: " + (error.response?.data?.message || '未知错误'));
+            } finally {
+                this.isSubmitting = false;
+            }
+        },
         lockScroll() {
             document.body.classList.add('body-scroll-lock');
         },
@@ -419,19 +497,19 @@ template: `
                 console.warn("[Review Panel] 未找到元数据文件记录 (recordMeta)，无法加载。");
                 return;
             }
-        
+
             // 2. 缓存检查：如果已经有数据了，就不重复请求 (除非你想强制刷新)
             if (this.metaDataContent) return;
-        
+
             this.isMetaDataLoading = true;
             console.log("[Review Panel] 正在加载元数据...", this.metaFile.filePath);
-        
+
             try {
                 // 3. 发起请求
                 const fileUrl = `/api/files/content/${this.metaFile.id}`;
                 // 添加时间戳防止浏览器缓存 GET 请求
                 const response = await axios.get(`${fileUrl}?t=${new Date().getTime()}`);
-        
+
                 // 4. 数据解析与赋值 【核心修正点】
                 let parsedData = null;
                 if (typeof response.data === 'string') {
@@ -444,16 +522,16 @@ template: `
                 } else {
                     parsedData = response.data;
                 }
-        
+
                 // 赋值给模板正在使用的变量
                 this.metaDataContent = parsedData;
                 console.log("[Review Panel] 元数据加载成功:", this.metaDataContent);
-        
+
             } catch (error) {
                 console.error("加载元数据失败:", error);
                 this.$message.error("加载表单元数据失败：" + (error.message || "网络错误"));
                 // 设置一个空对象或错误提示对象，避免页面 v-if 报错
-                this.metaDataContent = null; 
+                this.metaDataContent = null;
             } finally {
                 this.isMetaDataLoading = false;
             }

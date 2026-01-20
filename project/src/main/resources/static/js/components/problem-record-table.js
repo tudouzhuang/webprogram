@@ -44,6 +44,7 @@ const ProblemRecordTable = {
     },
 
     computed: {
+        
         isReviewerMode() { return this.mode === 'reviewer'; },
         isDesignerMode() { return this.mode === 'designer'; },
 
@@ -411,7 +412,7 @@ const ProblemRecordTable = {
                                     @click="handleResolve(scope.row)">
                                     解决
                                 </el-button>
-                                <span v-else class="text-muted small">
+                                <span v-else-if="!isReviewerMode" class="text-muted small">
                                     {{ scope.row.status === 'RESOLVED' ? '等待复核' : '已完成' }}
                                 </span>
                             </div>

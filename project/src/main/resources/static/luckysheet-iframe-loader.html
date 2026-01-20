@@ -221,110 +221,155 @@
 
         // --- [4. 核心功能函数] ---
 
-        /**
-         * 渲染 Luckysheet 实例 (完整逻辑 + 修复崩溃 + 移除 getFlowdata 依赖)
+/**
+         * 渲染 Luckysheet 实例 (终极修复版：防崩溃 + 数据清洗 + 移除无效依赖)
          */
-        function renderSheet(luckysheetData, fileName, options) {
-            // 步骤 1: 销毁旧实例
+         function renderSheet(luckysheetData, fileName, options) {
+            // 步骤 1: 销毁旧实例，防止内存泄漏和DOM冲突
             if (window.luckysheet) {
                 try {
+                    // luckysheet.destroy() 有时会报错，包裹 try-catch
                     luckysheet.destroy();
-                } catch (e) { console.warn("销毁旧实例出错:", e); }
+                } catch (e) { 
+                    console.warn("销毁旧实例时出现非致命错误:", e); 
+                }
             }
-            container.innerHTML = '';
+            // 清空容器，确保干净的 DOM 环境
+            document.getElementById('luckysheet-container').innerHTML = '';
 
             // --- [数据防御性处理] ---
             let validData = luckysheetData;
 
             // 1. 如果数据为空或非数组，初始化默认页
             if (!Array.isArray(validData) || validData.length === 0) {
-                console.warn("[Iframe] 数据为空，初始化为默认 Sheet1。");
+                console.warn("[Iframe] 数据源为空，初始化为默认 Sheet1。");
                 validData = [{
                     name: "Sheet1",
                     status: 1,
                     order: 0,
+                    row: 30,
+                    column: 20,
                     celldata: [],
                     config: {}
                 }];
             } else {
-                // 深拷贝，防止修改影响原始数据
-                try { validData = JSON.parse(JSON.stringify(validData)); } catch (e) { }
+                // 深拷贝，防止修改影响原始数据对象
+                try { 
+                    validData = JSON.parse(JSON.stringify(validData)); 
+                } catch (e) {
+                    console.error("数据深拷贝失败:", e);
+                }
             }
+
+            // ============================================================
+            // 🔥🔥🔥【关键修复：数据清洗】防止 mergeCalculation 崩溃 🔥🔥🔥
+            // ============================================================
+            validData.forEach((sheet, index) => {
+                // A. 补全必要字段，防止 undefined 报错
+                if (!sheet.celldata) sheet.celldata = [];
+                if (!sheet.config) sheet.config = {};
+                if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
+
+                // B. 【必删】暴力删除 calcChain (计算链)
+                // Excel 导入的计算链往往与当前数据不匹配，是导致 "reading '2'" 崩溃的元凶
+                if (sheet.calcChain) {
+                    console.warn(`[Loader] 🛡️ 已移除 Sheet "${sheet.name}" 的 calcChain 以防止公式计算崩溃。`);
+                    delete sheet.calcChain;
+                }
+
+                // C. 【新增】清洗无效/越界的合并单元格 (Fix mergeCalculation crash)
+                if (sheet.config.merge) {
+                    // 获取当前表的最大行列数 (如果没定义，给个较大的安全值)
+                    const maxRow = sheet.row || 10000;
+                    const maxCol = sheet.column || 1000;
+
+                    Object.keys(sheet.config.merge).forEach(key => {
+                        const m = sheet.config.merge[key];
+                        // 检查规则：m 必须存在，r/c 必须存在，且不能超出表格范围
+                        if (!m || m.r === undefined || m.c === undefined || m.r >= maxRow || m.c >= maxCol) {
+                            console.warn(`[Loader] 🛡️ 发现越界或无效合并，已移除: ${key} (Row:${m?.r}, Max:${maxRow})`);
+                            delete sheet.config.merge[key];
+                        }
+                    });
+                }
+            });
 
             // 2. 确保必然有一个激活的 Sheet (status: 1)
             let hasActive = false;
-            validData.forEach((sheet) => {
-                // 补全必要字段防止报错
-                if (!sheet.celldata) sheet.celldata = [];
-                if (!sheet.config) sheet.config = {};
-                // 初始化缩放比例 (基于文档)
-                if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
-
+            validData.forEach(sheet => {
                 if (sheet.status === 1) hasActive = true;
             });
 
             if (!hasActive) {
-                console.warn("[Iframe] 强制激活第 0 个 Sheet");
-                validData[0].status = 1;
+                console.warn("[Iframe] 未检测到激活的 Sheet，强制激活第 0 个。");
+                if (validData[0]) validData[0].status = 1;
             }
 
-            // 步骤 2: 备份原始数据
-            originalDataValidation = {};
+            // 步骤 2: 备份原始数据 (用于后续对比或导出)
+            originalDataValidation = {}; // 确保全局变量存在
             validData.forEach(sheet => {
                 if (sheet && sheet.order != null && sheet.dataVerification) {
                     originalDataValidation[sheet.order] = sheet.dataVerification;
                 }
             });
 
-            // 备份原始行高
+            // 备份原始行高 (用于 hack 修复行高问题)
             if (validData[0] && validData[0].config && validData[0].config.rowlen) {
-                originalRowlen = { ...validData[0].config.rowlen };
-                console.log("[Iframe] 原始行高已备份:", originalRowlen);
+                // originalRowlen 需要是全局变量
+                window.originalRowlen = { ...validData[0].config.rowlen };
+                console.log("[Iframe] 原始行高已备份。");
             } else {
-                originalRowlen = {};
+                window.originalRowlen = {};
             }
 
             // 步骤 3: 组装配置对象
             const finalOptions = {
-                container: 'luckysheet-container',
+                container: 'luckysheet-container', // 容器 ID
                 data: validData,
                 title: fileName,
-                lang: 'zh',
+                lang: 'zh', // 强制中文
 
-                // --- 【核心修复】强制指定默认字体配置，防止 '12px default' 报错 ---
-                defaultFontSize: 14,
+                // --- 【UI 与 字体配置】 ---
+                defaultFontSize: 14, // 修复 '12px default' 报错
                 limitSheetNameLength: false, // 允许长文件名
                 fontList: [
                     { "fontName": "微软雅黑", "url": "" },
+                    { "fontName": "宋体", "url": "" },
                     { "fontName": "Arial", "url": "" },
                     { "fontName": "Times New Roman", "url": "" }
                 ],
-                showinfobar: false,
-                // -----------------------------------------------------------
-
+                
+                // 显式开启所有功能，防止被 options 覆盖
+                showinfobar: false, // 隐藏顶部信息栏
+                allowUpdate: true,
+                enableAddRow: true,
+                enableAddBackTop: true,
+                
+                // 合并传入的自定义选项
                 ...options
             };
 
             // 步骤 4: 创建实例
             try {
-                console.log(`[Iframe] 准备创建实例...`);
-                luckysheet.create(finalOptions);
+                console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
+                window.luckysheet.create(finalOptions);
                 console.log(`[Iframe] 创建实例成功！`);
             } catch (createError) {
                 console.error("🔥 创建 Luckysheet 实例失败:", createError);
+                // 这里可以向父窗口发送一个错误通知
                 return;
             }
 
-            // 步骤 5: 延迟执行 Refresh 和 Hook (修复核心)
+            // 步骤 5: 延迟执行 Refresh 和 Hook
+            // 使用 setTimeout 确保 Luckysheet DOM 已经渲染完毕
             setTimeout(() => {
                 try {
-                    // 全局配置
+                    // 全局配置修正
                     if (window.luckysheet) {
-                        luckysheet.luckysheetautofixrowlen = false;
-                        console.log("[Iframe] 配置 luckysheetautofixrowlen = false。");
+                        luckysheet.luckysheetautofixrowlen = false; // 禁止自动行高，防止布局抖动
                     }
 
-                    // 尝试 Refresh (不依赖 getFlowdata 检查，直接尝试)
+                    // 尝试 Refresh
                     try {
                         luckysheet.refresh();
                         console.log("[Iframe] luckysheet.refresh() 执行成功。");
@@ -332,11 +377,13 @@
                         console.warn("[Iframe] refresh() 执行受阻 (通常不影响显示):", refreshError.message);
                     }
 
-                    // --- 设置 Hooks (完全移除 getFlowdata 依赖) ---
+                    // --- 设置 Hooks (不依赖 getFlowdata) ---
+                    // 确保 hooks 对象存在
                     if (window.luckysheet && !window.luckysheet.hooks) {
                         window.luckysheet.hooks = {};
                     }
 
+                    // 注册单元格更新钩子
                     window.luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
                         try {
                             // 使用 getAllSheets 替代 getFlowdata 以避免报错
@@ -348,20 +395,30 @@
                             if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
                                 const cell = currentSheet.data[r][c];
 
-                                // 执行原来的业务逻辑
-                                autoHighlightCell(r, c, cell);
-                                debouncedCalculate();
+                                // 执行业务逻辑: 高亮和防抖计算
+                                if (typeof autoHighlightCell === 'function') {
+                                    autoHighlightCell(r, c, cell);
+                                }
+                                if (typeof debouncedCalculate === 'function') {
+                                    debouncedCalculate();
+                                }
                             }
                         } catch (hookError) {
                             console.error("[Hook Error] 单元格更新处理出错:", hookError);
                         }
                     };
+                    
                     console.log("[Iframe] Hooks 设置完成。");
+
+                    // 发送渲染完成通知给父窗口
+                    if (window.parent) {
+                        window.parent.postMessage({ type: 'LUCKYSHEET_RENDER_FINISHED', status: 'success' }, '*');
+                    }
 
                 } catch (e) {
                     console.error(`[Iframe] 延迟配置阶段失败:`, e);
                 }
-            }, 300); // 增加延迟到 300ms 确保稳定
+            }, 300); // 300ms 延迟通常足够 Luckysheet 完成 DOM 挂载
         }
 
         /**
