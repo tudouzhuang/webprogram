@@ -420,7 +420,12 @@ const ProblemRecordTable = {
                 </el-table>
 
                 <!-- 1. 新增/编辑弹窗 (审核员) -->
-                <el-dialog :title="isEditMode ? '编辑问题' : '新增问题'" :visible.sync="dialogVisible" width="500px" :close-on-click-modal="false">
+                <el-dialog 
+                    :title="isEditMode ? '编辑问题' : '新增问题'" 
+                    :visible.sync="dialogVisible" 
+                    width="500px" 
+                    :close-on-click-modal="false"
+                    append-to-body>
                     <el-form :model="currentProblem" :rules="formRules" ref="problemForm" label-width="80px">
                         <el-form-item label="阶段" prop="stage">
                             <el-select v-model="currentProblem.stage" style="width:100%">

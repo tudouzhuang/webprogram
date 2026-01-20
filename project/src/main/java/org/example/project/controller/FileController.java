@@ -203,30 +203,65 @@ public class FileController {
     public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
         log.info("接收到删除文件的请求，文件ID: {}", fileId);
         try {
-            // 1. 从数据库查找文件记录
+            // 1. 从数据库查找主文件记录
             ProjectFile fileRecord = projectFileMapper.selectById(fileId);
             if (fileRecord == null) {
                 return ResponseEntity.notFound().build();
             }
 
-            // 2. 删除物理文件
-            Path filePath = Paths.get(uploadDir, fileRecord.getFilePath());
+            // =========================================================
+            // 【核心新增 1】：直接删除该文件专属的 split_output_ID 目录
+            // =========================================================
+            // 因为我们在 splitBySheet 里是这样创建的：split_output_ + fileId
+            // 所以删除时，直接把这个文件夹整个端掉，既快又干净，不用担心误删别人的
             try {
-                Files.deleteIfExists(filePath);
-                log.info("成功删除物理文件: {}", filePath);
-            } catch (IOException e) {
-                log.error("删除物理文件失败: {}", filePath, e);
+                Path splitOutputDir = Paths.get(uploadDir, fileRecord.getFilePath()).getParent().resolve("split_output_" + fileId);
+                deleteDirectory(splitOutputDir); // 调用下方的辅助方法
+                log.info("已清理关联的分割目录: {}", splitOutputDir);
+            } catch (Exception e) {
+                log.warn("清理分割目录失败 (可能不存在): {}", e.getMessage());
             }
 
-            // 3. 从数据库删除记录
-            projectFileMapper.deleteById(fileId);
-            log.info("成功从数据库删除文件记录, ID: {}", fileId);
+            // =========================================================
+            // 【核心新增 2】：级联删除数据库中的子文件记录 (防止脏数据)
+            // =========================================================
+            // 就算物理文件删了，数据库里的子记录也得删
+            try {
+                // 如果你还没在 Mapper 加 selectByParentId，请务必加上，或者用 MyBatis-Plus 的 Wrapper
+                List<ProjectFile> children = projectFileMapper.selectByParentId(fileId);
+                if (children != null && !children.isEmpty()) {
+                    for (ProjectFile child : children) {
+                        projectFileMapper.deleteById(child.getId());
+                    }
+                    log.info("级联删除了 {} 条子文件数据库记录", children.size());
+                }
+            } catch (Exception e) {
+                log.warn("级联删除数据库记录时出错 (可能是 Mapper 方法未定义): {}", e.getMessage());
+            }
 
-            return ResponseEntity.ok("文件删除成功");
+            // 2. 删除主文件的物理文件
+            Path filePath = Paths.get(uploadDir, fileRecord.getFilePath());
+            Files.deleteIfExists(filePath);
+
+            // 3. 从数据库删除主文件记录
+            projectFileMapper.deleteById(fileId);
+            
+            return ResponseEntity.ok("文件及关联数据删除成功");
 
         } catch (Exception e) {
             log.error("删除文件ID {} 时发生未知错误", fileId, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除文件时发生服务器内部错误。");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("删除失败: " + e.getMessage());
+        }
+    }
+    /**
+     * 【新增】递归删除目录及其内容
+     */
+    private void deleteDirectory(Path path) throws IOException {
+        if (Files.exists(path)) {
+            Files.walk(path)
+                .sorted(java.util.Comparator.reverseOrder()) // 倒序遍历：先删文件，再删文件夹
+                .map(Path::toFile)
+                .forEach(File::delete);
         }
     }
 
@@ -253,7 +288,11 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("服务器上找不到物理文件");
         }
 
-        File outputDirFile = new File(sourceFile.getParent(), "split_output");
+        // 【核心修改】使用 "split_output_" + fileId 作为独立目录，物理隔离不同文件的子Sheet
+        File outputDirFile = new File(sourceFile.getParent(), "split_output_" + fileId);
+        if (!outputDirFile.exists()) {
+            outputDirFile.mkdirs();
+        }
 
         // =======================================================
         // 【核心修复 1】同步重置状态 (必须在主线程！)
@@ -284,7 +323,7 @@ public class FileController {
                 if (splitFiles != null && splitFiles.length > 0) {
                     List<ProjectFile> batchList = new ArrayList<>(splitFiles.length);
                     Path relativeParentPath = Paths.get(fileRecord.getFilePath()).getParent();
-                    Path relativeOutputDirPath = relativeParentPath.resolve("split_output");
+                    Path relativeOutputDirPath = relativeParentPath.resolve("split_output_" + fileId);
 
                     for (File f : splitFiles) {
                         String fileName = f.getName();

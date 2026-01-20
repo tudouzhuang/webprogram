@@ -397,6 +397,11 @@ Vue.component('record-workspace-panel', {
             return isEditableStatus && this.activeTab !== 'recordMeta';
         },
         excelFiles() {
+            // 🔥【核心修复】增加安全检查：如果是 null/undefined，直接返回空数组
+            if (!this.associatedFiles || !Array.isArray(this.associatedFiles)) {
+                return [];
+            }
+
             return this.associatedFiles.filter(file =>
                 file.fileType && (file.fileType.includes('spreadsheetml') || file.fileType.includes('excel'))
             );
@@ -504,32 +509,137 @@ Vue.component('record-workspace-panel', {
                 this.isMetaDataLoading = false;
             }
         },
+        // 【新增】注入缩放控制 & 弹窗 CSS 补丁
+        injectZoomHandler(iframeWindow) {
+            if (!iframeWindow) return;
 
+            const doc = iframeWindow.document;
+            const win = iframeWindow;
+
+            // ==========================================================
+            // 🔥【终极修复】：CSS 核弹补丁
+            // ==========================================================
+            const styleId = 'luckysheet-zindex-patch';
+            // 移除旧的（如果存在），确保注入最新的
+            const oldStyle = doc.getElementById(styleId);
+            if (oldStyle) oldStyle.remove();
+
+            const style = doc.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                /* 1. 提升所有 Luckysheet 弹窗 (数据验证、插入图片、查找替换等) */
+                .luckysheet-modal-dialog,
+                .luckysheet-model-input-box,
+                .luckysheet-mb-container {
+                    z-index: 2147483647 !important; /* Max Int 32 */
+                }
+
+                /* 2. 提升遮罩层 (Mask) */
+                .luckysheet-modal-dialog-mask {
+                    z-index: 2147483646 !important;
+                    display: block !important; 
+                    background-color: rgba(0, 0, 0, 0.3) !important;
+                }
+
+                /* 3. 提升右键菜单 (Context Menu) */
+                .luckysheet-rightgclick-menu,
+                .luckysheet-cols-menu {
+                    z-index: 2147483647 !important;
+                }
+
+                /* 4. 提升下拉列表 (Dropdowns) */
+                .luckysheet-dataVerification-dropdown-List {
+                    z-index: 2147483647 !important;
+                }
+                
+                /* 5. 修复图片上传框内容溢出 */
+                .luckysheet-modal-dialog-content {
+                    overflow: visible !important;
+                }
+                
+                /* 6. 强制修正弹窗位置 (防止被 fixed 定位导致跑偏) */
+                .luckysheet-modal-dialog {
+                    position: fixed !important;
+                }
+            `;
+            doc.head.appendChild(style);
+            console.log('[Review Panel] Luckysheet Z-Index 核弹补丁已注入！');
+
+            // ==========================================================
+            // 【修复 3】：缩放支持 (防止缩放后点击坐标偏移导致弹窗点不开)
+            // ==========================================================
+            const container = doc.getElementById('luckysheet');
+            if (!container) return;
+            if (container.dataset.hasZoomListener) return;
+            container.dataset.hasZoomListener = "true";
+
+            container.addEventListener('wheel', function (event) {
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    const luckysheet = win.luckysheet;
+                    if (!luckysheet) return;
+
+                    let currentRatio = luckysheet.zoomRatio || 1;
+                    const step = 0.05;
+                    let newRatio = event.deltaY < 0 ? currentRatio + step : currentRatio - step;
+                    newRatio = Math.max(0.4, Math.min(newRatio, 2.0));
+                    newRatio = parseFloat(newRatio.toFixed(2));
+
+                    if (typeof luckysheet.setZoomRatio === 'function') {
+                        luckysheet.setZoomRatio(newRatio);
+                    } else {
+                        luckysheet.zoomRatio = newRatio;
+                    }
+
+                    // 强制刷新画布，确保坐标对齐
+                    try {
+                        if (win.luckysheet.jfrefreshgrid) win.luckysheet.jfrefreshgrid();
+                        else if (win.luckysheet.refresh) win.luckysheet.refresh();
+                    } catch (e) { }
+                }
+            }, { passive: false });
+        },
+        // 【核心修正】加载逻辑：强制前端解析
         loadSheetInIframe(fileInfo) {
-            if (!fileInfo || !fileInfo.id) return;
-
-            this.iframesLoaded[fileInfo.id] = true;
-
+            if (!fileInfo) return;
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
             if (targetIframe && targetIframe.contentWindow) {
-                const options = { allowUpdate: this.canEdit, showtoolbar: this.canEdit, showinfobar: false };
 
-                // 【【【 核心修改在这里 】】】
-                // 我们在原有的 URL 后面，加上了 &format=json 这个参数。
-                // 注意：因为前面已经有了一个 '?' (用于时间戳)，所以我们用 '&' 来连接新的参数。
-                const fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+                // ===== 您的滚动锁定逻辑 (保持不变) =====
+                let lastScrollY = window.scrollY;
+                const preventScroll = e => e.preventDefault();
+                window.addEventListener('scroll', preventScroll, { passive: false });
+                setTimeout(() => {
+                    window.removeEventListener('scroll', preventScroll);
+                    window.scrollTo(0, lastScrollY);
+                }, 1500);
 
-                console.log(`[Workspace] 准备向 iframe 发送加载指令, URL: ${fileUrl}`); // 增加一条日志，方便调试
+                const options = { allowUpdate: true, showtoolbar: true };
+
+                // 【关键修改】在原始 URL 后面强制追加 `&format=json` (或 `?format=json`)
+                // 这样 iframe 内部的加载器就会收到JSON，而不是二进制文件
+                let fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
+                if (fileUrl.includes('?')) {
+                    fileUrl += '&format=json';
+                } else {
+                    fileUrl += '?format=json';
+                }
+
+                console.log(`[Parent Panel] 准备向 iframe 发送加载指令, 强制使用 JSON 格式, URL: ${fileUrl}`);
 
                 const message = {
                     type: 'LOAD_SHEET',
-                    payload: { fileUrl, fileName: fileInfo.fileName, options: { lang: 'zh', ...options } }
+                    payload: {
+                        fileUrl: fileUrl, // 使用我们修改过的 URL
+                        fileName: fileInfo.fileName,
+                        options: { lang: 'zh', ...options }
+                    }
                 };
-                targetIframe.contentWindow.postMessage(message, window.location.origin);
-            } else {
-                console.warn(`[Workspace] 尝试加载 iframe 内容失败，未能找到 ref 为 'iframe-${fileInfo.id}' 的 iframe 实例。`);
+
+                // 发送消息给 iframe
+                this.sendMessageToIframe(targetIframe, message);
             }
         },
 
@@ -565,55 +675,104 @@ Vue.component('record-workspace-panel', {
         /**
                  * 【【最终修正版】】 "保存在线修改" 按钮的处理器。
                  */
+        // 【移植】保存按钮点击事件
         handleSaveDraft() {
-            // 1. 前置状态检查
+            // 1. 状态检查
             if (this.isSaving) {
                 this.$message.warning('正在保存中，请稍候...');
                 return;
             }
 
-            // 2. 【修复点】直接使用 computed 属性，不再重复定义局部变量
-            // 同时增加空值检查，防止 activeFile 为 undefined
-            if (!this.activeFile) {
-                this.$message.error('错误：当前没有可保存的文件！');
+            // 2. 获取当前文件 (Workspace 中直接用 activeFile)
+            const currentFile = this.activeFile;
+            if (!currentFile) {
+                this.$message.error("当前没有活动的表格可供保存。");
                 return;
             }
 
-            // 3. 获取 iframe 引用
-            const iframeRef = this.$refs['iframe-' + this.activeFile.id];
+            // 3. 查找 iframe 实例
+            const iframeRef = this.$refs['iframe-' + currentFile.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
             if (!targetIframe) {
-                this.$message.error('错误：无法找到对应的编辑器实例！');
+                this.$message.error('找不到编辑器实例！');
                 return;
             }
 
-            // 4. 更新UI状态，并向用户显示提示
+            // 4. 更新UI状态
             this.isSaving = true;
-            this.$message.info(`正在从编辑器获取 "${this.activeFile.documentType}" 的最新数据...`);
+            this.$message.info(`正在从编辑器获取 "${currentFile.documentType}" 的最新数据...`);
 
-            console.log('【父组件】准备发送 GET_DATA_AND_IMAGES 指令给 iframe...');
+            // 5. 发送指令 (完全照搬 Review Panel 的 payload 结构)
+            if (targetIframe.contentWindow) {
+                targetIframe.contentWindow.postMessage({
+                    type: 'GET_DATA_AND_IMAGES',
+                    payload: {
+                        purpose: 'save-draft',
+                        fileId: currentFile.id,
+                        documentType: currentFile.documentType
+                    }
+                }, window.location.origin);
+            }
+        },
 
-            // 5. 发送指令
-            targetIframe.contentWindow.postMessage({
-                type: 'GET_DATA_AND_IMAGES',
-                payload: {
-                    purpose: 'save-draft',
-                    fileId: this.activeFile.id,
-                    documentType: this.activeFile.documentType
-                }
-            }, window.location.origin);
-
-            console.log('【父组件】GET_DATA_AND_IMAGES 指令已发送！等待 iframe 响应...');
+        sendMessageToIframe(iframe, message) {
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage(message, window.location.origin);
+            }
         },
 
         // 2. "提交审核" 按钮的处理器
-        handleTriggerReview() {
-            this.$confirm('您确定所有修改都已保存，并准备好提交给审核员吗？', '确认提交', {
-                confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
-            }).then(() => {
-                this.triggerReviewFlow();
-            }).catch(() => { });
+        // 【核心修改】提交前先校验问题记录状态
+        async handleTriggerReview() {
+            // 1. 先开启 loading 防止重复点击
+            this.isSubmitting = true;
+
+            try {
+                // 2. 调用 API 获取当前记录的所有问题
+                // 注意：这里我们单独请求一次最新的问题列表，确保数据是最准的
+                const res = await axios.get(`/api/process-records/${this.recordId}/problems`);
+                const problems = res.data || [];
+
+                // 3. 检查是否存在状态为 'OPEN' (待解决) 的问题
+                // 逻辑：只要有 1 个问题是 OPEN，就不让提交
+                const openProblems = problems.filter(p => p.status === 'OPEN');
+
+                if (openProblems.length > 0) {
+                    this.$alert(
+                        `当前还有 <strong>${openProblems.length}</strong> 个问题处于“待解决”状态。<br>请先在【问题记录】中解决所有问题并上传修复截图，才能提交审核。`,
+                        '无法提交',
+                        {
+                            confirmButtonText: '去解决',
+                            type: 'error',
+                            dangerouslyUseHTMLString: true,
+                            callback: () => {
+                                // 贴心地帮用户切到问题记录 Tab
+                                this.activeTab = 'problemRecord';
+                            }
+                        }
+                    );
+                    return; // ⛔️ 中断提交流程
+                }
+
+                // 4. 校验通过，执行原有的确认流程
+                this.$confirm('您确定所有修改都已保存，并准备好提交给审核员吗？', '确认提交', {
+                    confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+                }).then(() => {
+                    this.triggerReviewFlow();
+                }).catch(() => {
+                    // 用户点击取消，什么都不做
+                });
+
+            } catch (error) {
+                console.error(error);
+                this.$message.error('校验问题记录失败，请检查网络');
+            } finally {
+                // 只有在没进入 triggerReviewFlow 的情况下才在这里关 loading
+                // 如果进入了 triggerReviewFlow，那里会负责关 loading
+                // 这里我们做一个简单的延时判断，或者依赖 triggerReviewFlow 覆盖 isSubmitting
+                setTimeout(() => { this.isSubmitting = false; }, 500);
+            }
         },
 
         async triggerReviewFlow() {
@@ -632,83 +791,98 @@ Vue.component('record-workspace-panel', {
 
 
         async messageEventListener(event) {
-            // 安全检查，确保消息来自同源且有数据
+            // 1. 统一的安全检查
             if (event.origin !== window.location.origin || !event.data || !event.data.type) {
                 return;
             }
 
-            console.log('[Parent] 接收到 message 事件:', event.data); // 打印所有收到的消息
-
+            console.log('[Parent Panel] 接收到 message 事件:', event.data);
             const { type, payload } = event.data;
 
             // =================================================================
             //  ↓↓↓ 分支 1: 处理“保存”操作的回调数据 ↓↓↓
             // =================================================================
+            // =================================================================
+            //  ↓↓↓ 分支 1: 处理“保存”操作的回调数据 (移植自 Review Panel) ↓↓↓
+            // =================================================================
             if (type === 'SHEET_DATA_WITH_IMAGES_RESPONSE') {
 
-                console.log('[Parent] 消息类型匹配！正在处理 SHEET_DATA_WITH_IMAGES_RESPONSE...');
-                console.log('[Parent] 解构后的 payload:', payload);
-
+                // a. 验证 purpose
                 if (!payload || payload.purpose !== 'save-draft') {
-                    console.warn(`[Parent] payload.purpose 不匹配 'save-draft'，已忽略。`);
+                    // console.warn(`[Workspace] purpose 不匹配，忽略。`);
                     return;
                 }
 
-                console.log('[Parent] ✅ Purpose 检查通过，开始执行保存逻辑...');
+                // b. 查找文件对象
+                // 注意：Review 用 allFiles，Workspace 用 associatedFiles，这是唯一的变量名区别
+                const currentFile = this.associatedFiles.find(file => file.id === payload.fileId);
+                if (!currentFile) {
+                    this.$message.error('保存失败：找不到与返回数据匹配的文件记录。');
+                    this.isSaving = false;
+                    return;
+                }
+
+                console.log(`[Workspace] ✅ 开始保存文件: "${currentFile.fileName}"`);
+
                 try {
+                    // c. 【核心】直接执行导出 (完全照搬，不清洗数据)
                     const exportBlob = await exportWithExcelJS(payload);
+
+                    // d. 构造表单
                     const formData = new FormData();
-                    const newFileName = `${payload.documentType}_${this.recordInfo.partName}_${this.recordId}.xlsx`;
-                    formData.append('file', exportBlob, newFileName);
+                    const fileName = currentFile.fileName || `${payload.documentType}.xlsx`;
+                    formData.append('file', exportBlob, fileName);
 
-                    await axios.post(`/api/process-records/${this.recordId}/save-draft?fileId=${payload.fileId}`, formData, {
-                        headers: { 'Content-Type': 'multipart/form-data' }
-                    });
+                    // e. 调用接口
+                    const apiUrl = `/api/process-records/${this.recordId}/save-draft?fileId=${currentFile.id}`;
 
-                    this.$message.success(`"${payload.documentType}" 已成功保存！`);
+                    // 🔥【关键差异】Review Panel 不需要处理 ID 变更，但 Workspace 必须处理！
+                    // 否则你会重新加载旧文件，导致保存看起来“失效”了。
+                    const response = await axios.post(apiUrl, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-                    // 【【【 新增逻辑：保存成功后，触发状态栏刷新 】】】
-                    // 清空实时统计数据，让状态栏显示已保存的数据
+                    this.$message.success(`文件 "${fileName}" 已成功保存！`);
+
+                    // f. 【核心修复】检查是否产生了新 ID (版本迭代)
+                    const responseData = response.data.data || response.data;
+                    let fileToLoad = currentFile;
+
+                    if (responseData && responseData.id && responseData.id !== currentFile.id) {
+                        console.log(`[Workspace] 检测到新版本 ID: ${currentFile.id} -> ${responseData.id}`);
+                        // 更新本地列表，确保下次操作用的是新 ID
+                        const index = this.associatedFiles.indexOf(currentFile);
+                        if (index !== -1) {
+                            this.associatedFiles.splice(index, 1, responseData);
+                            fileToLoad = responseData; // 准备加载新文件
+
+                            // 如果它是当前选中的文件，更新选中引用
+                            if (this.activeFile && this.activeFile.documentType === fileToLoad.documentType) {
+                                // 这一步通常由 computed 属性自动处理，但为了保险：
+                                // this.activeFile = fileToLoad; 
+                            }
+                        }
+                    }
+
+                    // g. 无感刷新 (重载 iframe)
+                    console.log(`[Workspace] 执行刷新，加载 ID: ${fileToLoad.id}`);
+                    this.loadSheetInIframe(fileToLoad);
+
+                    // h. 触发统计刷新
                     this.currentLiveStats = null;
-
-                    // 通过 ref 调用子组件的方法，让它重新从后端拉取最新的持久化统计数据
                     if (this.$refs.statusBarRef) {
                         this.$refs.statusBarRef.fetchSavedStats();
                     }
 
-                    // 刷新当前Tab的内容 (您的原有逻辑)
-                    // 注意：为了避免竞争条件，最好在统计刷新后再重新加载iframe，或者接受短暂的数据不一致
-                    const fileToReload = this.associatedFiles.find(f => f.documentType === payload.documentType);
-                    if (fileToReload) {
-                        this.loadSheetInIframe(fileToReload);
-                    }
-
                 } catch (error) {
-                    this.$message.error("保存失败: " + (error.message || '未知错误'));
-                    console.error("在线保存文件时出错:", error);
+                    this.$message.error("保存文件时出错！");
+                    console.error("保存失败:", error);
                 } finally {
                     this.isSaving = false;
                 }
-
-                // =================================================================
-                //  ↓↓↓ 分支 2: 【【【 新增 】】】 处理实时统计更新的消息 ↓↓↓
-                // =================================================================
             } else if (type === 'STATS_UPDATE') {
 
-                // 1. 获取当前激活的 Excel 文件信息
-                const activeFile = this.excelFiles.find(f => f.documentType === this.activeTab);
+                console.log('[Parent Panel] 接收到实时统计更新:', payload);
+                this.currentLiveStats = payload;
 
-                // 2. 【核心修复】: 只有当消息来源看起来像是当前激活的文件时，才更新 UI
-                // (由于 Luckysheet 没发 ID，我们只能做简单的防御：确认当前确实在看 Excel)
-                if (activeFile) {
-                    // 如果需要在此时更新数据，直接赋值
-                    this.currentLiveStats = payload;
-                } else {
-                    console.warn('[Workspace] 收到统计更新，但当前不在 Excel Tab，已忽略。');
-                }
-
-            } else if (type === 'IFRAME_CLICKED') {
-                // 可以在这里处理 iframe 点击事件，如果需要的话
             }
         },
 
@@ -883,7 +1057,7 @@ Vue.component('record-workspace-panel', {
                 if (this.activeTab === fileInfo.documentType) {
                     const currentCount = this.fileRefreshKeys[fileInfo.id] || 0;
                     this.$set(this.fileRefreshKeys, fileInfo.id, currentCount + 1);
-                    
+
                     console.log(`[Workspace] 文件 ${fileInfo.id} 已替换，触发组件重绘 (Key: ${currentCount + 1})`);
                 }
 

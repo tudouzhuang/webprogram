@@ -418,7 +418,32 @@
                                     try {
                                         LuckyExcel.transformExcelToLucky(fileBlob,
                                             function (exportJson, luckysheetfile) {
-                                                // 成功回调：检查内容是否为空
+
+                                                // 🔥🔥🔥🔥🔥 [调试探针 START] 🔥🔥🔥🔥🔥
+                                                console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
+
+                                                if (exportJson.sheets && exportJson.sheets.length > 0) {
+                                                    exportJson.sheets.forEach((sheet, index) => {
+                                                        console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
+
+                                                        // 检查 dataVerification 字段
+                                                        if (sheet.dataVerification) {
+                                                            const rules = Object.keys(sheet.dataVerification);
+                                                            if (rules.length > 0) {
+                                                                console.log(`   ✅ 发现 ${rules.length} 条验证规则:`, sheet.dataVerification);
+                                                            } else {
+                                                                console.warn(`   ⚠️ dataVerification 对象存在，但是是空的 (Empty Object)`);
+                                                            }
+                                                        } else {
+                                                            console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
+                                                        }
+                                                    });
+                                                } else {
+                                                    console.error("❌ 解析结果中没有找到 sheets！");
+                                                }
+                                                console.groupEnd();
+                                                // 🔥🔥🔥🔥🔥 [调试探针 END] 🔥🔥🔥🔥🔥
+
                                                 if (exportJson.sheets == null || exportJson.sheets.length == 0) {
                                                     reject(new Error('EMPTY_CONTENT'));
                                                 } else {
@@ -426,7 +451,6 @@
                                                 }
                                             },
                                             function (err) {
-                                                // 库内部报错回调
                                                 console.error("LuckyExcel internal error:", err);
                                                 reject(new Error('PARSE_ERROR'));
                                             }
@@ -549,21 +573,55 @@
                     loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
                 }
             } else if (type === 'GET_DATA_AND_IMAGES') {
-                if (window.luckysheet) {
-                    const liveSheets = luckysheet.getAllSheets();
-                    const mergedSheets = mergeDataWithValidation(liveSheets, originalDataValidation);
+                try {
+                    console.group("🚀 [Iframe] 收到提取数据指令");
 
-                    console.log(`[Iframe] ✅ 成功融合实时数据。准备回发...`);
-                    window.parent.postMessage({
+                    // 1. 核心动作：强制退出编辑模式
+                    // (如果不做这一步，正在编辑的单元格内容和验证规则不会保存)
+                    if (window.luckysheet && window.luckysheet.exitEditMode) {
+                        window.luckysheet.exitEditMode();
+                        console.log("-> 已执行 exitEditMode，确保数据已提交");
+                    }
+
+                    // 2. 获取原始数据 (深拷贝以防引用问题)
+                    const rawSheets = window.luckysheet.getAllSheets();
+                    const sheets = JSON.parse(JSON.stringify(rawSheets));
+
+                    // 3. [调试探针] 检查第一张表的数据验证是否存在
+                    if (sheets.length > 0) {
+                        const firstSheet = sheets[0];
+                        // 兼容检查: dataVerification 可能在根目录，也可能在 config 里
+                        const rules = firstSheet.dataVerification || (firstSheet.config && firstSheet.config.dataVerification);
+
+                        if (rules) {
+                            const count = Object.keys(rules).length;
+                            console.log(`✅ [Iframe数据检查] Sheet1 包含 ${count} 条验证规则`);
+                            if (count > 0) console.log("-> 规则快照:", rules);
+                        } else {
+                            console.warn("⚠️ [Iframe数据检查] Sheet1 没有检测到验证规则 (dataVerification 为空)");
+                        }
+                    }
+
+                    // 4. 发送数据回父窗口
+                    const responsePayload = {
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
                         payload: {
-                            sheets: mergedSheets,
-                            purpose: payload.purpose,
                             fileId: payload.fileId,
-                            documentType: payload.documentType
+                            documentType: payload.documentType,
+                            purpose: payload.purpose,
+                            sheets: sheets, // 👈 关键：这里传的是纯净的 sheets 数据
+                            images: window.luckysheet.getLuckysheetfile()[0].images
                         }
-                    }, window.location.origin);
+                    };
+
+                    console.log("-> 数据打包完毕，发送回父窗口...");
+                    event.source.postMessage(responsePayload, event.origin);
+                    console.groupEnd();
+
+                } catch (e) {
+                    console.error('[Iframe] 获取数据失败:', e);
                 }
+                return;
             } else if (type === 'EXPORT_SHEET') {
                 if (window.luckysheet) {
                     handleExport(payload.fileName || '导出文件.xlsx');

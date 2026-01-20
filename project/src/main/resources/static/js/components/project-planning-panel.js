@@ -227,23 +227,55 @@ Vue.component("project-planning-panel", {
                             <i class="el-icon-menu"></i> 文件目录 ({{ planningDocuments.length }})
                         </div>
                         <div class="file-list">
-                            <div 
-                                v-for="file in planningDocuments" 
-                                :key="file.id"
-                                class="file-item"
-                                :class="{ 'active': activeFileId === file.id.toString() }"
-                                @click="switchFileInReader(file)">
+                            <div v-for="file in planningDocuments.filter(f => f.documentType.startsWith('PLANNING_DOCUMENT'))" :key="file.id">
                                 
-                                <div class="d-flex align-items-center w-100">
-                                    <i v-if="file.documentType.startsWith('PLANNING_DOCUMENT')" class="el-icon-s-grid mr-2 text-primary"></i>
-                                    <i v-else class="el-icon-document mr-2 text-warning"></i>
+                                <div class="file-item" 
+                                    :class="{ 'active': activeFileId === file.id.toString() }"
+                                    @click="switchFileInReader(file)">
                                     
-                                    <span class="file-name text-truncate" :title="getCleanFileName(file)">
-                                        {{ getCleanFileName(file) }}
-                                    </span>
-                                    
-                                    <i v-if="canEdit && file.documentType !== 'SPLIT_CHILD_SHEET'" class="el-icon-delete delete-icon ml-auto" @click.stop="deleteFile(file)"></i>
+                                    <div class="d-flex align-items-center w-100">
+                                        <div v-if="getChildFiles(file.id).length > 0" 
+                                            class="mr-2 cursor-pointer"
+                                            @click.stop="toggleExpand(file.id)"
+                                            style="width: 20px; text-align: center;">
+                                            <i :class="expandedFiles[file.id] ? 'el-icon-caret-bottom' : 'el-icon-caret-right'" 
+                                            style="color: #909399;"></i>
+                                        </div>
+                                        <div v-else class="mr-2" style="width: 20px;"></div>
+                        
+                                        <i class="el-icon-s-grid mr-2 text-primary"></i>
+                                        
+                                        <span class="file-name text-truncate" :title="getCleanFileName(file)">
+                                            {{ getCleanFileName(file) }}
+                                        </span>
+                                        
+                                        <i v-if="canEdit" class="el-icon-delete delete-icon ml-auto" @click.stop="deleteFile(file)"></i>
+                                    </div>
                                 </div>
+                        
+                                <el-collapse-transition>
+                                    <div v-if="expandedFiles[file.id]" style="background-color: #fafafa; border-bottom: 1px solid #ebeef5;">
+                                        <div v-for="child in getChildFiles(file.id)" 
+                                            :key="child.id"
+                                            class="file-item"
+                                            :class="{ 'active': activeFileId === child.id.toString() }"
+                                            style="padding-left: 50px; font-size: 13px;"
+                                            @click="switchFileInReader(child)">
+                                            
+                                            <div class="d-flex align-items-center w-100">
+                                                <i class="el-icon-document mr-2 text-warning"></i>
+                                                <span class="file-name text-truncate" :title="child.fileName">
+                                                    {{ child.fileName }}
+                                                </span>
+                                                </div>
+                                        </div>
+                                        
+                                        <div v-if="getChildFiles(file.id).length === 0" class="text-muted text-center py-2" style="font-size: 12px;">
+                                            暂无子Sheet
+                                        </div>
+                                    </div>
+                                </el-collapse-transition>
+                        
                             </div>
                         </div>
                     </div>
@@ -490,6 +522,7 @@ Vue.component("project-planning-panel", {
     },
     data() {
         return {
+            expandedFiles: {},
             isLoading: false,
             projectInfo: null,
             fileList: [],
@@ -527,22 +560,55 @@ Vue.component("project-planning-panel", {
     computed: {
         planningDocuments() {
             if (!this.fileList) return [];
-            const docs = this.fileList.filter(
+            
+            // 1. 过滤有效文件
+            let docs = this.fileList.filter(
                 (f) => f.documentType && (f.documentType.startsWith("PLANNING_DOCUMENT") || f.documentType === "SPLIT_CHILD_SHEET")
             );
+
+            // 2. 定义数字提取器 (用于自然排序)
+            const getNumber = (str) => {
+                if (!str) return 9999999;
+                // 去掉前缀，避免 "PLANNING_DOCUMENT_1" 这种干扰
+                const clean = str.replace(/^PLANNING_DOCUMENT_/i, '').trim();
+                // 匹配开头的数字
+                const match = clean.match(/^(\d+)/); 
+                return match ? parseInt(match[1], 10) : 9999999;
+            };
+
+            // 3. 执行排序
             docs.sort((a, b) => {
-                const typeA = a.documentType.startsWith("PLANNING_DOCUMENT") ? 0 : 1;
-                const typeB = b.documentType.startsWith("PLANNING_DOCUMENT") ? 0 : 1;
-                if (typeA !== typeB) return typeA - typeB;
-                const getNum = (name) => {
-                    const match = name.match(/^(\d+)/);
-                    return match ? parseInt(match[1]) : Number.MAX_SAFE_INTEGER;
-                };
-                const numA = getNum(a.fileName);
-                const numB = getNum(b.fileName);
-                if (numA !== numB) return numA - numB;
-                return a.fileName.localeCompare(b.fileName, "zh-CN", { numeric: true });
+                // --- 规则 A: 主文件(PLANNING) 永远置顶 ---
+                const isMainA = a.documentType.startsWith("PLANNING_DOCUMENT");
+                const isMainB = b.documentType.startsWith("PLANNING_DOCUMENT");
+                
+                if (isMainA && !isMainB) return -1; // A是主文件，A排前
+                if (!isMainA && isMainB) return 1;  // B是主文件，B排前
+
+                // --- 规则 B: 如果都是主文件，或都是子文件 ---
+                
+                // B1. 尝试按父ID分组排序 (如果你希望子文件紧跟父文件)
+                // if (a.parentId !== b.parentId) {
+                //    return (a.parentId || 0) - (b.parentId || 0);
+                // }
+
+                // B2. 【核心】提取数字进行比较 (解决 1, 10, 2 问题)
+                const numA = getNumber(a.fileName);
+                const numB = getNumber(b.fileName);
+
+                if (numA !== numB) {
+                    return numA - numB; // 按数字升序: 1, 2, 10
+                }
+
+                // B3. 数字一样（或无数字），按中文/英文自然语序兜底
+                // numeric: true 也能处理文件名中间的数字
+                return (a.fileName || '').localeCompare(b.fileName || '', 'zh-CN', { numeric: true });
             });
+
+            // 4. (可选) 打印结果验证
+            // const names = docs.map(d => d.fileName);
+            // console.log('最终排序结果:', names);
+
             return docs;
         },
         mainFile() {
@@ -638,7 +704,7 @@ Vue.component("project-planning-panel", {
                 if (firstChild) {
                     // 【优化体验】如果找到了子文件，不要报错拦截，直接自动切过去！
                     this.$message.success('检测到该文件已优化，正在为您打开第一个子 Sheet...');
-
+                    this.$set(this.expandedFiles, file.id, true);
                     // 切换选中 ID 为第一个子文件
                     this.activeFileId = firstChild.id.toString();
 
@@ -966,7 +1032,7 @@ Vue.component("project-planning-panel", {
             // --- 第一重确认 ---
             this.$confirm(
                 `您确定要删除文件 "${file.fileName}" 吗？${subMsg}`,
-                '删除确认 (1/2)',
+                '删除确认',
                 {
                     confirmButtonText: '继续',
                     cancelButtonText: '取消',
@@ -977,7 +1043,7 @@ Vue.component("project-planning-panel", {
 
                 setTimeout(() => {
                     // --- 第二重确认 ---
-                    this.$confirm(`⚠️ 严重警告：此操作不可恢复！\n\n确认要永久删除这 ${filesToDelete.length} 个文件吗？`, '最终确认 (2/2)', {
+                    this.$confirm(`⚠️ 严重警告：此操作不可恢复！\n\n确认要永久删除这 ${filesToDelete.length} 个文件吗？`, '最终确认', {
                         confirmButtonText: '确定永久删除',
                         cancelButtonText: '放弃',
                         confirmButtonClass: 'el-button--danger',
@@ -1162,6 +1228,33 @@ Vue.component("project-planning-panel", {
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             // 保留2位小数
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        },
+
+        // 【新增】获取指定父文件的子文件列表
+        getChildFiles(parentId) {
+            let children = this.fileList.filter(f => f.parentId === parentId);
+            
+            // 对子文件也应用自然排序
+            return children.sort((a, b) => {
+                const getNum = (s) => {
+                    const match = s.match(/^(\d+)/);
+                    return match ? parseInt(match[1], 10) : 999999;
+                };
+                const numA = getNum(a.fileName);
+                const numB = getNum(b.fileName);
+                if (numA !== numB) return numA - numB;
+                return a.fileName.localeCompare(b.fileName, 'zh-CN', { numeric: true });
+            });
+        },
+
+        // 【新增】切换展开/折叠状态
+        toggleExpand(fileId) {
+            // Vue 不能检测对象属性的添加，所以必须用 $set
+            if (this.expandedFiles[fileId]) {
+                this.$delete(this.expandedFiles, fileId);
+            } else {
+                this.$set(this.expandedFiles, fileId, true);
+            }
         },
     },
 
