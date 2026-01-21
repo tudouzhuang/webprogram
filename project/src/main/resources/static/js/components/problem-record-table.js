@@ -318,106 +318,114 @@ const ProblemRecordTable = {
                     <el-button v-if="isReviewerMode" type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                 </div>
 
-                <el-table :data="problems" v-loading="isLoading" stripe border style="width: 100%">
-                    <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
-                    <el-table-column prop="stage" label="阶段" width="80" align="center"></el-table-column>
-                    <el-table-column prop="problemPoint" label="问题点" min-width="100" show-overflow-tooltip></el-table-column>
-                    
-                    <el-table-column label="描述" min-width="140">
-                        <template slot-scope="scope">
-                            <span :title="scope.row.description" class="text-truncate d-block">{{ scope.row.description }}</span>
-                        </template>
-                    </el-table-column>
+                    <el-table 
+                        :data="problems" 
+                        v-loading="isLoading" 
+                        stripe 
+                        border 
+                        style="width: 100%"
+                        :row-style="{ height: '150px' }" 
+                    >
+                        <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
+                        <el-table-column prop="stage" label="阶段" width="50" align="center"></el-table-column>
+                        <el-table-column prop="problemPoint" label="问题点" min-width="60" show-overflow-tooltip></el-table-column>
+                        
+                        <el-table-column label="描述" min-width="100">
+                            <template slot-scope="scope">
+                                <span :title="scope.row.description" class="text-truncate d-block">{{ scope.row.description }}</span>
+                            </template>
+                        </el-table-column>
 
-                    <el-table-column label="问题截图" width="100" align="center">
-                        <template slot-scope="scope">
-                            <div class="d-flex justify-content-center align-items-center">
-                                <el-image 
-                                    v-if="scope.row.screenshotPath"
-                                    style="width: 40px; height: 40px; border:1px solid #eee; border-radius:4px; margin-right:4px;"
-                                    :src="scope.row.screenshotPath" 
-                                    :preview-src-list="[scope.row.screenshotPath]">
-                                </el-image>
-                                <el-button 
-                                    v-if="isReviewerMode && scope.row.status === 'OPEN'"
-                                    type="text" 
-                                    :icon="scope.row.screenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
-                                    :title="scope.row.screenshotPath ? '更换图片' : '上传图片'"
-                                    @click="openScreenshotUploader(scope.row, 'problem')">
-                                </el-button>
-                            </div>
-                        </template>
-                    </el-table-column>
-
-                    <el-table-column label="修复证明" min-width="150">
-                        <template slot-scope="scope">
-                            <div class="d-flex align-items-center">
-                                <el-image 
-                                    v-if="scope.row.fixScreenshotPath"
-                                    style="width: 40px; height: 40px; flex-shrink:0; border:1px solid #67c23a; border-radius:4px; margin-right:8px;"
-                                    :src="scope.row.fixScreenshotPath" 
-                                    :preview-src-list="[scope.row.fixScreenshotPath]">
-                                </el-image>
-                                <div v-if="scope.row.fixScreenshotPath || scope.row.fixComment" style="font-size:0.85em; line-height:1.2; flex-grow:1; overflow:hidden;">
-                                    <div class="text-success font-weight-bold">已修复</div>
-                                    <div class="text-muted text-truncate" :title="scope.row.fixComment">{{ scope.row.fixComment || '无备注' }}</div>
+                        <el-table-column label="问题截图" width="200" align="center">
+                            <template slot-scope="scope">
+                                <div class="d-flex justify-content-center align-items-center">
+                                    <el-image 
+                                        v-if="scope.row.screenshotPath"
+                                        style="width: 180px; height: 180px; border:1px solid #eee; border-radius:4px; margin-right:4px;"
+                                        :src="scope.row.screenshotPath" 
+                                        :preview-src-list="[scope.row.screenshotPath]">
+                                    </el-image>
+                                    <el-button 
+                                        v-if="isReviewerMode && scope.row.status === 'OPEN'"
+                                        type="text" 
+                                        :icon="scope.row.screenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
+                                        :title="scope.row.screenshotPath ? '更换图片' : '上传图片'"
+                                        @click="openScreenshotUploader(scope.row, 'problem')">
+                                    </el-button>
                                 </div>
-                                <div v-else class="text-muted small flex-grow-1">(待修复)</div>
-                                <el-button 
-                                    v-if="isDesignerMode && scope.row.status === 'OPEN'"
-                                    type="text" 
-                                    :icon="scope.row.fixScreenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
-                                    :title="scope.row.fixScreenshotPath ? '更换证明' : '上传证明'"
-                                    @click="openScreenshotUploader(scope.row, 'fix')">
-                                </el-button>
-                            </div>
-                        </template>
-                    </el-table-column>
+                            </template>
+                        </el-table-column>
 
-                    <el-table-column label="状态" width="85" align="center">
-                        <template slot-scope="scope">
-                            <el-tag v-if="scope.row.status === 'OPEN'" type="danger" size="small" effect="dark">待解决</el-tag>
-                            <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning" size="small" effect="dark">待复核</el-tag>
-                            <el-tag v-else type="success" size="small" effect="dark">已关闭</el-tag>
-                        </template>
-                    </el-table-column>
+                        <el-table-column label="修复证明" min-width="200">
+                            <template slot-scope="scope">
+                                <div class="d-flex align-items-center">
+                                    <el-image 
+                                        v-if="scope.row.fixScreenshotPath"
+                                        style="width: 180px; height: 180px; flex-shrink:0; border:1px solid #67c23a; border-radius:4px; margin-right:8px;"
+                                        :src="scope.row.fixScreenshotPath" 
+                                        :preview-src-list="[scope.row.fixScreenshotPath]">
+                                    </el-image>
+                                    <div v-if="scope.row.fixScreenshotPath || scope.row.fixComment" style="font-size:0.85em; line-height:1.2; flex-grow:1; overflow:hidden;">
+                                        <div class="text-success font-weight-bold">已修复</div>
+                                        <div class="text-muted text-truncate" :title="scope.row.fixComment">{{ scope.row.fixComment || '无备注' }}</div>
+                                    </div>
+                                    <div v-else class="text-muted small flex-grow-1">(待修复)</div>
+                                    <el-button 
+                                        v-if="isDesignerMode && scope.row.status === 'OPEN'"
+                                        type="text" 
+                                        :icon="scope.row.fixScreenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
+                                        :title="scope.row.fixScreenshotPath ? '更换证明' : '上传证明'"
+                                        @click="openScreenshotUploader(scope.row, 'fix')">
+                                    </el-button>
+                                </div>
+                            </template>
+                        </el-table-column>
 
-                    <el-table-column label="责任人" min-width="110">
-                        <template slot-scope="scope">
-                            <div style="font-size:0.85em;">
-                                <div><span class="text-muted">提:</span> {{ scope.row.createdByUsername }}</div>
-                                <div v-if="scope.row.confirmedByUsername"><span class="text-muted">改:</span> {{ scope.row.confirmedByUsername }}</div>
-                            </div>
-                        </template>
-                    </el-table-column>
+                        <el-table-column label="状态" width="70" align="center">
+                            <template slot-scope="scope">
+                                <el-tag v-if="scope.row.status === 'OPEN'" type="danger" size="small" effect="dark">待解决</el-tag>
+                                <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning" size="small" effect="dark">待复核</el-tag>
+                                <el-tag v-else type="success" size="small" effect="dark">已关闭</el-tag>
+                            </template>
+                        </el-table-column>
 
-                    <el-table-column label="操作" width="150" align="center" fixed="right">
-                        <template slot-scope="scope">
-                            <div v-if="isReviewerMode">
-                                <template v-if="scope.row.status === 'OPEN'">
-                                    <el-button size="mini" icon="el-icon-edit" circle @click="handleEdit(scope.row)"></el-button>
-                                    <el-button size="mini" type="danger" icon="el-icon-delete" circle @click="handleDelete(scope.row.id)"></el-button>
-                                </template>
-                                <template v-else-if="scope.row.status === 'RESOLVED'">
-                                    <el-button size="mini" type="warning" @click="handleReopen(scope.row)">打回</el-button>
-                                    <el-button size="mini" type="success" @click="handleClose(scope.row)">通过</el-button>
-                                </template>
-                                <span v-else class="text-muted small">已存档</span>
-                            </div>
-                            <div v-if="isDesignerMode">
-                                <el-button 
-                                    v-if="scope.row.status === 'OPEN'"
-                                    size="mini" type="primary" icon="el-icon-check" 
-                                    @click="handleResolve(scope.row)">
-                                    解决
-                                </el-button>
-                                <span v-else class="text-muted small">
-                                    {{ scope.row.status === 'RESOLVED' ? '等待复核' : '已完成' }}
-                                </span>
-                            </div>
-                        </template>
-                    </el-table-column>
-                </el-table>
+                        <el-table-column label="操作" width="160" align="center">
+                            <template slot-scope="scope">
+                                <div v-if="isReviewerMode">
+                                    <template v-if="scope.row.status === 'OPEN'">
+                                        <el-button size="mini" icon="el-icon-edit" circle @click="handleEdit(scope.row)"></el-button>
+                                        <el-button size="mini" type="danger" icon="el-icon-delete" circle @click="handleDelete(scope.row.id)"></el-button>
+                                    </template>
+                                    <template v-else-if="scope.row.status === 'RESOLVED'">
+                                        <el-button size="mini" type="danger" @click="handleReopen(scope.row)">打回</el-button>
+                                        <el-button size="mini" type="success" @click="handleClose(scope.row)">通过</el-button>
+                                    </template>
+                                    <span v-else class="text-muted small">已存档</span>
+                                </div>
+                                <div v-if="isDesignerMode">
+                                    <el-button 
+                                        v-if="scope.row.status === 'OPEN'"
+                                        size="mini" type="primary" icon="el-icon-check" 
+                                        @click="handleResolve(scope.row)">
+                                        解决
+                                    </el-button>
+                                    <span v-else-if="!isReviewerMode" class="text-muted small">
+                                        {{ scope.row.status === 'RESOLVED' ? '等待复核' : '已完成' }}
+                                    </span>
+                                </div>
+                            </template>
+                        </el-table-column>
+
+                        <el-table-column label="责任人" width="120" fixed="right">
+                            <template slot-scope="scope">
+                                <div style="font-size:0.85em; line-height: 1.4;">
+                                    <div><span class="text-muted">提:</span> {{ scope.row.createdByUsername }}</div>
+                                    <div v-if="scope.row.confirmedByUsername"><span class="text-muted">改:</span> {{ scope.row.confirmedByUsername }}</div>
+                                </div>
+                            </template>
+                        </el-table-column>
+
+                    </el-table>
 
                 <!-- 1. 新增/编辑弹窗 (审核员) -->
                 <el-dialog 
