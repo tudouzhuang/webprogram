@@ -249,9 +249,16 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
         if (problem == null) {
             throw new RuntimeException("未找到ID为 " + problemId + " 的问题记录");
         }
-        if (problem.getStatus() != ReviewProblemStatus.RESOLVED) {
-            throw new IllegalStateException("该问题当前不是'待复核'状态，无法关闭。");
+
+        // 🔥🔥🔥【关键修改】🔥🔥🔥
+        // 允许关闭 "待复核(RESOLVED)" 或者 "保留(KEPT)" 的问题
+        boolean canClose = (problem.getStatus() == ReviewProblemStatus.RESOLVED 
+                         || problem.getStatus() == ReviewProblemStatus.KEPT);
+
+        if (!canClose) {
+            throw new IllegalStateException("该问题当前状态不可关闭（必须是'待复核'或'保留'状态）。");
         }
+
         User currentUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         
         problem.setStatus(ReviewProblemStatus.CLOSED);
@@ -260,6 +267,34 @@ public class ReviewProblemServiceImpl extends ServiceImpl<ReviewProblemMapper, R
         this.updateById(problem);
         log.info("审核员 {} 已成功关闭问题 #{}", currentUser.getUsername(), problemId);
         
+        return problem;
+    }
+    
+    @Override
+    @Transactional
+    public ReviewProblem keepProblem(Long problemId) {
+        ReviewProblem problem = this.getById(problemId);
+        if (problem == null) {
+            throw new RuntimeException("未找到ID为 " + problemId + " 的问题记录");
+        }
+
+        // 🔥🔥🔥【修改这里】允许 '待复核(RESOLVED)' 或 '已关闭(CLOSED)' 转为保留 🔥🔥🔥
+        boolean canKeep = (problem.getStatus() == ReviewProblemStatus.RESOLVED 
+                        || problem.getStatus() == ReviewProblemStatus.CLOSED);
+
+        if (!canKeep) {
+            throw new IllegalStateException("该问题当前状态无法设为保留（必须是'待复核'或'已关闭'）。");
+        }
+
+        User currentUser = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        problem.setStatus(ReviewProblemStatus.KEPT);
+        problem.setUpdatedAt(LocalDateTime.now());
+        
+        this.updateById(problem);
+        
+        log.info("审核员 {} 已将问题 #{} 设为保留状态", currentUser.getUsername(), problemId);
+
         return problem;
     }
 }

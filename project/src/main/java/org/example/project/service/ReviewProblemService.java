@@ -55,4 +55,6 @@ public interface ReviewProblemService extends IService<ReviewProblem> {
     ReviewProblem closeProblem(Long problemId);
     
     ReviewProblem reopenProblem(Long problemId, String comment);
+
+    ReviewProblem keepProblem(Long problemId);
 }

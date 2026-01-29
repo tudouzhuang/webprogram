@@ -116,4 +116,13 @@ public class ReviewProblemController {
         ReviewProblem updatedProblem = reviewProblemService.reopenProblem(problemId, request.getComment());
         return ResponseEntity.ok(updatedProblem);
     }
+
+    /**
+     * 审核员将问题设为保留 (不予处理/日后处理)
+     */
+    @PostMapping("/{problemId}/keep")
+    public ResponseEntity<ReviewProblem> keepProblem(@PathVariable Long problemId) {
+        ReviewProblem keptProblem = reviewProblemService.keepProblem(problemId);
+        return ResponseEntity.ok(keptProblem);
+    }
 }

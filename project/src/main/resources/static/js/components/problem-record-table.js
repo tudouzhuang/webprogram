@@ -307,7 +307,18 @@ const ProblemRecordTable = {
                     const idx = this.problems.findIndex(p => p.id === row.id);
                     if (idx !== -1) this.$set(this.problems, idx, res.data);
                 });
-        }
+        },
+        handleKeep(row) {
+            this.$confirm('确认将此问题设为“保留”状态吗？\n(保留项后续可直接关闭)', '确认保留', { type: 'primary' })
+                .then(() => axios.post(`/api/problems/${row.id}/keep`))
+                .then(res => {
+                    this.$message.success('已设为保留');
+                    // 更新本地数据
+                    const idx = this.problems.findIndex(p => p.id === row.id);
+                    if (idx !== -1) this.$set(this.problems, idx, res.data);
+                })
+                .catch(() => {});
+        },
     },
 
     template: `
@@ -379,6 +390,9 @@ const ProblemRecordTable = {
                         <template slot-scope="scope">
                             <el-tag v-if="scope.row.status === 'OPEN'" type="danger" size="small" effect="dark">待解决</el-tag>
                             <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning" size="small" effect="dark">待复核</el-tag>
+                            
+                            <el-tag v-else-if="scope.row.status === 'KEPT'" type="primary" size="small" effect="dark">保留</el-tag>
+                            
                             <el-tag v-else type="success" size="small" effect="dark">已关闭</el-tag>
                         </template>
                     </el-table-column>
@@ -399,10 +413,17 @@ const ProblemRecordTable = {
                                     <el-button size="mini" icon="el-icon-edit" circle @click="handleEdit(scope.row)"></el-button>
                                     <el-button size="mini" type="danger" icon="el-icon-delete" circle @click="handleDelete(scope.row.id)"></el-button>
                                 </template>
+                                
                                 <template v-else-if="scope.row.status === 'RESOLVED'">
                                     <el-button size="mini" type="warning" @click="handleReopen(scope.row)">打回</el-button>
+                                    <el-button size="mini" type="primary" @click="handleKeep(scope.row)">保留</el-button>
                                     <el-button size="mini" type="success" @click="handleClose(scope.row)">通过</el-button>
                                 </template>
+
+                                <template v-else-if="scope.row.status === 'KEPT'">
+                                    <el-button size="mini" type="success" @click="handleClose(scope.row)">关闭</el-button>
+                                </template>
+
                                 <span v-else class="text-muted small">已存档</span>
                             </div>
                             <div v-if="isDesignerMode">
