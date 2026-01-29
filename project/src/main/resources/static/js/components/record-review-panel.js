@@ -871,42 +871,6 @@ Vue.component('record-review-panel', {
             }
         `;
         document.head.appendChild(style);
-        console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
-
-        // 【步骤1】初始化状态对象
-        this._scrollGuardian = {
-            // 【关键】这个变量记录的不是一个固定的值，而是【上一帧】的滚动位置
-            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
-
-            // 【关键】敌我识别标志位
-            isUserScrolling: false,
-
-            scrollTimeoutId: null,
-            animationFrameId: null
-        };
-
-        // 【步骤2】定义守护循环
-        const guardianLoop = () => {
-            if (this && this._scrollGuardian) {
-                const currentScrollY = window.scrollY;
-
-                // 【【【核心逻辑】】】
-                if (this._scrollGuardian.isUserScrolling) {
-                    // 如果是用户在滚动，我们不干涉，只更新记录
-                    this._scrollGuardian.lastKnownScrollY = currentScrollY;
-                } else {
-                    // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
-                    if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
-                        console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
-                        window.scrollTo(0, this._scrollGuardian.lastKnownScrollY);
-                    }
-                }
-                this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
-            }
-        };
-
-        // 【步骤3】启动守护循环
-        guardianLoop();
 
         // 【步骤4】为“敌我识别系统”添加滚轮事件监听器
         // 这个监听器只负责一件事：在用户滚动滚轮时，举起“自己人”的牌子

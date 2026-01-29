@@ -1154,38 +1154,6 @@ Vue.component('record-workspace-panel', {
         // --- 您已有的 beforeunload 监听器逻辑 (保持不变) ---
         window.addEventListener('beforeunload', this.stopWorkSession);
 
-        // =======================================================
-        // ↓↓↓ 【【【新增：智能滚动锁的全部逻辑】】】 ↓↓↓
-        // =======================================================
-        console.log('[INIT] 启动智能滚动拦截器...');
-
-        this._scrollLock = {
-            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
-            isUserScrolling: false,
-            timeoutId: null,
-            animationFrameId: null
-        };
-
-        const scrollLockLoop = () => {
-            if (this && this._scrollLock) {
-                if (!this._scrollLock.isUserScrolling && window.scrollY !== this._scrollLock.lastKnownScrollY) {
-                    window.scrollTo(0, this._scrollLock.lastKnownScrollY);
-                } else {
-                    this._scrollLock.lastKnownScrollY = window.scrollY;
-                }
-                this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
-            }
-        };
-        scrollLockLoop();
-
-        this.handleWheel = () => {
-            this._scrollLock.isUserScrolling = true;
-            clearTimeout(this._scrollLock.timeoutId);
-            this._scrollLock.timeoutId = setTimeout(() => {
-                this._scrollLock.isUserScrolling = false;
-            }, 200);
-        };
-
         window.addEventListener('wheel', this.handleWheel, { passive: true });
         this.$watch(
             () => {
