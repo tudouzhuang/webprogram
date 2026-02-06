@@ -38,9 +38,9 @@ export async function exportWithExcelJS(dataSource) {
 
     for (const sheet of sortedSheets) {
         if (!sheet) continue;
-        
+
         // 名字清洗
-        const sheetName = (sheet.name || 'Sheet1').replace(/[\*:\?\/\[\]\\]/g, ''); 
+        const sheetName = (sheet.name || 'Sheet1').replace(/[\*:\?\/\[\]\\]/g, '');
         const worksheet = workbook.addWorksheet(sheetName);
 
         // 3. 设置列宽 (columnlen)
@@ -62,7 +62,7 @@ export async function exportWithExcelJS(dataSource) {
         cellDataList.forEach(cellData => {
             const r = cellData.r;
             const c = cellData.c;
-            
+
             // 获取 ExcelJS 单元格 (索引从 1 开始)
             const cell = worksheet.getCell(r + 1, c + 1);
             const luckysheetCell = cellData.v;
@@ -84,15 +84,117 @@ export async function exportWithExcelJS(dataSource) {
         });
 
         // ============================================================
+        // 🐞【DEBUG模式】边框逻辑 (替换原有的边框处理代码)
+        // ============================================================
+
+        // 【探针 1】检查 config 对象是否存在
+        if (!sheet.config) {
+            console.warn(`[DEBUG-01] Sheet "${sheetName}" 居然没有 config 对象！跳过边框处理。`);
+        } else if (!sheet.config.borderInfo) {
+            console.warn(`[DEBUG-02] Sheet "${sheetName}" 有 config，但 borderInfo 为空/undefined。`, sheet.config);
+        } else {
+            // 【探针 2】确认读到了数据
+            const bList = sheet.config.borderInfo;
+            console.group(`[DEBUG-03] Sheet "${sheetName}" 发现 ${bList.length} 条边框原始数据`);
+            console.log("原始 borderInfo 数据快照:", JSON.parse(JSON.stringify(bList)));
+
+            // 样式映射表
+            const borderStyleMap = {
+                "1": "thin", "2": "hair", "3": "dotted", "4": "dashed", "5": "dashDot",
+                "6": "dashDotDot", "7": "double", "8": "medium", "9": "mediumDashed",
+                "10": "mediumDashDot", "11": "mediumDashDotDot", "12": "slantDashDot", "13": "thick"
+            };
+
+            // 2. 辅助函数：构建 ExcelJS 边框对象 (修复 #000 变灰色/失效的问题)
+            const getBorderObj = (styleId, colorHex) => {
+                if (!styleId) return undefined;
+
+                // 默认黑色
+                let c = colorHex || '#000000';
+
+                // 🚨 核心修复：处理 #000 这种简写，ExcelJS 不认 3 位 Hex
+                if (c.length === 4 && c.startsWith('#')) {
+                    // #000 -> #000000
+                    c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+                }
+
+                // 转换为 ARGB (FF + Hex)
+                const argb = c.replace('#', 'FF');
+
+                return {
+                    style: borderStyleMap[String(styleId)] || 'thin',
+                    color: { argb: argb }
+                };
+            };
+            bList.forEach((bInfo, idx) => {
+                try {
+                    // 【探针 3】循环内部检查
+                    console.log(`[DEBUG-04] 正在处理第 ${idx} 条规则 | 类型: ${bInfo.rangeType} | 边框: ${bInfo.borderType}`);
+
+                    // --- 场景 A: Range ---
+                    if (bInfo.rangeType === 'range') {
+                        // 你的截图中是 border-all，但也可能有 border-left 等
+                        if (bInfo.borderType === 'border-all') {
+                            const borderObj = getBorderObj(bInfo.style, bInfo.color);
+                            console.log(`  -> 命中 border-all 逻辑，样式:`, borderObj);
+
+                            bInfo.range.forEach((rng, rIdx) => {
+                                const rStart = rng.row[0], rEnd = rng.row[1];
+                                const cStart = rng.column[0], cEnd = rng.column[1];
+                                console.log(`  -> 应用范围 [${rIdx}]: 行 ${rStart}-${rEnd}, 列 ${cStart}-${cEnd}`);
+
+                                let cellCount = 0;
+                                for (let r = rStart; r <= rEnd; r++) {
+                                    for (let c = cStart; c <= cEnd; c++) {
+                                        const cell = worksheet.getCell(r + 1, c + 1);
+                                        // 强制覆盖测试
+                                        cell.border = {
+                                            top: borderObj, bottom: borderObj, left: borderObj, right: borderObj
+                                        };
+                                        cellCount++;
+                                    }
+                                }
+                                console.log(`  -> 已对 ${cellCount} 个单元格写入 ExcelJS border 属性`);
+                            });
+                        } else {
+                            console.warn(`  -> ⚠️ 未知的 borderType: ${bInfo.borderType} (目前只支持 border-all)`);
+                        }
+                    }
+                    // --- 场景 B: Cell ---
+                    else if (bInfo.rangeType === 'cell' && bInfo.value) {
+                        const { row_index, col_index } = bInfo.value;
+                        console.log(`  -> 命中 Cell 逻辑: (${row_index}, ${col_index})`);
+
+                        const cell = worksheet.getCell(row_index + 1, col_index + 1);
+                        const currentBorder = cell.border || {};
+                        const v = bInfo.value;
+
+                        if (v.l) currentBorder.left = getBorderObj(v.l.style, v.l.color);
+                        if (v.r) currentBorder.right = getBorderObj(v.r.style, v.r.color);
+                        if (v.t) currentBorder.top = getBorderObj(v.t.style, v.t.color);
+                        if (v.b) currentBorder.bottom = getBorderObj(v.b.style, v.b.color);
+
+                        cell.border = currentBorder;
+                    } else {
+                        console.warn(`  -> ⚠️ 无法识别的规则结构:`, bInfo);
+                    }
+                } catch (e) {
+                    console.error(`[DEBUG-ERR] 处理第 ${idx} 条规则时崩溃:`, e);
+                }
+            });
+            console.groupEnd();
+        }
+
+        // ============================================================
         // 🔥【步骤 6】处理数据验证 (使用 worksheet.add 方法)
         // 这种方法生成的 XML 结构更标准，更容易被 LuckyExcel 识别
         // ============================================================
         // 兼容写法：规则可能在根目录，也可能在 config 下
         const rawVerifications = sheet.dataVerification || (sheet.config && sheet.config.dataVerification);
-        
+
         if (rawVerifications) {
             console.log(`[Exporter] Sheet "${sheetName}" 开始写入 ${Object.keys(rawVerifications).length} 条验证规则...`);
-            
+
             Object.entries(rawVerifications).forEach(([key, rule]) => {
                 // key 格式例如 "3_4" (Row 3, Col 4 -> E4)
                 const parts = key.split('_');
@@ -100,13 +202,13 @@ export async function exportWithExcelJS(dataSource) {
 
                 const r = parseInt(parts[0], 10);
                 const c = parseInt(parts[1], 10);
-                
+
                 // 🔥 关键：将坐标转换为 Excel 地址 (如 "A1")
                 const address = getExcelAddress(r, c);
 
                 // 生成标准验证对象
                 const validationObj = createValidationObject(rule);
-                
+
                 if (validationObj) {
                     // 使用 worksheet 级别的方法添加，兼容性更好
                     try {
@@ -123,9 +225,9 @@ export async function exportWithExcelJS(dataSource) {
             Object.values(sheet.config.merge).forEach(m => {
                 try {
                     worksheet.mergeCells(
-                        m.r + 1, 
-                        m.c + 1, 
-                        m.r + m.rs, 
+                        m.r + 1,
+                        m.c + 1,
+                        m.r + m.rs,
                         m.c + m.cs
                     );
                 } catch (e) {
@@ -139,7 +241,7 @@ export async function exportWithExcelJS(dataSource) {
             for (const imageId in sheet.images) {
                 const img = sheet.images[imageId];
                 const imgDefault = img ? (img.default || img) : null;
-                
+
                 if (!img || !img.src || !imgDefault) continue;
 
                 try {
@@ -147,23 +249,23 @@ export async function exportWithExcelJS(dataSource) {
                     if (base64Parts.length < 2) continue;
                     const base64Data = base64Parts[1];
 
-                    const imageIdInWorkbook = workbook.addImage({ 
-                        base64: base64Data, 
-                        extension: getImageExtension(img.src) 
+                    const imageIdInWorkbook = workbook.addImage({
+                        base64: base64Data,
+                        extension: getImageExtension(img.src)
                     });
 
                     const { left, top, width, height } = imgDefault;
-                    
+
                     const anchor = getExcelImageTwoCellAnchor(
-                        left, top, width, height, 
-                        sheet.config?.columnlen || {}, 
+                        left, top, width, height,
+                        sheet.config?.columnlen || {},
                         sheet.config?.rowlen || {}
                     );
 
-                    worksheet.addImage(imageIdInWorkbook, { 
-                        tl: anchor.tl, 
-                        br: anchor.br, 
-                        editAs: 'twoCell' 
+                    worksheet.addImage(imageIdInWorkbook, {
+                        tl: anchor.tl,
+                        br: anchor.br,
+                        editAs: 'twoCell'
                     });
                 } catch (e) {
                     console.warn('导出图片时发生错误:', e);
@@ -175,7 +277,7 @@ export async function exportWithExcelJS(dataSource) {
     // 生成 Buffer
     const buffer = await workbook.xlsx.writeBuffer();
     console.log("✅ 【Luckysheet Exporter】构建完成，文件大小:", buffer.byteLength);
-    
+
     return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
@@ -206,7 +308,7 @@ function createValidationObject(rule) {
 
         // 2. 引用 vs 列表
         const isFormula = formulaStr.startsWith('=');
-        
+
         if (isFormula) {
             // [引用模式] (例如 =Sheet1!A1:A5)
             validation.formulae = [formulaStr];
@@ -217,7 +319,7 @@ function createValidationObject(rule) {
             validation.formulae = [`"${formulaStr}"`];
         }
     }
-    
+
     // --- 类型 2: 数值验证 ---
     else if (['number', 'number_integer', 'number_decimal'].includes(rule.type)) {
         const v1 = Number(rule.value1);
@@ -226,9 +328,9 @@ function createValidationObject(rule) {
         if (isNaN(v1)) return null;
 
         validation.type = (rule.type === 'number_decimal') ? 'decimal' : 'whole';
-        
+
         const opMap = {
-            'bw': 'between', 'nb': 'notBetween', 'eq': 'equal', 'ne': 'notEqual', 
+            'bw': 'between', 'nb': 'notBetween', 'eq': 'equal', 'ne': 'notEqual',
             'gt': 'greaterThan', 'lt': 'lessThan', 'gte': 'greaterThanOrEqual', 'lte': 'lessThanOrEqual'
         };
         validation.operator = opMap[rule.type2] || 'between';
@@ -239,7 +341,7 @@ function createValidationObject(rule) {
             validation.formulae = [v1];
         }
     }
-    
+
     // --- 类型 3: 文本长度 ---
     else if (rule.type === 'text_length') {
         const v1 = Number(rule.value1);
@@ -249,7 +351,7 @@ function createValidationObject(rule) {
         validation.type = 'textLength';
         const opMap = { 'bw': 'between', 'nb': 'notBetween', 'eq': 'equal', 'ne': 'notEqual', 'gt': 'greaterThan', 'lt': 'lessThan', 'gte': 'greaterThanOrEqual', 'lte': 'lessThanOrEqual' };
         validation.operator = opMap[rule.type2] || 'between';
-        
+
         if (['between', 'notBetween'].includes(validation.operator)) {
             validation.formulae = [v1, !isNaN(v2) ? v2 : v1];
         } else {
@@ -263,16 +365,16 @@ function createValidationObject(rule) {
         validation.formulae = ['"TRUE,FALSE"'];
         validation.showErrorMessage = false;
     }
-    
+
     // --- 类型 5: 日期 ---
     else if (rule.type === 'date') {
         validation.type = 'date';
         const opMap = { 'bw': 'between', 'nb': 'notBetween', 'eq': 'equal', 'ne': 'notEqual', 'bf': 'lessThan', 'nbf': 'greaterThanOrEqual', 'af': 'greaterThan', 'naf': 'lessThanOrEqual' };
         validation.operator = opMap[rule.type2] || 'between';
-        
+
         const d1 = new Date(rule.value1);
         const d2 = new Date(rule.value2 || rule.value1);
-        
+
         if (isNaN(d1.getTime())) return null;
 
         if (['between', 'notBetween'].includes(validation.operator)) {

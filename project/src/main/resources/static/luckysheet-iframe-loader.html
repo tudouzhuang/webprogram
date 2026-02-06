@@ -296,7 +296,6 @@
                         const m = sheet.config.merge[key];
                         // 👈 手术刀：如果合并单元格的起始行(r)已经超过了实际 data 的行数，直接切除
                         if (!m || m.r === undefined || m.r >= actualRows) {
-                            console.warn(`[Loader] 彻底切除越界合并: ${key}`);
                             delete sheet.config.merge[key];
                         }
                     });
@@ -663,7 +662,16 @@
                     // 2. 获取原始数据 (深拷贝以防引用问题)
                     const rawSheets = window.luckysheet.getAllSheets();
                     const sheets = JSON.parse(JSON.stringify(rawSheets));
-
+                    if (rawSheets && rawSheets.length > 0) {
+                        const firstSheet = rawSheets[0];
+                        const hasBorder = firstSheet.config && firstSheet.config.borderInfo && firstSheet.config.borderInfo.length > 0;
+                        console.log(`🕵️ [Save Check] Sheet1 边框检查:`, 
+                            hasBorder ? `✅ 存在 ${firstSheet.config.borderInfo.length} 条规则` : "❌ 无边框信息 (为空)");
+                        
+                        if (hasBorder) {
+                            console.log("   -> 边框数据快照:", JSON.parse(JSON.stringify(firstSheet.config.borderInfo)));
+                        }
+                    }
                     // 3. [调试探针] 检查第一张表的数据验证是否存在
                     if (sheets.length > 0) {
                         const firstSheet = sheets[0];
