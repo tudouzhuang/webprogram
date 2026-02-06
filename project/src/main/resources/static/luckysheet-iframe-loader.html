@@ -221,17 +221,16 @@
 
         // --- [4. 核心功能函数] ---
 
-/**
-         * 渲染 Luckysheet 实例 (终极修复版：防崩溃 + 数据清洗 + 移除无效依赖)
-         */
-         function renderSheet(luckysheetData, fileName, options) {
-            // 步骤 1: 销毁旧实例，防止内存泄漏和DOM冲突
+        /**
+                 * 渲染 Luckysheet 实例 (终极修复版：防崩溃 + 数据清洗 + 移除无效依赖)
+                 */
+        function renderSheet(luckysheetData, fileName, options) {
             if (window.luckysheet) {
                 try {
-                    // luckysheet.destroy() 有时会报错，包裹 try-catch
+                    window.onresize = null; // 👈 手术刀：强制切断全局 resize 监听，防止旧 resize.js 运行
                     luckysheet.destroy();
-                } catch (e) { 
-                    console.warn("销毁旧实例时出现非致命错误:", e); 
+                } catch (e) {
+                    console.warn("销毁旧实例时出现非致命错误:", e);
                 }
             }
             // 清空容器，确保干净的 DOM 环境
@@ -254,8 +253,8 @@
                 }];
             } else {
                 // 深拷贝，防止修改影响原始数据对象
-                try { 
-                    validData = JSON.parse(JSON.stringify(validData)); 
+                try {
+                    validData = JSON.parse(JSON.stringify(validData));
                 } catch (e) {
                     console.error("数据深拷贝失败:", e);
                 }
@@ -266,6 +265,20 @@
             // ============================================================
             validData.forEach((sheet, index) => {
                 // A. 补全必要字段，防止 undefined 报错
+                const rowCount = Math.max(sheet.row || 0, 30); // 默认至少30行
+                const colCount = Math.max(sheet.column || 0, 20); // 默认至少20列
+
+                // 1. 确保 data 二维数组存在且行数足够
+                if (!sheet.data || sheet.data.length === 0) {
+                    // 如果没有 data 但有 celldata，Luckysheet 会处理，但为了安全我们初始化它
+                    sheet.data = Array.from({ length: rowCount }, () => Array(colCount).fill(null));
+                } else if (sheet.data.length < rowCount) {
+                    // 👈 关键修复：补齐缺失的行，防止 mergeCalculation 读取 undefined[15]
+                    for (let i = sheet.data.length; i < rowCount; i++) {
+                        sheet.data[i] = new Array(colCount).fill(null);
+                    }
+                }
+                delete sheet.calcChain;
                 if (!sheet.celldata) sheet.celldata = [];
                 if (!sheet.config) sheet.config = {};
                 if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
@@ -277,17 +290,13 @@
                     delete sheet.calcChain;
                 }
 
-                // C. 【新增】清洗无效/越界的合并单元格 (Fix mergeCalculation crash)
-                if (sheet.config.merge) {
-                    // 获取当前表的最大行列数 (如果没定义，给个较大的安全值)
-                    const maxRow = sheet.row || 10000;
-                    const maxCol = sheet.column || 1000;
-
+                if (sheet.config && sheet.config.merge) {
+                    const actualRows = sheet.data ? sheet.data.length : (sheet.row || 0);
                     Object.keys(sheet.config.merge).forEach(key => {
                         const m = sheet.config.merge[key];
-                        // 检查规则：m 必须存在，r/c 必须存在，且不能超出表格范围
-                        if (!m || m.r === undefined || m.c === undefined || m.r >= maxRow || m.c >= maxCol) {
-                            console.warn(`[Loader] 🛡️ 发现越界或无效合并，已移除: ${key} (Row:${m?.r}, Max:${maxRow})`);
+                        // 👈 手术刀：如果合并单元格的起始行(r)已经超过了实际 data 的行数，直接切除
+                        if (!m || m.r === undefined || m.r >= actualRows) {
+                            console.warn(`[Loader] 彻底切除越界合并: ${key}`);
                             delete sheet.config.merge[key];
                         }
                     });
@@ -338,87 +347,98 @@
                     { "fontName": "Arial", "url": "" },
                     { "fontName": "Times New Roman", "url": "" }
                 ],
-                
+
                 // 显式开启所有功能，防止被 options 覆盖
                 showinfobar: false, // 隐藏顶部信息栏
                 allowUpdate: true,
                 enableAddRow: true,
                 enableAddBackTop: true,
-                
+
                 // 合并传入的自定义选项
                 ...options
             };
 
-            // 步骤 4: 创建实例
-            try {
-                console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
-                window.luckysheet.create(finalOptions);
-                console.log(`[Iframe] 创建实例成功！`);
-            } catch (createError) {
-                console.error("🔥 创建 Luckysheet 实例失败:", createError);
-                // 这里可以向父窗口发送一个错误通知
-                return;
-            }
+            requestAnimationFrame(() => { // 👈 手术刀：确保在下一帧渲染时执行，此时 DOM offsetHeight 必然存在
+                try {
+                    console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
+                    if (window.luckysheet) {
+                        window.luckysheet.refreshMenu = function () { }; // 临时屏蔽可能导致异步报错的菜单刷新
+                    }
+                    window.luckysheet.create(finalOptions);
+                } catch (createError) {
+                    console.error("🔥 创建 Luckysheet 实例失败:", createError);
+                }
+            });
 
-            // 步骤 5: 延迟执行 Refresh 和 Hook
+// 步骤 5: 延迟执行 Refresh 和 Hook
             // 使用 setTimeout 确保 Luckysheet DOM 已经渲染完毕
             setTimeout(() => {
                 try {
-                    // 全局配置修正
-                    if (window.luckysheet) {
-                        luckysheet.luckysheetautofixrowlen = false; // 禁止自动行高，防止布局抖动
+                    // 1. 基础安全检查
+                    if (!window.luckysheet) return;
+
+                    const sheets = luckysheet.getluckysheetfile();
+                    // 检查内部数据结构是否真的转换成了 flowdata
+                    if (!sheets || sheets.length === 0 || !sheets[0].data) {
+                        console.warn("[Iframe] 渲染未就绪 (flowdata 缺失)，跳过配置");
+                        return;
                     }
 
-                    // 尝试 Refresh
-                    try {
-                        luckysheet.refresh();
-                        console.log("[Iframe] luckysheet.refresh() 执行成功。");
-                    } catch (refreshError) {
-                        console.warn("[Iframe] refresh() 执行受阻 (通常不影响显示):", refreshError.message);
+                    // 2. 全局配置与状态修正
+                    luckysheet.luckysheetautofixrowlen = false; // 禁止自动行高，防止布局抖动
+
+                    // 3. 执行刷新 (手术刀：双重检查容器高度，防止 resize.js 报 offsetHeight 为 null)
+                    const containerEl = document.getElementById('luckysheet-container');
+                    if (containerEl && containerEl.offsetHeight > 0) {
+                        try {
+                            luckysheet.refresh();
+                            console.log("[Iframe] Luckysheet 刷新成功");
+                        } catch (resErr) {
+                            console.warn("[Iframe] 刷新过程出现非致命异常:", resErr.message);
+                        }
                     }
 
-                    // --- 设置 Hooks (不依赖 getFlowdata) ---
-                    // 确保 hooks 对象存在
-                    if (window.luckysheet && !window.luckysheet.hooks) {
-                        window.luckysheet.hooks = {};
+                    // 4. 设置 Hooks (确保不重复注册)
+                    if (!luckysheet.hooks) {
+                        luckysheet.hooks = {};
                     }
 
                     // 注册单元格更新钩子
-                    window.luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
+                    luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
                         try {
-                            // 使用 getAllSheets 替代 getFlowdata 以避免报错
                             const allSheets = luckysheet.getAllSheets();
-                            // 查找当前激活的 sheet
                             const currentSheet = allSheets.find(s => s.status === 1) || allSheets[0];
 
-                            // 安全获取单元格数据
                             if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
                                 const cell = currentSheet.data[r][c];
-
-                                // 执行业务逻辑: 高亮和防抖计算
-                                if (typeof autoHighlightCell === 'function') {
-                                    autoHighlightCell(r, c, cell);
-                                }
-                                if (typeof debouncedCalculate === 'function') {
-                                    debouncedCalculate();
-                                }
+                                // 执行业务逻辑
+                                if (typeof autoHighlightCell === 'function') autoHighlightCell(r, c, cell);
+                                if (typeof debouncedCalculate === 'function') debouncedCalculate();
                             }
                         } catch (hookError) {
                             console.error("[Hook Error] 单元格更新处理出错:", hookError);
                         }
                     };
-                    
-                    console.log("[Iframe] Hooks 设置完成。");
 
-                    // 发送渲染完成通知给父窗口
+                    console.log("[Iframe] Hooks 注册完成");
+
+                    // 5. 任务收尾：通知父窗口并释放渲染锁
                     if (window.parent) {
-                        window.parent.postMessage({ type: 'LUCKYSHEET_RENDER_FINISHED', status: 'success' }, '*');
+                        window.parent.postMessage({ 
+                            type: 'LUCKYSHEET_RENDER_FINISHED', 
+                            status: 'success' 
+                        }, '*');
                     }
 
                 } catch (e) {
-                    console.error(`[Iframe] 延迟配置阶段失败:`, e);
+                    console.error(`[Iframe] 延迟配置阶段致命失败:`, e);
+                } finally {
+                    // 如果你之前设置了 isRendering 锁，在这里释放它
+                    if (typeof isRendering !== 'undefined') {
+                        isRendering = false;
+                    }
                 }
-            }, 300); // 300ms 延迟通常足够 Luckysheet 完成 DOM 挂载
+            }, 500); // 👈 手术关键：确保 500ms 且括号闭合正确
         }
 
         /**
