@@ -607,14 +607,6 @@ Vue.component('record-workspace-panel', {
 
             if (targetIframe && targetIframe.contentWindow) {
 
-                // ===== 您的滚动锁定逻辑 (保持不变) =====
-                let lastScrollY = window.scrollY;
-                const preventScroll = e => e.preventDefault();
-                window.addEventListener('scroll', preventScroll, { passive: false });
-                setTimeout(() => {
-                    window.removeEventListener('scroll', preventScroll);
-                    window.scrollTo(0, lastScrollY);
-                }, 1500);
 
                 const options = { allowUpdate: true, showtoolbar: true };
 
@@ -1154,37 +1146,6 @@ Vue.component('record-workspace-panel', {
         // --- 您已有的 beforeunload 监听器逻辑 (保持不变) ---
         window.addEventListener('beforeunload', this.stopWorkSession);
 
-        // =======================================================
-        // ↓↓↓ 【【【新增：智能滚动锁的全部逻辑】】】 ↓↓↓
-        // =======================================================
-        console.log('[INIT] 启动智能滚动拦截器...');
-
-        this._scrollLock = {
-            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
-            isUserScrolling: false,
-            timeoutId: null,
-            animationFrameId: null
-        };
-
-        const scrollLockLoop = () => {
-            if (this && this._scrollLock) {
-                if (!this._scrollLock.isUserScrolling && window.scrollY !== this._scrollLock.lastKnownScrollY) {
-                    window.scrollTo(0, this._scrollLock.lastKnownScrollY);
-                } else {
-                    this._scrollLock.lastKnownScrollY = window.scrollY;
-                }
-                this._scrollLock.animationFrameId = requestAnimationFrame(scrollLockLoop);
-            }
-        };
-        scrollLockLoop();
-
-        this.handleWheel = () => {
-            this._scrollLock.isUserScrolling = true;
-            clearTimeout(this._scrollLock.timeoutId);
-            this._scrollLock.timeoutId = setTimeout(() => {
-                this._scrollLock.isUserScrolling = false;
-            }, 200);
-        };
 
         window.addEventListener('wheel', this.handleWheel, { passive: true });
         this.$watch(
@@ -1239,17 +1200,6 @@ Vue.component('record-workspace-panel', {
         this.stopWorkSession();
         window.removeEventListener('message', this.boundMessageListener);
         window.removeEventListener('beforeunload', this.stopWorkSession);
-
-        // =======================================================
-        // ↓↓↓ 【【【新增：智能滚动锁的清理逻辑】】】 ↓↓↓
-        // =======================================================
-        console.log('[CLEANUP] 停止智能滚动拦截器...');
-        if (this._scrollLock) {
-            cancelAnimationFrame(this._scrollLock.animationFrameId);
-            clearTimeout(this._scrollLock.timeoutId);
-        }
-        window.removeEventListener('wheel', this.handleWheel);
-        // =======================================================
     },
     watch: {
         recordId: {

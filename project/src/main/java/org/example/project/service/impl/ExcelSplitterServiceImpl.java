@@ -454,8 +454,8 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                     cellValue.setV(finalValue);
                                     cellValue.setM(finalValue);
                                 } else {
-                                    finalValue = new java.math.BigDecimal(cell.getNumericCellValue()).toPlainString();
-                                    cellValue.setV(finalValue);
+                                    double numericValue = cell.getNumericCellValue();
+                                    cellValue.setV(numericValue);
                                     cellValue.setM(finalValue);
                                 }
                                 break;
@@ -520,24 +520,25 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 List<CellRangeAddress> mergedRegions = sheet.getMergedRegions();
                 if (mergedRegions != null) {
                     for (CellRangeAddress region : mergedRegions) {
-                    // 【【【 核心修正：增加安全检查 】】】
-                    // 只有当合并区域的行数(rs)和列数(cs)都大于1时，才是一个有效的合并单元格。
-                    // 单行或单列的“合并”是没有意义的，且可能导致 Luckysheet 内部 bug。
-                    int rowSpan = region.getLastRow() - region.getFirstRow() + 1;
-                    int colSpan = region.getLastColumn() - region.getFirstColumn() + 1;
+                        // 【【【 核心修正：增加安全检查 】】】
+                        // 只有当合并区域的行数(rs)和列数(cs)都大于1时，才是一个有效的合并单元格。
+                        // 单行或单列的“合并”是没有意义的，且可能导致 Luckysheet 内部 bug。
+                        int rowSpan = region.getLastRow() - region.getFirstRow() + 1;
+                        int colSpan = region.getLastColumn() - region.getFirstColumn() + 1;
 
-                    if (rowSpan > 1 || colSpan > 1) {
-                        String key = region.getFirstRow() + "_" + region.getFirstColumn();
-                        Map<String, Integer> mergeValue = new HashMap<>();
-                        mergeValue.put("r", region.getFirstRow());
-                        mergeValue.put("c", region.getFirstColumn());
-                        mergeValue.put("rs", rowSpan);
-                        mergeValue.put("cs", colSpan);
-                        merge.put(key, mergeValue);
-                    } else {
-                        log.warn("发现一个无效的单格合并区域 (r={}, c={})，已自动忽略。", region.getFirstRow(), region.getFirstColumn());
+                        if (rowSpan > 1 || colSpan > 1) {
+                            String key = region.getFirstRow() + "_" + region.getFirstColumn();
+                            Map<String, Integer> mergeValue = new HashMap<>();
+                            mergeValue.put("r", region.getFirstRow());
+                            mergeValue.put("c", region.getFirstColumn());
+                            mergeValue.put("rs", rowSpan);
+                            mergeValue.put("cs", colSpan);
+                            merge.put(key, mergeValue);
+                        } else {
+                            log.warn("发现一个无效的单格合并区域 (r={}, c={})，已自动忽略。", region.getFirstRow(), region.getFirstColumn());
+                        }
                     }
-                }}
+                }
                 if (!merge.isEmpty()) {
                     config.put("merge", merge);
                 }

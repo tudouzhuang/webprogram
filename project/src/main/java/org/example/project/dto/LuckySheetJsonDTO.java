@@ -55,7 +55,7 @@ public class LuckySheetJsonDTO {
     public static class CellValue {
         // 值和公式
         private String m; // 原始显示值 (如 "123" 或 "文本")
-        private String v; // 格式化后的显示值
+        private Object v; // 格式化后的显示值
         private String f; // 公式 (formula), 例如 "=SUM(A1:A2)"
 
         // 字体样式

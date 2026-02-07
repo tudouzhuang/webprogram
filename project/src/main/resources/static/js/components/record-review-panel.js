@@ -415,16 +415,8 @@ Vue.component('record-review-panel', {
                 this.isSubmitting = false;
             }
         },
-        lockScroll() {
-            document.body.classList.add('body-scroll-lock');
-        },
 
-        /**
-         * 【【【新增】】】 解锁父页面滚动
-         */
-        unlockScroll() {
-            document.body.classList.remove('body-scroll-lock');
-        },
+
         handleIframeFocus() {
             this.scrollTopBeforeFocus = window.scrollY || document.documentElement.scrollTop;
             setTimeout(() => {
@@ -543,15 +535,6 @@ Vue.component('record-review-panel', {
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
             if (targetIframe && targetIframe.contentWindow) {
-
-                // ===== 您的滚动锁定逻辑 (保持不变) =====
-                let lastScrollY = window.scrollY;
-                const preventScroll = e => e.preventDefault();
-                window.addEventListener('scroll', preventScroll, { passive: false });
-                setTimeout(() => {
-                    window.removeEventListener('scroll', preventScroll);
-                    window.scrollTo(0, lastScrollY);
-                }, 1500);
 
                 const options = { allowUpdate: true, showtoolbar: true };
 
@@ -871,61 +854,8 @@ Vue.component('record-review-panel', {
             }
         `;
         document.head.appendChild(style);
-        console.log('[INIT] 启动带敌我识别的终极滚动守护神...');
 
-        // 【步骤1】初始化状态对象
-        this._scrollGuardian = {
-            // 【关键】这个变量记录的不是一个固定的值，而是【上一帧】的滚动位置
-            lastKnownScrollY: window.scrollY || document.documentElement.scrollTop,
 
-            // 【关键】敌我识别标志位
-            isUserScrolling: false,
-
-            scrollTimeoutId: null,
-            animationFrameId: null
-        };
-
-        // 【步骤2】定义守护循环
-        const guardianLoop = () => {
-            if (this && this._scrollGuardian) {
-                const currentScrollY = window.scrollY;
-
-                // 【【【核心逻辑】】】
-                if (this._scrollGuardian.isUserScrolling) {
-                    // 如果是用户在滚动，我们不干涉，只更新记录
-                    this._scrollGuardian.lastKnownScrollY = currentScrollY;
-                } else {
-                    // 如果不是用户在滚动，但位置却变了，这就是“坏的滚动”！
-                    if (currentScrollY !== this._scrollGuardian.lastKnownScrollY) {
-                        console.warn(`[GUARDIAN] 检测到未授权滚动！强行恢复到: ${this._scrollGuardian.lastKnownScrollY}`);
-                        window.scrollTo(0, this._scrollGuardian.lastKnownScrollY);
-                    }
-                }
-                this._scrollGuardian.animationFrameId = requestAnimationFrame(guardianLoop);
-            }
-        };
-
-        // 【步骤3】启动守护循环
-        guardianLoop();
-
-        // 【步骤4】为“敌我识别系统”添加滚轮事件监听器
-        // 这个监听器只负责一件事：在用户滚动滚轮时，举起“自己人”的牌子
-        this.handleWheel = () => {
-            // 举起牌子：告诉守护神，现在是我在滚，别开枪！
-            this._scrollGuardian.isUserScrolling = true;
-
-            // 清除之前的“放下牌子”定时器
-            clearTimeout(this._scrollGuardian.scrollTimeoutId);
-
-            // 设置一个新的定时器：如果200毫秒内没再滚动，就自动放下牌子
-            this._scrollGuardian.scrollTimeoutId = setTimeout(() => {
-                this._scrollGuardian.isUserScrolling = false;
-                console.log('[GUARDIAN] 用户停止滚动，守护模式已恢复。');
-            }, 200);
-        };
-
-        // 将滚轮监听器绑定到整个 window 上，这样无论鼠标在哪里都能捕捉到
-        window.addEventListener('wheel', this.handleWheel, { passive: true });
 
         // --- 您已有的其他 mounted 逻辑 ---
         this.boundMessageListener = this.messageEventListener.bind(this);
@@ -934,15 +864,6 @@ Vue.component('record-review-panel', {
     },
 
     beforeDestroy() {
-        console.log('[CLEANUP] 停止终极滚动守护神...');
-
-        if (this._scrollGuardian) {
-            cancelAnimationFrame(this._scrollGuardian.animationFrameId);
-            clearTimeout(this._scrollGuardian.scrollTimeoutId);
-        }
-
-        // 【【【核心清理】】】 必须移除全局的滚轮监听器
-        window.removeEventListener('wheel', this.handleWheel);
 
         // --- 您已有的其他 beforeDestroy 逻辑 ---
         window.removeEventListener('message', this.boundMessageListener);
