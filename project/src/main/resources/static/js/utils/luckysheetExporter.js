@@ -128,36 +128,52 @@ export async function exportWithExcelJS(dataSource) {
             };
             bList.forEach((bInfo, idx) => {
                 try {
-                    // 【探针 3】循环内部检查
-                    console.log(`[DEBUG-04] 正在处理第 ${idx} 条规则 | 类型: ${bInfo.rangeType} | 边框: ${bInfo.borderType}`);
 
-                    // --- 场景 A: Range ---
                     if (bInfo.rangeType === 'range') {
-                        // 你的截图中是 border-all，但也可能有 border-left 等
-                        if (bInfo.borderType === 'border-all') {
+                        const borderObj = getBorderObj(bInfo.style, bInfo.color);
+
+                        // --- 场景 A: Range ---
+                        if (bInfo.rangeType === 'range') {
                             const borderObj = getBorderObj(bInfo.style, bInfo.color);
-                            console.log(`  -> 命中 border-all 逻辑，样式:`, borderObj);
 
-                            bInfo.range.forEach((rng, rIdx) => {
-                                const rStart = rng.row[0], rEnd = rng.row[1];
-                                const cStart = rng.column[0], cEnd = rng.column[1];
-                                console.log(`  -> 应用范围 [${rIdx}]: 行 ${rStart}-${rEnd}, 列 ${cStart}-${cEnd}`);
-
-                                let cellCount = 0;
-                                for (let r = rStart; r <= rEnd; r++) {
-                                    for (let c = cStart; c <= cEnd; c++) {
+                            // 遍历该规则下的所有区域
+                            bInfo.range.forEach((rng) => {
+                                for (let r = rng.row[0]; r <= rng.row[1]; r++) {
+                                    for (let c = rng.column[0]; c <= rng.column[1]; c++) {
+                                        // ExcelJS 索引从1开始
                                         const cell = worksheet.getCell(r + 1, c + 1);
-                                        // 强制覆盖测试
-                                        cell.border = {
-                                            top: borderObj, bottom: borderObj, left: borderObj, right: borderObj
-                                        };
-                                        cellCount++;
+
+                                        // 🔥 关键点：确保 border 对象已初始化，否则无法设置单边
+                                        if (!cell.border) cell.border = {};
+
+                                        // 🔥 关键修复：不再只认 border-all，而是支持所有类型
+                                        switch (bInfo.borderType) {
+                                            case 'border-all':
+                                                // 全边框：直接覆盖
+                                                cell.border = { top: borderObj, bottom: borderObj, left: borderObj, right: borderObj };
+                                                break;
+                                            case 'border-top':
+                                                cell.border.top = borderObj;
+                                                break;
+                                            case 'border-bottom':
+                                                cell.border.bottom = borderObj;
+                                                break;
+                                            case 'border-left':
+                                                cell.border.left = borderObj;
+                                                break;
+                                            case 'border-right':
+                                                cell.border.right = borderObj;
+                                                break;
+                                            case 'border-none':
+                                                cell.border = {}; // 清除边框
+                                                break;
+                                            default:
+                                                // 忽略不支持的类型，但不报错
+                                                break;
+                                        }
                                     }
                                 }
-                                console.log(`  -> 已对 ${cellCount} 个单元格写入 ExcelJS border 属性`);
                             });
-                        } else {
-                            console.warn(`  -> ⚠️ 未知的 borderType: ${bInfo.borderType} (目前只支持 border-all)`);
                         }
                     }
                     // --- 场景 B: Cell ---

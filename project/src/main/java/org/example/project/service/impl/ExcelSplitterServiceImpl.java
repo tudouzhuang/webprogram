@@ -286,15 +286,24 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                     ngSymbol = "×";
                 }
                 // =================================================================
-
+                java.util.Set<String> hiddenMergedCells = new java.util.HashSet<>();
+                for (CellRangeAddress region : sheet.getMergedRegions()) {
+                    for (int mr = region.getFirstRow(); mr <= region.getLastRow(); mr++) {
+                        for (int mc = region.getFirstColumn(); mc <= region.getLastColumn(); mc++) {
+                            // 跳过左上角的“老大”，其他的“小弟”全部加入黑名单
+                            if (mr == region.getFirstRow() && mc == region.getFirstColumn()) {
+                                continue;
+                            }
+                            hiddenMergedCells.add(mr + "_" + mc);
+                        }
+                    }
+                }
                 List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                     Row row = sheet.getRow(r);
-                    if (row == null) {
-                        continue;
-                    }
+
                     for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
-                        XSSFCell cell = (XSSFCell) row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                        XSSFCell cell = (XSSFCell) row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                         if (cell == null) {
                             continue;
                         }
@@ -369,7 +378,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 log.info("🔍 [Cell Debug] ({}, {}) POI原始边框状态: Top={}, Bottom={}, Left={}, Right={}", 
                                     r, c, style.getBorderTop(), style.getBorderBottom(), style.getBorderLeft(), style.getBorderRight());
                             }
-    
+                            if (!hiddenMergedCells.contains(r + "_" + c)) {
                             // 1. 上边框 (Top)
                             if (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
                                 Map<String, Object> borderTop = new HashMap<>();
@@ -404,7 +413,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 borderRight.put("color", getPOIColor(style.getRightBorderXSSFColor()));
                                 bd.put("r", borderRight);
                             }
-    
+                        }
                             // 将边框信息存入 cellValue
                             if (!bd.isEmpty()) {
                                 cellValue.setBd(bd);
