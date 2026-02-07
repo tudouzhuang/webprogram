@@ -8,6 +8,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Lazy; // 【【【 1. 确保添加这个 import 】】】
 import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.ProcessRecordCreateDTO;
+import org.example.project.entity.AuditLog;
 import org.example.project.entity.ProcessRecord;
 import org.example.project.entity.Project;
 import org.example.project.entity.ProjectFile;
@@ -53,7 +54,7 @@ import org.springframework.security.access.AccessDeniedException;
 
 import org.example.project.dto.LuckySheetJsonDTO;
 import org.example.project.dto.StatisticsResultDTO;
-import org.example.project.mapper.ProjectFileMapper;
+import org.example.project.mapper.AuditLogMapper;
 
 import java.util.regex.Pattern;
 
@@ -64,6 +65,8 @@ import java.util.regex.Pattern;
 public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, ProcessRecord>
         implements ProcessRecordService {
 
+    @Autowired
+    private AuditLogMapper auditLogMapper;
     @Autowired
     private ProjectService projectService;
     @Autowired
@@ -502,12 +505,11 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         log.info("--- [END REASSIGN TASK] ---");
     }
 
-    // 在 ProcessRecordServiceImpl.java 中
     @Override
     @Transactional
     public void requestChanges(Long recordId, String comment) {
         Long currentUserId = getCurrentUserId();
-        User currentUser = userMapper.selectById(currentUserId); // 获取当前用户完整信息
+        User currentUser = userMapper.selectById(currentUserId);
 
         if (currentUser == null) {
             throw new AccessDeniedException("无法验证当前用户信息。");
@@ -518,20 +520,13 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new RuntimeException("记录不存在，ID: " + recordId);
         }
 
-        // =======================================================
-        // ↓↓↓ 【核心逻辑修正】 ↓↓↓
-        // 重新设计权限校验，使其更健壮
-        // =======================================================
+        // --- [权限校验逻辑：保持不变] ---
         boolean hasPermission = false;
-
-        // 场景1: 任务正在流转中 (待审核)，必须是当前负责人
         if (record.getStatus() == ProcessRecordStatus.PENDING_REVIEW) {
             if (record.getAssigneeId() != null && record.getAssigneeId().equals(currentUserId)) {
                 hasPermission = true;
             }
-        } // 场景2: 任务已批准，需要打回。此时应检查用户角色。
-        else if (record.getStatus() == ProcessRecordStatus.APPROVED) {
-            // 假设 User 实体有 getIdentity() 方法返回角色字符串, 例如 "REVIEWER"
+        } else if (record.getStatus() == ProcessRecordStatus.APPROVED) {
             if ("MANAGER".equalsIgnoreCase(currentUser.getIdentity())
                     || "ADMIN".equalsIgnoreCase(currentUser.getIdentity())) {
                 hasPermission = true;
@@ -542,19 +537,41 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new AccessDeniedException("权限不足：您无权对此记录执行打回操作。");
         }
 
-        // 业务规则校验 (保持不变)
         if (record.getStatus() != ProcessRecordStatus.APPROVED
                 && record.getStatus() != ProcessRecordStatus.PENDING_REVIEW) {
             throw new IllegalStateException("操作失败：当前状态无法打回。");
         }
 
-        // 执行更新 (保持不变)
+        // =======================================================
+        // 🔥【核心逻辑注入】执行轮次累加与日志记录
+        // =======================================================
+        // 1. 数据库层面原子自增 +1
+        processRecordMapper.incrementAuditRound(recordId);
+
+// 🔥【修正点】从数据库获取自增后的最新记录，确保对象里的轮次是最新的
+        ProcessRecord latestRecord = this.getById(recordId);
+
+// 2. 更新当前 record 对象的状态
         record.setRejectionComment(comment);
         record.setStatus(ProcessRecordStatus.CHANGES_REQUESTED);
-        record.setAssigneeId(record.getCreatedByUserId()); // 将任务交还给创建者
+        record.setAssigneeId(record.getCreatedByUserId());
+
+// 🔥【修正点】把最新的轮次同步给准备更新的 record 对象，防止覆盖回旧值
+        record.setCurrentAuditRound(latestRecord.getCurrentAuditRound());
+        // 注意：这里更新 record 时，MP 会自动处理 currentAuditRound 的读取，
+        // 但为了日志准确，我们手动获取自增后的最新轮次
         this.updateById(record);
 
-        System.out.println("记录 " + recordId + " 已被打回，原因: " + comment);
+        // 3. 写入审核流水表 audit_logs
+        AuditLog auditLog = new AuditLog();
+        auditLog.setRecordId(recordId);
+        auditLog.setOperatorId(currentUserId);
+        auditLog.setActionType("REJECT"); // 动作：打回
+        auditLog.setAuditRound(latestRecord.getCurrentAuditRound()); // 记录发生时的轮次
+        auditLog.setComment(comment);
+        auditLogMapper.insert(auditLog);
+
+        System.out.println("记录 " + recordId + " 已被打回（第 " + latestRecord.getCurrentAuditRound() + " 轮），原因: " + comment);
     }
 
     @Override
@@ -638,24 +655,19 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             throw new IllegalStateException("操作失败：记录当前状态不是“待修改”，无法重新提交。");
         }
 
-        // 2. --- 处理文件替换 ---
-        // 2.1 查找旧的源文件记录 (SOURCE_RECORD)
+        // 2. --- 处理文件替换 (原有逻辑全部保留) ---
         QueryWrapper<ProjectFile> fileQuery = new QueryWrapper<>();
         fileQuery.eq("record_id", recordId).eq("document_type", "SOURCE_RECORD");
         ProjectFile sourceFileRecord = projectFileMapper.selectOne(fileQuery);
 
         if (sourceFileRecord == null) {
-            // 理论上不应该发生，每个记录都应该有一个源文件
             throw new IllegalStateException("数据不一致：找不到记录ID " + recordId + " 的原始设计文件。");
         }
 
-        // 2.2 删除旧的物理文件 (可选但推荐)
         Path oldPhysicalPath = Paths.get(uploadDir, sourceFileRecord.getFilePath());
         Files.deleteIfExists(oldPhysicalPath);
 
-        // 2.3 保存新的物理文件
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        // 保持和创建时一致的文件命名和存储结构
         String storedFileName = "source_" + originalFilename;
         Path newPhysicalPath = Paths.get(uploadDir, String.valueOf(record.getProjectId()), String.valueOf(recordId),
                 storedFileName);
@@ -663,7 +675,6 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         Files.createDirectories(newPhysicalPath.getParent());
         Files.copy(file.getInputStream(), newPhysicalPath, StandardCopyOption.REPLACE_EXISTING);
 
-        // 2.4 更新 project_files 表中的记录
         String newRelativePath = Paths
                 .get(String.valueOf(record.getProjectId()), String.valueOf(recordId), storedFileName).toString()
                 .replace("\\", "/");
@@ -674,13 +685,25 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
         // 3. --- 更新主记录状态和负责人 ---
         record.setStatus(ProcessRecordStatus.PENDING_REVIEW); // 状态改回“待审核”
-        // 将任务重新分配给审核员，这里我们使用一个“智能分配”或“固定分配”的逻辑
-        // Long reviewerId = findDefaultReviewerForProject(record.getProjectId()); //
-        // 示例：找到项目默认审核员
-        Long reviewerId = findLeastBusyReviewerId(); // 使用你之前写的智能分配算法
+        Long reviewerId = findLeastBusyReviewerId(); 
         record.setAssigneeId(reviewerId);
 
         this.updateById(record);
+
+        // =======================================================
+        // 🔥【核心逻辑注入】记录修复提交行为
+        // =======================================================
+        AuditLog auditLog = new AuditLog();
+        auditLog.setRecordId(recordId);
+        auditLog.setOperatorId(currentUserId);
+        auditLog.setActionType("FIX"); // 动作：修复并重新提交
+        // 注意：这里沿用当前记录的轮次（轮次是在打回时增加的，修复不增加轮次）
+        auditLog.setAuditRound(record.getCurrentAuditRound()); 
+        auditLog.setComment("重新上传设计文件: " + originalFilename);
+        
+        auditLogMapper.insert(auditLog);
+        
+        System.out.println("设计师 " + currentUserId + " 已完成记录 " + recordId + " 的修复提交（第 " + record.getCurrentAuditRound() + " 轮）");
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -810,48 +833,69 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
 
     }
 
-    /**
+/**
      * 【新增实现 2】: 启动审核流程 (智能负载均衡版) 策略：自动寻找当前工作量最小的审核员进行分配
      */
     @Override
     @Transactional
     public void startReviewProcess(Long recordId) {
         // 1. 验证记录是否存在
-        ProcessRecord record = this.getById(recordId); // 使用 MyBatis-Plus 的 getById
+        ProcessRecord record = this.getById(recordId); 
         if (record == null) {
             throw new IllegalArgumentException("ID为 " + recordId + " 的过程记录不存在。");
         }
 
+        // --- 【核心逻辑注入 A】 ---
+        // 捕获原始状态，用于后续判断动作类型
+        ProcessRecordStatus originalStatus = record.getStatus();
+        Long currentUserId = getCurrentUserId(); // 获取当前提交人 ID
+
         // 2. 状态检查：必须是 DRAFT 或 CHANGES_REQUESTED 状态才能提交
-        ProcessRecordStatus currentStatus = record.getStatus();
-        if (currentStatus != ProcessRecordStatus.DRAFT && currentStatus != ProcessRecordStatus.CHANGES_REQUESTED) {
-            throw new IllegalStateException("当前记录状态为 " + currentStatus + "，无法提交审核。");
+        if (originalStatus != ProcessRecordStatus.DRAFT && originalStatus != ProcessRecordStatus.CHANGES_REQUESTED) {
+            throw new IllegalStateException("当前记录状态为 " + originalStatus + "，无法提交审核。");
         }
 
-        // 3. 【智能分配策略】: 负载均衡 (Load Balancing)
-        // 查询当前持有 'PENDING_REVIEW' 任务最少的 MANAGER
-        // 注意：需要先在 UserMapper 中定义 findLeastLoadedUserByRole 方法
+        // 3. 【智能分配策略】: 负载均衡 (保持不变)
         User assignee = userMapper.findLeastLoadedUserByRole("MANAGER");
 
-        // 兜底逻辑：万一智能查询没查到（例如没有任何 MANAGER），尝试用普通方法查一次
         if (assignee == null) {
             log.warn("智能分配未找到合适的审核员，尝试降级查询...");
             List<User> managers = userMapper.findByRole("MANAGER");
             if (managers == null || managers.isEmpty()) {
                 throw new IllegalStateException("提交失败：系统中未找到任何拥有 'MANAGER' 角色的审核员账号，请联系管理员添加。");
             }
-            assignee = managers.get(0); // 降级：分配给列表里的第一个人
+            assignee = managers.get(0); 
         }
 
         // 4. 更新记录状态和负责人
         record.setStatus(ProcessRecordStatus.PENDING_REVIEW);
         record.setAssigneeId(assignee.getId());
-        record.setUpdatedAt(LocalDateTime.now()); // 记录提交时间
+        record.setUpdatedAt(LocalDateTime.now()); 
 
-        this.updateById(record); // 使用 MyBatis-Plus 的 updateById
+        this.updateById(record); 
 
-        log.info("【审核提交】记录 #{} 已成功提交，智能分配给审核员: {} (ID: {}, 当前待办数最少)",
-                recordId, assignee.getUsername(), assignee.getId());
+        // =======================================================
+        // 🔥【核心逻辑注入 B】记录提交行为
+        // =======================================================
+        AuditLog auditLog = new AuditLog();
+        auditLog.setRecordId(recordId);
+        auditLog.setOperatorId(currentUserId);
+        
+        // 语义化区分：如果是从打回状态提交的，记为 FIX（修复）；否则记为 SUBMIT（初次提交）
+        if (originalStatus == ProcessRecordStatus.CHANGES_REQUESTED) {
+            auditLog.setActionType("FIX");
+            auditLog.setComment("修复打回问题并重新提交");
+        } else {
+            auditLog.setActionType("SUBMIT");
+            auditLog.setComment("完成填报并提交审核");
+        }
+
+        // 记录发生时的轮次
+        auditLog.setAuditRound(record.getCurrentAuditRound());
+        auditLogMapper.insert(auditLog);
+
+        log.info("【审核提交】记录 #{} 已成功提交（动作：{}），智能分配给审核员: {} (ID: {})",
+                recordId, auditLog.getActionType(), assignee.getUsername(), assignee.getId());
     }
 
     /**
@@ -861,16 +905,20 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
     @Override
     public void autoFillRiskSheetData(Long recordId, List<LuckySheetJsonDTO.SheetData> sheets) {
         log.info("【AutoFill】执行 JSON 模式自动填充，RecordId: {}", recordId);
-        
+
         QueryWrapper<ProjectFile> query = new QueryWrapper<>();
         query.eq("record_id", recordId);
         List<ProjectFile> currentFiles = projectFileMapper.selectList(query);
 
-        if (sheets == null || sheets.isEmpty()) return;
+        if (sheets == null || sheets.isEmpty()) {
+            return;
+        }
 
         for (LuckySheetJsonDTO.SheetData sheet : sheets) {
             List<LuckySheetJsonDTO.CellData> cellDataList = sheet.getCelldata();
-            if (cellDataList == null || cellDataList.isEmpty()) continue;
+            if (cellDataList == null || cellDataList.isEmpty()) {
+                continue;
+            }
 
             // 构建 Grid 索引
             Map<Integer, Map<Integer, LuckySheetJsonDTO.CellData>> grid = new HashMap<>();
@@ -1256,7 +1304,7 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
             workbook.write(bos);
             return bos.toByteArray();
         }
-        
+
     }
 
     private static class RiskFillRule {
@@ -1366,14 +1414,11 @@ public class ProcessRecordServiceImpl extends ServiceImpl<ProcessRecordMapper, P
         // 3. 执行撤回：状态变回 DRAFT，负责人变回创建者
         record.setStatus(ProcessRecordStatus.DRAFT);
         record.setAssigneeId(record.getCreatedByUserId()); // 重新把任务分配给自己
-        
+
         // 可选：清空之前的审核日志或保留
         // record.setRejectionComment(null); 
-
         this.updateById(record);
         log.info("用户 {} 成功撤回了记录 #{}", currentUser.getUsername(), recordId);
     }
 
-
- 
 }

@@ -31,7 +31,7 @@ public class ProcessRecord {
     private String specificationsJson; 
     private String sourceFilePath; // 对应数据库的 source_file_path 列
     private ProcessRecordStatus status;
-
+    private Integer currentAuditRound;
     private Long assigneeId;  // ID of the user assigned to this process.
     @TableField("rejection_comment") // 确保与数据库列名匹配
     private String rejectionComment;

@@ -1,0 +1,24 @@
+因为加了保留状态，所以数据库的表出问题了
+
+ALTER TABLE review_problems 
+MODIFY COLUMN status ENUM('OPEN', 'RESOLVED', 'CLOSED', 'KEPT') NOT NULL DEFAULT 'OPEN';
+
+
+-- 1. 创建审核流水日志表
+CREATE TABLE `audit_logs` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `record_id` BIGINT NOT NULL COMMENT '关联 process_records.id',
+    `operator_id` BIGINT NOT NULL COMMENT '执行操作的人员ID (关联 users.id)',
+    `action_type` VARCHAR(50) NOT NULL COMMENT '动作类型: SUBMIT(提交), REJECT(打回), FIX(修复), PASS(通过)',
+    `audit_round` INT NOT NULL DEFAULT 1 COMMENT '该动作发生时的审核轮次',
+    `comment` TEXT COMMENT '打回原因或修改备注',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_record_round` (`record_id`, `audit_round`),
+    INDEX `idx_operator` (`operator_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审核与修改流水记录表';
+
+-- 2. 在过程记录表中插入“当前轮次”字段
+-- 默认值为 1，每打回一次，逻辑上让它 +1
+ALTER TABLE `process_records` 
+ADD COLUMN `current_audit_round` INT NOT NULL DEFAULT 1 COMMENT '当前审核轮次' 
+AFTER `status`;

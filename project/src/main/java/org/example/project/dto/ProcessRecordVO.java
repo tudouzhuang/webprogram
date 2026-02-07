@@ -23,7 +23,7 @@ public class ProcessRecordVO {
     private String rejectionComment;
     private LocalDateTime updatedAt; // 确保这个字段存在
     private Integer totalDesignDurationSeconds;
-
+    private Integer currentAuditRound;
     // --- 【【【 新增的关联对象 】】】 ---
     private UserSummaryDto assignee; // 使用一个简化的 User DTO 来表示负责人
 }

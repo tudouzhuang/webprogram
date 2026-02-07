@@ -16,6 +16,16 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 @Mapper
 public interface ProcessRecordMapper extends BaseMapper<ProcessRecord> {
 
+    /**
+     * 🔥【新增】打回时将轮次原子自增 + 1
+     * @param id 记录ID
+     * @return 影响行数
+     */
+    @org.apache.ibatis.annotations.Update(
+        "UPDATE process_records SET current_audit_round = current_audit_round + 1 WHERE id = #{id}"
+    )
+    int incrementAuditRound(@Param("id") Long id);
+    
     @Select({
         "<script>",
         "SELECT assignee_id as assigneeId, COUNT(*) as taskCount",

@@ -383,10 +383,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                             // 为了防止日志刷屏，我们只打印前 10 行非空单元格的调试信息
                             boolean isDebugTarget = (r < 10 && c < 10);
 
-                            if (isDebugTarget) {
-                                log.info("🔍 [Cell Debug] ({}, {}) POI原始边框状态: Top={}, Bottom={}, Left={}, Right={}",
-                                        r, c, style.getBorderTop(), style.getBorderBottom(), style.getBorderLeft(), style.getBorderRight());
-                            }
                             if (!hiddenMergedCells.contains(r + "_" + c)) {
                                 // 1. 上边框 (Top)
                                 if (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
@@ -396,9 +392,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                     borderTop.put("style", s);
                                     borderTop.put("color", color);
                                     bd.put("t", borderTop);
-                                    if (isDebugTarget) {
-                                        log.info("   -> ✅ 捕获上边框: style={}, color={}", s, color);
-                                    }
                                 }
 
                                 // 2. 下边框 (Bottom)
@@ -428,9 +421,6 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                             // 将边框信息存入 cellValue
                             if (!bd.isEmpty()) {
                                 cellValue.setBd(bd);
-                                if (isDebugTarget) {
-                                    log.info("   -> 🎉 单元格 ({}, {}) 边框数据已写入 DTO: {}", r, c, bd);
-                                }
                             } else {
                                 if (isDebugTarget && (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE)) {
                                     log.warn("   -> ⚠️ 警告：POI检测到边框但 bd Map 为空？请检查逻辑！");

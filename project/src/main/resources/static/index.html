@@ -565,7 +565,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#">
+                            <a class="nav-link" href="javascript:void(0)" @click="navigateTo('quality-stats-panel')">
                                 <i class="menu-icon mdi mdi-chart-line"></i>
                                 <span class="menu-title">数据研究</span>
                             </a>
@@ -861,7 +861,7 @@
     <script src="/js/components/mold-surface-panel.js"></script>
     <script src="/js/components/rectification-panel.js"></script>
     <script src="/js/components/process-sheet-viewer.js"></script>
-
+    <script src="/js/components/quality-stats-panel.js"></script>
 
 
     <!-- 5. 页面模板的特定功能脚本 (这些脚本通常依赖于jQuery/Bootstrap) -->
@@ -1101,27 +1101,21 @@
                 // 强烈建议你在修改完HTML模板后，将它们全部删除。
                 // ======================================================================
                 changePanel(panelName) {
-                    console.warn("【旧方法警告】: changePanel() 已被废弃, 请使用 navigateTo()");
                     this.navigateTo(panelName);
                 },
                 viewProject(project) {
-                    console.warn("【旧方法警告】: viewProject() 已被废弃, 请使用 goToProjectPlanning() 或其他 goTo... 方法");
                     this.navigateTo('project-details-panel', { projectId: project.id });
                 },
                 viewProjectPlanning(project) {
-                    console.warn("【旧方法警告】: viewProjectPlanning() 已被废弃, 请使用 goToProjectPlanning()");
                     this.goToProjectPlanning(project);
                 },
                 viewProcessRecordsForProject(project) {
-                    console.warn("【旧方法警告】: viewProcessRecordsForProject() 已被废弃, 请使用 goToProcessRecordList()");
                     this.goToProcessRecordList(project);
                 },
                 viewProcessRecordForProject(project) {
-                    console.warn("【旧方法警告】: viewProcessRecordForProject() 已被废弃, 请使用 onCreateNewRecord() 事件机制");
                     this.navigateTo('process-record-panel', { projectId: project.id });
                 },
                 goToViewProcessRecords(project) {
-                    console.warn("【旧方法警告】: goToViewProcessRecords() 已被废弃, 并且逻辑错误。请使用 goToReviewTaskList()。");
                     // 修正了原有的逻辑错误
                     this.goToReviewTaskList(project);
                 },
