@@ -222,8 +222,39 @@ Vue.component('record-workspace-panel', {
                                     </div>
                         
                                     <div style="height: 1px; background: #ebeef5; margin: 8px 15px;"></div>
-                                    <div style="padding: 5px 20px; font-size: 12px; color: #909399;">设计记录表文件</div>
-                        
+                                    <div style="padding: 5px 20px; font-size: 12px; color: #909399;">项目策划书 (参考)</div>
+                                    
+                                    <div v-for="mainDoc in planningDocs" :key="'group-' + mainDoc.id" class="planning-group">
+                                        <div class="file-item" 
+                                             @click="togglePlanningGroup(mainDoc.id)"
+                                             style="background: #f8f9fb; font-weight: bold; border-bottom: 1px solid #eee;">
+                                            <i :class="expandedPlanningGroups[mainDoc.id] ? 'el-icon-folder-opened' : 'el-icon-folder'" 
+                                               class="mr-2 text-warning"></i>
+                                            <span class="file-name text-truncate" style="flex: 1;">
+                                                {{ getCleanPlanningName(mainDoc.fileName) }}
+                                            </span>
+                                            <i :class="expandedPlanningGroups[mainDoc.id] ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" 
+                                               style="font-size: 12px; color: #909399;"></i>
+                                        </div>
+                                    
+                                        <el-collapse-transition>
+                                            <div v-show="expandedPlanningGroups[mainDoc.id]" style="background: #fff;">
+                                                <div v-for="child in getChildDocs(mainDoc.id)" 
+                                                     :key="'child-' + child.id"
+                                                     class="file-item"
+                                                     :class="{ 'active': activeTab === 'plan-child-' + child.id }"
+                                                     style="padding-left: 45px; font-size: 13px; border-bottom: 1px solid #f9f9f9;"
+                                                     @click="activeTab = 'plan-child-' + child.id">
+                                                    <i class="el-icon-document mr-2" style="color: #67C23A;"></i>
+                                                    <span class="file-name text-truncate">{{ child.fileName }}</span>
+                                                </div>
+                                                <div v-if="getChildDocs(mainDoc.id).length === 0" 
+                                                     style="padding: 10px 45px; font-size: 12px; color: #999; font-style: italic;">
+                                                    未发现拆分Sheet
+                                                </div>
+                                            </div>
+                                        </el-collapse-transition>
+                                    </div>
                                     <div v-for="file in excelFiles" 
                                             :key="file.id"
                                             class="file-item"
@@ -352,6 +383,15 @@ Vue.component('record-workspace-panel', {
                                         style="width: 100%; height: 100%; border: none; display: block;">
                                     </iframe>
                                 </div>
+
+                                <div v-if="activeTab.startsWith('plan-child-') && activeFile" :key="'plan-file-ctx-' + activeFile.id" style="width: 100%; height: 100%;">
+                                    <iframe 
+                                        :ref="'iframe-' + activeFile.id" 
+                                        src="/luckysheet-iframe-loader.html" 
+                                        @load="() => loadSheetInIframe(activeFile)" 
+                                        style="width: 100%; height: 100%; border: none; display: block;">
+                                    </iframe>
+                                </div>
                         
                             </div>
                         </div>
@@ -385,6 +425,9 @@ Vue.component('record-workspace-panel', {
             personnelCache: null, // 【保留】用于“挪用”和缓存人员信息
             isWithdrawing: false,
             fileRefreshKeys: {},
+            planningDocs: [],
+            allProjectFiles: [],
+            expandedPlanningGroups: {},
         }
     },
 
@@ -410,10 +453,17 @@ Vue.component('record-workspace-panel', {
             return this.associatedFiles.find(file => file.documentType === 'recordMeta');
         },
         activeFile() {
-            if (this.activeTab === 'recordMeta') {
-                return this.metaFile;
+            if (this.activeTab === 'recordMeta') return this.metaFile;
+
+            // 1. 尝试在过程记录文件里找
+            let file = this.excelFiles.find(f => f.documentType === this.activeTab);
+
+            // 2. 🔥 如果没找到，且是策划书子项，从 allProjectFiles 里通过 ID 找
+            if (!file && this.activeTab.startsWith('plan-child-')) {
+                const id = this.activeTab.replace('plan-child-', '');
+                file = this.allProjectFiles.find(f => f.id.toString() === id);
             }
-            return this.excelFiles.find(f => f.documentType === this.activeTab);
+            return file;
         },
         canWithdraw() {
             if (!this.recordInfo) return false;
@@ -469,6 +519,15 @@ Vue.component('record-workspace-panel', {
 
                 // 步骤 3: 【原子化更新】一次性更新所有数据
                 this.recordInfo = finalRecordInfo;
+                if (finalRecordInfo.projectId) {
+                    axios.get(`/api/projects/${finalRecordInfo.projectId}/files`).then(res => {
+                        this.allProjectFiles = res.data || [];
+                        // 过滤出主策划书文件 (不包含子文件)
+                        this.planningDocs = this.allProjectFiles.filter(f =>
+                            f.documentType && f.documentType.startsWith('PLANNING_DOCUMENT')
+                        );
+                    }).catch(err => console.error("加载策划书数据失败:", err));
+                }
                 this.associatedFiles = files.sort((a, b) => a.documentType.localeCompare(b.documentType));
 
                 if (this.metaFile) {
@@ -488,7 +547,14 @@ Vue.component('record-workspace-panel', {
                 this.isLoading = false;
             }
         },
-
+        getChildDocs(parentId) {
+            return this.allProjectFiles
+                .filter(f => f.parentId === parentId)
+                .sort((a, b) => {
+                    // 使用 localeCompare 的 numeric 属性进行自然排序 (1, 2, 10)
+                    return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' });
+                });
+        },
         async fetchAndDisplayMetaData() {
             // 如果已经加载过，或者没有metaFile，则不执行
             if (this.metaDataContent || !this.metaFile) return;
@@ -599,39 +665,59 @@ Vue.component('record-workspace-panel', {
                 }
             }, { passive: false });
         },
-        // 【核心修正】加载逻辑：强制前端解析
+        getCleanPlanningName(fileName) {
+            if (!fileName) return "未命名策划书";
+            // 1. 去掉前缀
+            let name = fileName.replace(/^PLANNING_DOCUMENT_/, '');
+            // 2. 处理重复后缀逻辑：针对 "XXX.XLSX-XXX.xlsx"
+            // 如果包含中间的 .XLSX- 或 .xlsx-，取最后一部分
+            if (name.toUpperCase().includes('.XLSX-')) {
+                const parts = name.split(/\.xlsx-/i);
+                name = parts[parts.length - 1];
+            }
+            // 3. 去掉最后的扩展名，让界面更清爽
+            return name.replace(/\.xlsx$/i, '').replace(/\.xls$/i, '');
+        },
+        // 【完整修复】加载逻辑：整合权限控制与前端 JSON 解析
+        // 【完整修复版】完全参照 project-planning-panel 的流式加载逻辑
         loadSheetInIframe(fileInfo) {
             if (!fileInfo) return;
+
+            // 1. 权限识别：如果是策划书子项，则开启只读模式
+            const isPlanningRef = this.activeTab.startsWith('plan-child-');
+
+            // 2. 准确定位 iframe 引用
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
             if (targetIframe && targetIframe.contentWindow) {
-
-
-                const options = { allowUpdate: true, showtoolbar: true };
-
-                // 【关键修改】在原始 URL 后面强制追加 `&format=json` (或 `?format=json`)
-                // 这样 iframe 内部的加载器就会收到JSON，而不是二进制文件
+                // 3. 【关键：参照 project-planning-panel】移除 &format=json
+                // 使用原始二进制流，让 Iframe 内部的 LuckyExcel 进行全量解析（含图片）
                 let fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
-                if (fileUrl.includes('?')) {
-                    fileUrl += '&format=json';
-                } else {
-                    fileUrl += '?format=json';
-                }
 
-                console.log(`[Parent Panel] 准备向 iframe 发送加载指令, 强制使用 JSON 格式, URL: ${fileUrl}`);
-
-                const message = {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: fileUrl, // 使用我们修改过的 URL
-                        fileName: fileInfo.fileName,
-                        options: { lang: 'zh', ...options }
-                    }
+                // 4. 合并并优化配置参数
+                const options = {
+                    lang: 'zh',
+                    allowUpdate: !isPlanningRef,      // 策划书不许同步后端
+                    showtoolbar: true,                // 开启工具栏（某些版本工具栏关闭会限制图片功能）
+                    showsheetbar: true,
+                    showstatisticBar: false,
+                    // 🔥【图片渲染核心参数】
+                    allowImage: true,
+                    allowEdit: true,                  // 必须允许前端编辑，图片公式 DISPIMG 才能运行
+                    dataVerification: false           // 禁用校验，防止公式冲突
                 };
 
-                // 发送消息给 iframe
-                this.sendMessageToIframe(targetIframe, message);
+                console.log(`[Workspace] 正在以“流模式”加载文件 | ID: ${fileInfo.id} | 是否为策划书: ${isPlanningRef}`);
+
+                this.sendMessageToIframe(targetIframe, {
+                    type: 'LOAD_SHEET',
+                    payload: {
+                        fileUrl: fileUrl,
+                        fileName: fileInfo.fileName,
+                        options: options
+                    }
+                });
             }
         },
 
@@ -651,8 +737,12 @@ Vue.component('record-workspace-panel', {
             } else {
                 const fileToLoad = this.excelFiles.find(f => f.documentType === tab.name);
                 // 确保 DOM 更新后再加载 iframe
+                // 🔥 关键点：统一从 activeFile 计算属性中获取当前需要加载的文件对象
                 this.$nextTick(() => {
-                    this.loadSheetInIframe(fileToLoad);
+                    const fileToLoad = this.activeFile;
+                    if (fileToLoad) {
+                        this.loadSheetInIframe(fileToLoad);
+                    }
                 });
             }
 
@@ -883,6 +973,9 @@ Vue.component('record-workspace-panel', {
             console.log("[Action] 用户点击返回列表。");
             this.stopWorkSession(); // 在发出事件前，先停止会话
             this.$emit('back-to-list');
+        },
+        togglePlanningGroup(id) {
+            this.$set(this.expandedPlanningGroups, id, !this.expandedPlanningGroups[id]);
         },
         handleExport() {
             // 1. 找到当前激活的 Tab 对应的文件信息

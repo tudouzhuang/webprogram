@@ -564,7 +564,7 @@
                                 <span class="menu-title">工艺整改</span>
                             </a>
                         </li>
-                        <li class="nav-item">
+                        <li class="nav-item" v-if="currentUser && currentUser.identity === 'manager'">
                             <a class="nav-link" href="javascript:void(0)" @click="navigateTo('quality-stats-panel')">
                                 <i class="menu-icon mdi mdi-chart-line"></i>
                                 <span class="menu-title">数据研究</span>
