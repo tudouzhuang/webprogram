@@ -301,8 +301,17 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 List<LuckySheetJsonDTO.CellData> celldataList = new ArrayList<>();
                 for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
                     Row row = sheet.getRow(r);
+// 🔥【手术刀修复】必须判空！POI 遇到空行会返回 null
+                    if (row == null) {
+                        continue;
+                    }
 
-                    for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
+// 获取起始列，如果小于0说明该行虽然存在但无单元格
+                    short firstCellNum = row.getFirstCellNum();
+                    if (firstCellNum < 0) {
+                        continue;
+                    }
+                    for (int c = firstCellNum; c < row.getLastCellNum(); c++) {
                         XSSFCell cell = (XSSFCell) row.getCell(c, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                         if (cell == null) {
                             continue;
@@ -370,58 +379,63 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 cellValue.setTb(2);
                             }
                             Map<String, Object> bd = new HashMap<>();
-                        
+
                             // 为了防止日志刷屏，我们只打印前 10 行非空单元格的调试信息
-                            boolean isDebugTarget = (r < 10 && c < 10); 
-    
+                            boolean isDebugTarget = (r < 10 && c < 10);
+
                             if (isDebugTarget) {
-                                log.info("🔍 [Cell Debug] ({}, {}) POI原始边框状态: Top={}, Bottom={}, Left={}, Right={}", 
-                                    r, c, style.getBorderTop(), style.getBorderBottom(), style.getBorderLeft(), style.getBorderRight());
+                                log.info("🔍 [Cell Debug] ({}, {}) POI原始边框状态: Top={}, Bottom={}, Left={}, Right={}",
+                                        r, c, style.getBorderTop(), style.getBorderBottom(), style.getBorderLeft(), style.getBorderRight());
                             }
                             if (!hiddenMergedCells.contains(r + "_" + c)) {
-                            // 1. 上边框 (Top)
-                            if (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
-                                Map<String, Object> borderTop = new HashMap<>();
-                                int s = getLuckysheetBorderStyle(style.getBorderTop());
-                                String color = getPOIColor(style.getTopBorderXSSFColor());
-                                borderTop.put("style", s);
-                                borderTop.put("color", color);
-                                bd.put("t", borderTop);
-                                if(isDebugTarget) log.info("   -> ✅ 捕获上边框: style={}, color={}", s, color);
+                                // 1. 上边框 (Top)
+                                if (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                    Map<String, Object> borderTop = new HashMap<>();
+                                    int s = getLuckysheetBorderStyle(style.getBorderTop());
+                                    String color = getPOIColor(style.getTopBorderXSSFColor());
+                                    borderTop.put("style", s);
+                                    borderTop.put("color", color);
+                                    bd.put("t", borderTop);
+                                    if (isDebugTarget) {
+                                        log.info("   -> ✅ 捕获上边框: style={}, color={}", s, color);
+                                    }
+                                }
+
+                                // 2. 下边框 (Bottom)
+                                if (style.getBorderBottom() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                    Map<String, Object> borderBottom = new HashMap<>();
+                                    borderBottom.put("style", getLuckysheetBorderStyle(style.getBorderBottom()));
+                                    borderBottom.put("color", getPOIColor(style.getBottomBorderXSSFColor()));
+                                    bd.put("b", borderBottom);
+                                }
+
+                                // 3. 左边框 (Left)
+                                if (style.getBorderLeft() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                    Map<String, Object> borderLeft = new HashMap<>();
+                                    borderLeft.put("style", getLuckysheetBorderStyle(style.getBorderLeft()));
+                                    borderLeft.put("color", getPOIColor(style.getLeftBorderXSSFColor()));
+                                    bd.put("l", borderLeft);
+                                }
+
+                                // 4. 右边框 (Right)
+                                if (style.getBorderRight() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                    Map<String, Object> borderRight = new HashMap<>();
+                                    borderRight.put("style", getLuckysheetBorderStyle(style.getBorderRight()));
+                                    borderRight.put("color", getPOIColor(style.getRightBorderXSSFColor()));
+                                    bd.put("r", borderRight);
+                                }
                             }
-                            
-                            // 2. 下边框 (Bottom)
-                            if (style.getBorderBottom() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
-                                Map<String, Object> borderBottom = new HashMap<>();
-                                borderBottom.put("style", getLuckysheetBorderStyle(style.getBorderBottom()));
-                                borderBottom.put("color", getPOIColor(style.getBottomBorderXSSFColor()));
-                                bd.put("b", borderBottom);
-                            }
-                            
-                            // 3. 左边框 (Left)
-                            if (style.getBorderLeft() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
-                                Map<String, Object> borderLeft = new HashMap<>();
-                                borderLeft.put("style", getLuckysheetBorderStyle(style.getBorderLeft()));
-                                borderLeft.put("color", getPOIColor(style.getLeftBorderXSSFColor()));
-                                bd.put("l", borderLeft);
-                            }
-                            
-                            // 4. 右边框 (Right)
-                            if (style.getBorderRight() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
-                                Map<String, Object> borderRight = new HashMap<>();
-                                borderRight.put("style", getLuckysheetBorderStyle(style.getBorderRight()));
-                                borderRight.put("color", getPOIColor(style.getRightBorderXSSFColor()));
-                                bd.put("r", borderRight);
-                            }
-                        }
                             // 将边框信息存入 cellValue
                             if (!bd.isEmpty()) {
                                 cellValue.setBd(bd);
-                                if(isDebugTarget) log.info("   -> 🎉 单元格 ({}, {}) 边框数据已写入 DTO: {}", r, c, bd);
+                                if (isDebugTarget) {
+                                    log.info("   -> 🎉 单元格 ({}, {}) 边框数据已写入 DTO: {}", r, c, bd);
+                                }
                             } else {
-                                if(isDebugTarget && (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE)) {
+                                if (isDebugTarget && (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE)) {
                                     log.warn("   -> ⚠️ 警告：POI检测到边框但 bd Map 为空？请检查逻辑！");
-                                }}
+                                }
+                            }
                         }
 
                         // 2. 解析单元格的值
@@ -503,7 +517,9 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 // 3. 读取配置信息 (config)
                 Map<String, Object> config = new HashMap<>();
                 Map<String, Object> merge = new HashMap<>();
-                for (CellRangeAddress region : sheet.getMergedRegions()) {
+                List<CellRangeAddress> mergedRegions = sheet.getMergedRegions();
+                if (mergedRegions != null) {
+                    for (CellRangeAddress region : mergedRegions) {
                     // 【【【 核心修正：增加安全检查 】】】
                     // 只有当合并区域的行数(rs)和列数(cs)都大于1时，才是一个有效的合并单元格。
                     // 单行或单列的“合并”是没有意义的，且可能导致 Luckysheet 内部 bug。
@@ -521,7 +537,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                     } else {
                         log.warn("发现一个无效的单格合并区域 (r={}, c={})，已自动忽略。", region.getFirstRow(), region.getFirstColumn());
                     }
-                }
+                }}
                 if (!merge.isEmpty()) {
                     config.put("merge", merge);
                 }
