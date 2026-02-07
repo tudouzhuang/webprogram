@@ -177,7 +177,29 @@ Vue.component('record-review-panel', {
                                 </div>
 
                                 <div style="height: 1px; background: #ebeef5; margin: 8px 15px;"></div>
-                                <div style="padding: 5px 20px; font-size: 12px; color: #909399;">Excel 文件</div>
+                                <div style="padding: 5px 20px; font-size: 12px; color: #909399;">项目策划书 (参考)</div>
+                                
+                                <div v-for="mainDoc in planningDocs" :key="'group-' + mainDoc.id" class="planning-group">
+                                    <div class="file-item" @click="togglePlanningGroup(mainDoc.id)" style="background: #f8f9fb; font-weight: bold; border-bottom: 1px solid #eee;">
+                                        <i :class="expandedPlanningGroups[mainDoc.id] ? 'el-icon-folder-opened' : 'el-icon-folder'" class="mr-2 text-warning"></i>
+                                        <span class="file-name text-truncate" style="flex: 1;">{{ getCleanPlanningName(mainDoc.fileName) }}</span>
+                                        <i :class="expandedPlanningGroups[mainDoc.id] ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" style="font-size: 12px; color: #909399;"></i>
+                                    </div>
+                                
+                                    <el-collapse-transition>
+                                        <div v-show="expandedPlanningGroups[mainDoc.id]" style="background: #fff;">
+                                            <div v-for="child in getChildDocs(mainDoc.id)" 
+                                                 :key="'child-' + child.id"
+                                                 class="file-item"
+                                                 :class="{ 'active': activeTab === 'plan-child-' + child.id }"
+                                                 style="padding-left: 45px; font-size: 13px; border-bottom: 1px solid #f9f9f9;"
+                                                 @click="activeTab = 'plan-child-' + child.id; handleTabClick({name: 'plan-child-' + child.id})">
+                                                <i class="el-icon-document mr-2" style="color: #67C23A;"></i>
+                                                <span class="file-name text-truncate">{{ child.fileName }}</span>
+                                            </div>
+                                        </div>
+                                    </el-collapse-transition>
+                                </div>
 
                                 <div v-for="file in excelFiles" :key="file.id" class="file-item" :class="{ 'active': activeTab === file.documentType }" @click="activeTab = file.documentType">
                                     <div class="d-flex align-items-center w-100">
@@ -267,6 +289,17 @@ Vue.component('record-review-panel', {
                                 </problem-record-table>
                             </div>
 
+                            <div v-if="activeTab && activeTab.startsWith('plan-child-') && activeFile" 
+                                :key="'plan-render-' + activeTab" 
+                                style="width: 100%; height: 100%;">
+                                <iframe
+                                    :ref="'iframe-' + activeFile.id"
+                                    src="/luckysheet-iframe-loader.html" 
+                                    @load="() => loadSheetIntoIframe(activeFile)"
+                                    style="width: 100%; height: 100%; border: none; display: block;">
+                                </iframe>
+                            </div>
+
                             <div v-for="file in excelFiles" :key="file.id" v-show="activeTab === file.documentType" style="width: 100%; height: 100%;">
                                 <iframe
                                     :ref="'iframe-' + file.id"
@@ -302,6 +335,10 @@ Vue.component('record-review-panel', {
             isMetaDataLoading: false,
             metaDataContent: null, // 统一使用这个变量存储元数据
             // 移除了重复的 metaData
+            planningDocs: [],             // 存放主策划书文件
+            allProjectFiles: [],          // 存放项目下所有文件（用于找子Sheet）
+            expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
+            showFullscreen: false,
         }
     },
     // 修改后
@@ -388,15 +425,16 @@ Vue.component('record-review-panel', {
             return this.allFiles.find(file => file && file.documentType === 'recordMeta');
         },
         activeFile() {
-            if (this.activeTab === 'recordMeta') {
-                return this.metaFile;
+            if (this.activeTab === 'recordMeta') return this.metaFile;
+            // 1. 先从过程记录的 excelFiles 中找
+            let file = this.excelFiles.find(f => f.documentType === this.activeTab);
+            // 2. 🔥 如果没找到，且是策划书子项，从 allProjectFiles 里通过 ID 找
+            if (!file && this.activeTab && this.activeTab.startsWith('plan-child-')) {
+                const id = this.activeTab.replace('plan-child-', '');
+                file = this.allProjectFiles.find(f => f.id.toString() === id);
             }
-            // 确保 excelFiles 存在
-            if (this.excelFiles && this.excelFiles.length > 0) {
-                return this.excelFiles.find(f => f.documentType === this.activeTab);
-            }
-            return null;
-        }
+            return file;
+        },
     },
     methods: {
         async handleTriggerReview() {
@@ -463,6 +501,15 @@ Vue.component('record-review-panel', {
                 // 这样做可以最大程度地避免渲染竞争条件
                 console.log('[Review Panel] 准备一次性更新 data 属性...');
                 this.recordInfo = recordResponse.data;
+                if (this.recordInfo.projectId) {
+                    axios.get(`/api/projects/${this.recordInfo.projectId}/files`).then(res => {
+                        this.allProjectFiles = res.data || [];
+                        // 过滤出主策划书
+                        this.planningDocs = this.allProjectFiles.filter(f =>
+                            f.documentType && f.documentType.startsWith('PLANNING_DOCUMENT')
+                        );
+                    }).catch(err => console.error("加载参考策划书失败:", err));
+                }
                 this.allFiles = cleanedFiles;
                 this.activeTab = newActiveTab; // 在同一个事件循环中更新 activeTab
 
@@ -482,7 +529,24 @@ Vue.component('record-review-panel', {
                 this.isLoading = false;
             }
         },
-
+        getCleanPlanningName(fileName) {
+            if (!fileName) return "未命名策划书";
+            let name = fileName.replace(/^PLANNING_DOCUMENT_/, '');
+            // 处理重复后缀逻辑：针对 "XXX.XLSX-XXX.xlsx"
+            if (name.toUpperCase().includes('.XLSX-')) {
+                const parts = name.split(/\.xlsx-/i);
+                name = parts[parts.length - 1];
+            }
+            return name.replace(/\.xlsx$/i, '').replace(/\.xls$/i, '');
+        },
+        getChildDocs(parentId) {
+            return this.allProjectFiles
+                .filter(f => f.parentId === parentId)
+                .sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true }));
+        },
+        togglePlanningGroup(id) {
+            this.$set(this.expandedPlanningGroups, id, !this.expandedPlanningGroups[id]);
+        },
         async fetchMetaData() {
             // 1. 安全检查：如果没有元数据文件记录，直接返回
             if (!this.metaFile) {
@@ -530,36 +594,48 @@ Vue.component('record-review-panel', {
         },
 
         loadSheetIntoIframe(fileInfo) {
-            if (!fileInfo) return;
+            if (!fileInfo || !this.showFullscreen) return;
+
+            const isPlanningRef = this.activeTab && this.activeTab.startsWith('plan-child-');
             const iframeRef = this.$refs['iframe-' + fileInfo.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
             if (targetIframe && targetIframe.contentWindow) {
-
-                const options = { allowUpdate: true, showtoolbar: true };
-
-                // 【关键修改】在原始 URL 后面强制追加 `&format=json` (或 `?format=json`)
-                // 这样 iframe 内部的加载器就会收到JSON，而不是二进制文件
+                // 🔥【核心修复】：移除 &format=json。策划书必须用二进制流解析才能出图
                 let fileUrl = `/api/files/content/${fileInfo.id}?t=${new Date().getTime()}`;
-                if (fileUrl.includes('?')) {
-                    fileUrl += '&format=json';
-                } else {
-                    fileUrl += '?format=json';
-                }
 
-                console.log(`[Parent Panel] 准备向 iframe 发送加载指令, 强制使用 JSON 格式, URL: ${fileUrl}`);
-
-                const message = {
-                    type: 'LOAD_SHEET',
-                    payload: {
-                        fileUrl: fileUrl, // 使用我们修改过的 URL
-                        fileName: fileInfo.fileName,
-                        options: { lang: 'zh', ...options }
-                    }
+                const options = {
+                    lang: 'zh',
+                    allowUpdate: false, // 审核页面统一不允许同步，需通过审核按钮提交
+                    showtoolbar: true,
+                    showsheetbar: true,
+                    showstatisticBar: false,
+                    // 🔥【图片渲染核心】
+                    allowImage: true,
+                    allowEdit: true,   // 开启前端编辑模式，否则 DISPIMG 公式不解析
+                    dataVerification: false
                 };
 
-                // 发送消息给 iframe
-                this.sendMessageToIframe(targetIframe, message);
+                console.log(`[Review] 以流模式加载${isPlanningRef ? '参考表' : '待审表'} | ID: ${fileInfo.id}`);
+
+                this.sendMessageToIframe(targetIframe, {
+                    type: 'LOAD_SHEET',
+                    payload: {
+                        fileUrl: fileUrl,
+                        fileName: fileInfo.fileName,
+                        options: options
+                    }
+                });
+
+                // 🔥【注入公式拦截器】：防止 DISPIMG 报错卡死渲染
+                const win = targetIframe.contentWindow;
+                if (win.luckysheet) {
+                    win.luckysheet_function = win.luckysheet_function || {};
+                    win.luckysheet_function._XLFN = win.luckysheet_function._XLFN || {};
+                    if (!win.luckysheet_function._XLFN.DISPIMG) {
+                        win.luckysheet_function._XLFN.DISPIMG = function () { return ""; };
+                    }
+                }
             }
         },
 
