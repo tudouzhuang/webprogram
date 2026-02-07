@@ -195,6 +195,57 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
     }
 
     /**
+     * 【辅助方法】将 POI 边框样式转换为 Luckysheet 样式 ID
+     */
+    private int getLuckysheetBorderStyle(org.apache.poi.ss.usermodel.BorderStyle style) {
+        if (style == null) {
+            return 0;
+        }
+        switch (style) {
+            case THIN:
+                return 1;              // 细实线
+            case HAIR:
+                return 2;              // 极细虚线
+            case DOTTED:
+                return 3;            // 点虚线
+            case DASHED:
+                return 4;            // 短划线
+            case DASH_DOT:
+                return 5;          // 点划线
+            case DASH_DOT_DOT:
+                return 6;      // 双点划线
+            case DOUBLE:
+                return 7;            // 双实线
+            case MEDIUM:
+                return 8;            // 中实线
+            case MEDIUM_DASHED:
+                return 9;     // 中划线
+            case MEDIUM_DASH_DOT:
+                return 10;  // 中点划线
+            case MEDIUM_DASH_DOT_DOT:
+                return 11; // 中双点划线
+            case SLANTED_DASH_DOT:
+                return 12; // 倾斜点划线
+            case THICK:
+                return 13;            // 粗实线
+            default:
+                return 1;
+        }
+    }
+
+    /**
+     * 【辅助方法】获取 POI 颜色 Hex 字符串
+     */
+    private String getPOIColor(org.apache.poi.xssf.usermodel.XSSFColor color) {
+        if (color == null || color.getARGBHex() == null) {
+            return "#000000"; // 默认为黑色
+        }
+        // POI 返回的 ARGBHex 前两位是 Alpha 通道，通常需要截取掉，或者保留 #
+        // Luckysheet 兼容 #RRGGBB
+        return "#" + color.getARGBHex().substring(2);
+    }
+
+    /**
      * 【核心转换功能】读取 .xlsx 文件，并将其内容转换为 Luckysheet 需要的 JSON 格式。 【最终完整版 + 后端标红】:
      * 全面支持样式、合并、列宽等，并增加了后端自动标红逻辑。
      *
@@ -223,11 +274,11 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                 // =================================================================
                 String okSymbol;
                 String ngSymbol;
-                
+
                 if (sheet.getSheetName().contains("重大风险")) {
                     log.info("  -> 检测到 '重大风险' Sheet，切换到特殊解析规则。");
                     // 在这里定义“重大风险”工作表专用的符号
-                    okSymbol = "OK"; 
+                    okSymbol = "OK";
                     ngSymbol = "NG";
                 } else {
                     // 默认规则
@@ -309,6 +360,59 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                             if (style.getWrapText()) {
                                 cellValue.setTb(2);
                             }
+                            Map<String, Object> bd = new HashMap<>();
+                        
+                            // 为了防止日志刷屏，我们只打印前 10 行非空单元格的调试信息
+                            boolean isDebugTarget = (r < 10 && c < 10); 
+    
+                            if (isDebugTarget) {
+                                log.info("🔍 [Cell Debug] ({}, {}) POI原始边框状态: Top={}, Bottom={}, Left={}, Right={}", 
+                                    r, c, style.getBorderTop(), style.getBorderBottom(), style.getBorderLeft(), style.getBorderRight());
+                            }
+    
+                            // 1. 上边框 (Top)
+                            if (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                Map<String, Object> borderTop = new HashMap<>();
+                                int s = getLuckysheetBorderStyle(style.getBorderTop());
+                                String color = getPOIColor(style.getTopBorderXSSFColor());
+                                borderTop.put("style", s);
+                                borderTop.put("color", color);
+                                bd.put("t", borderTop);
+                                if(isDebugTarget) log.info("   -> ✅ 捕获上边框: style={}, color={}", s, color);
+                            }
+                            
+                            // 2. 下边框 (Bottom)
+                            if (style.getBorderBottom() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                Map<String, Object> borderBottom = new HashMap<>();
+                                borderBottom.put("style", getLuckysheetBorderStyle(style.getBorderBottom()));
+                                borderBottom.put("color", getPOIColor(style.getBottomBorderXSSFColor()));
+                                bd.put("b", borderBottom);
+                            }
+                            
+                            // 3. 左边框 (Left)
+                            if (style.getBorderLeft() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                Map<String, Object> borderLeft = new HashMap<>();
+                                borderLeft.put("style", getLuckysheetBorderStyle(style.getBorderLeft()));
+                                borderLeft.put("color", getPOIColor(style.getLeftBorderXSSFColor()));
+                                bd.put("l", borderLeft);
+                            }
+                            
+                            // 4. 右边框 (Right)
+                            if (style.getBorderRight() != org.apache.poi.ss.usermodel.BorderStyle.NONE) {
+                                Map<String, Object> borderRight = new HashMap<>();
+                                borderRight.put("style", getLuckysheetBorderStyle(style.getBorderRight()));
+                                borderRight.put("color", getPOIColor(style.getRightBorderXSSFColor()));
+                                bd.put("r", borderRight);
+                            }
+    
+                            // 将边框信息存入 cellValue
+                            if (!bd.isEmpty()) {
+                                cellValue.setBd(bd);
+                                if(isDebugTarget) log.info("   -> 🎉 单元格 ({}, {}) 边框数据已写入 DTO: {}", r, c, bd);
+                            } else {
+                                if(isDebugTarget && (style.getBorderTop() != org.apache.poi.ss.usermodel.BorderStyle.NONE)) {
+                                    log.warn("   -> ⚠️ 警告：POI检测到边框但 bd Map 为空？请检查逻辑！");
+                                }}
                         }
 
                         // 2. 解析单元格的值

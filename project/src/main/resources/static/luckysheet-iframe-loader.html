@@ -281,6 +281,75 @@
                 delete sheet.calcChain;
                 if (!sheet.celldata) sheet.celldata = [];
                 if (!sheet.config) sheet.config = {};
+
+
+                if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
+
+                // 用于动态扩容，防止边框画在表格外面被截断
+                let patchMaxRow = sheet.row || 30;
+                let patchMaxCol = sheet.column || 20;
+
+                // --- [A] 边框修复 (智能 Range 模式：支持合并单元格) ---
+                if (sheet.celldata && Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cell => {
+                        const r = cell.r;
+                        const c = cell.c;
+
+                        // 1. 扩容探测
+                        if (r >= patchMaxRow) patchMaxRow = r + 5;
+                        if (c >= patchMaxCol) patchMaxCol = c + 2;
+
+                        // 2. 边框提取
+                        if (cell.v && cell.v.bd) {
+                            const bd = cell.v.bd;
+
+                            // 🔥 关键点1：检查是否为合并单元格
+                            // 如果是合并单元格，我们需要获取它的跨度(rs, cs)，否则默认为1x1
+                            let rs = 1;
+                            let cs = 1;
+                            const mergeKey = `${r}_${c}`;
+                            if (sheet.config.merge && sheet.config.merge[mergeKey]) {
+                                rs = sheet.config.merge[mergeKey].rs;
+                                cs = sheet.config.merge[mergeKey].cs;
+                            }
+
+                            // 🔥 关键点2：构建范围 (Range)
+                            // 即使是单单元格，也当作一个 1x1 的范围来处理，这样逻辑最统一且兼容合并
+                            const range = {
+                                "row": [r, r + rs - 1],
+                                "column": [c, c + cs - 1]
+                            };
+
+                            // 辅助函数：使用 rangeType: 'range' 推送边框
+                            // Range 模式是“叠加”的，不会像 Cell 模式那样互相覆盖，所以可以放心分四次推
+                            const pushRangeBorder = (borderType, styleObj) => {
+                                if (styleObj && (styleObj.style || styleObj.style === 0)) {
+                                    sheet.config.borderInfo.push({
+                                        "rangeType": "range",
+                                        "borderType": borderType,
+                                        "style": parseInt(styleObj.style),
+                                        "color": styleObj.color || "#000000",
+                                        "range": [range]
+                                    });
+                                }
+                            };
+
+                            // 分别推送四边
+                            if (bd.t) pushRangeBorder("border-top", bd.t);
+                            if (bd.b) pushRangeBorder("border-bottom", bd.b);
+                            if (bd.l) pushRangeBorder("border-left", bd.l);
+                            if (bd.r) pushRangeBorder("border-right", bd.r);
+                        }
+                    });
+                }
+
+                // 3. 应用扩容 (这一步非常关键，否则第30行之后的边框会被切掉)
+                sheet.row = Math.max(sheet.row || 0, patchMaxRow);
+                sheet.column = Math.max(sheet.column || 0, patchMaxCol);
+
+
+
+
                 if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
 
                 // B. 【必删】暴力删除 calcChain (计算链)
@@ -369,7 +438,7 @@
                 }
             });
 
-// 步骤 5: 延迟执行 Refresh 和 Hook
+            // 步骤 5: 延迟执行 Refresh 和 Hook
             // 使用 setTimeout 确保 Luckysheet DOM 已经渲染完毕
             setTimeout(() => {
                 try {
@@ -423,9 +492,9 @@
 
                     // 5. 任务收尾：通知父窗口并释放渲染锁
                     if (window.parent) {
-                        window.parent.postMessage({ 
-                            type: 'LUCKYSHEET_RENDER_FINISHED', 
-                            status: 'success' 
+                        window.parent.postMessage({
+                            type: 'LUCKYSHEET_RENDER_FINISHED',
+                            status: 'success'
                         }, '*');
                     }
 
@@ -665,9 +734,9 @@
                     if (rawSheets && rawSheets.length > 0) {
                         const firstSheet = rawSheets[0];
                         const hasBorder = firstSheet.config && firstSheet.config.borderInfo && firstSheet.config.borderInfo.length > 0;
-                        console.log(`🕵️ [Save Check] Sheet1 边框检查:`, 
+                        console.log(`🕵️ [Save Check] Sheet1 边框检查:`,
                             hasBorder ? `✅ 存在 ${firstSheet.config.borderInfo.length} 条规则` : "❌ 无边框信息 (为空)");
-                        
+
                         if (hasBorder) {
                             console.log("   -> 边框数据快照:", JSON.parse(JSON.stringify(firstSheet.config.borderInfo)));
                         }

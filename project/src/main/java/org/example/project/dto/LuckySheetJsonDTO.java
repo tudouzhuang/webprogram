@@ -74,6 +74,7 @@ public class LuckySheetJsonDTO {
         private Integer ht; // Horizontal Type (0: center, 1: left, 2: right)
         private Integer vt; // Vertical Type (0: middle, 1: top, 2: bottom)
         private Integer tb; // Text Break (2 for wrap text)
+        private Map<String, Object> bd;
     }
 
     /**

@@ -1284,7 +1284,6 @@ Vue.component('record-workspace-panel', {
                             // 只要有数据，且包含 designerName，就缓存它
                             if (newStats && newStats.designerName) {
                                 this.personnelCache = newStats; // 直接缓存整个对象
-                                console.log('%c[挪用成功] 已捕获数据!', 'color: green', this.personnelCache);
                             }
                         },
                         { deep: true }
