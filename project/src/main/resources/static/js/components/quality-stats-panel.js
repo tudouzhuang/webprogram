@@ -47,11 +47,13 @@ Vue.component('quality-stats-panel', {
                                 </div>
                             </div>
 
-                            <el-table :data="filteredData" 
-                                      style="width: 100%" 
-                                      v-loading="loading" 
-                                      :default-sort="{prop: 'avgCompliance', order: 'descending'}" 
-                                      stripe>
+                            <el-table 
+                                ref="statsTable" 
+                                @row-click="handleRowClick" 
+                                style="width: 100%; cursor: pointer;" 
+                                :data="filteredData" 
+                                v-loading="loading" 
+                                stripe>
                                 
                                 <el-table-column type="expand">
                                     <template slot-scope="props">
@@ -62,6 +64,13 @@ Vue.component('quality-stats-panel', {
                                             </h5>
                                             <el-table :data="props.row.details" size="mini" border header-cell-class-name="bg-light">
                                                 <el-table-column prop="partName" label="零件/节点名称"></el-table-column>
+
+                                                <el-table-column prop="memberName" label="负责人" width="120">
+                                                    <template slot-scope="scope">
+                                                        <i class="mdi mdi-account-circle text-muted me-1"></i>
+                                                        {{ scope.row.memberName }}
+                                                    </template>
+                                                </el-table-column>
                                                 <el-table-column label="符合率" width="150">
                                                     <template slot-scope="scope">
                                                         <el-progress :percentage="scope.row.compliance" 
@@ -73,7 +82,7 @@ Vue.component('quality-stats-panel', {
                                                 <el-table-column prop="lastReviewTime" label="更新时间" width="160"></el-table-column>
                                                 <el-table-column label="当前状态" width="120">
                                                     <template slot-scope="scope">
-                                                        <el-tag :type="getStatusTag(scope.row.status)" size="mini">{{ scope.row.status }}</el-tag>
+                                                        <el-tag :type="getStatusTag(scope.row.status)" size="mini">{{ translateStatus(scope.row.status) }}</el-tag>
                                                     </template>
                                                 </el-table-column>
                                             </el-table>
@@ -81,7 +90,14 @@ Vue.component('quality-stats-panel', {
                                     </template>
                                 </el-table-column>
 
-                                <el-table-column :label="viewMode === 'project' ? '项目名称/编号' : '人员姓名'" prop="name" sortable></el-table-column>
+                                <el-table-column :label="viewMode === 'project' ? '项目信息' : '人员姓名'" prop="name" sortable>
+                                    <template slot-scope="scope">
+                                        <div class="d-flex flex-column">
+                                            <span class="text-primary font-weight-bold">{{ scope.row.name }}</span>
+                                            <small v-if="viewMode === 'project'" class="text-muted">ID: {{ scope.row.details[0].projectId }}</small>
+                                        </div>
+                                    </template>
+                                </el-table-column>
                                 
                                 <el-table-column label="平均符合率" prop="avgCompliance" sortable width="200">
                                     <template slot-scope="scope">
@@ -131,7 +147,7 @@ Vue.component('quality-stats-panel', {
                 onePassRate: 0,
                 totalTasks: 0
             },
-            tableData: [] 
+            tableData: []
         };
     },
     computed: {
@@ -155,6 +171,11 @@ Vue.component('quality-stats-panel', {
         this.loadAllData();
     },
     methods: {
+        handleRowClick(row, column, event) {
+            // 调用 el-table 内置的方法：toggleRowExpansion
+            // 第一个参数是行数据，第二个参数如果不传，则会自动切换(toggle)状态
+            this.$refs.statsTable.toggleRowExpansion(row);
+        },
         async loadAllData() {
             this.loading = true;
             try {
@@ -173,8 +194,24 @@ Vue.component('quality-stats-panel', {
             if (val < 80) return 'exception';
             return 'warning';
         },
+        translateStatus(status) {
+            const map = {
+                'APPROVED': '已审核',
+                'KEPT': '保留',
+                'DRAFT': '草稿',
+                'PENDING_REVIEW': '待审核'
+            };
+            return map[status] || status || '未知';
+        },
+        // 2. 增强版状态颜色适配
         getStatusTag(status) {
-            const map = { 'APPROVED': 'success', 'CHANGES_REQUESTED': 'danger', 'PENDING_REVIEW': 'warning', 'DRAFT': 'info' };
+            const map = {
+                'APPROVED': 'success',
+                'KEPT': 'warning',
+                'PENDING_REVIEW': 'primary',
+                'DRAFT': 'info',
+                'REJECTED': 'danger' // 预留打回状态颜色
+            };
             return map[status] || 'info';
         }
     }

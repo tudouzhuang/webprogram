@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.example.project.dto.LuckySheetJsonDTO;
+import org.example.project.dto.QualityReportDTO;
 import org.example.project.dto.StatisticsResultDTO;
 import org.example.project.entity.*; // 假设您的实体都在这个包下
 import org.example.project.mapper.*; // 假设您的Mapper都在这个包下
@@ -27,6 +28,10 @@ import java.util.stream.Collectors;
 public class StatisticsServiceImpl implements StatisticsService {
 
     @Autowired
+    private AuditLogMapper auditLogMapper;
+    private static final java.time.format.DateTimeFormatter DATE_FORMATTER
+            = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    @Autowired
     private StatisticRuleMapper statisticRuleMapper;
     @Autowired
     private SheetStatisticMapper sheetStatisticMapper;
@@ -49,7 +54,7 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         // --- [第一部分：执行所有数据库中定义的常规规则] ---
         List<StatisticRule> rules = statisticRuleMapper.selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
-        
+
         if (rules.isEmpty()) {
             log.warn("系统中没有配置任何有效的统计规则，跳过常规计算。");
         } else {
@@ -61,18 +66,20 @@ public class StatisticsServiceImpl implements StatisticsService {
 
             LuckySheetJsonDTO.SheetData sheet = luckysheetData.getSheets().get(0);
             List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
-            
+
             if (celldata == null || celldata.isEmpty()) {
                 log.warn("Sheet '{}' 中没有任何单元格数据，跳过常规计算。", sheet.getName());
             } else {
                 for (StatisticRule rule : rules) {
                     Range valueRange = parseRange(rule.getRangeToScan());
-                    if (valueRange == null) continue;
+                    if (valueRange == null) {
+                        continue;
+                    }
 
                     // 1. 先计算总数 (Total)
                     int totalCount = 0;
                     Range totalRange = null;
-                    
+
                     if (rule.getTotalCountRange() != null && !rule.getTotalCountRange().isEmpty()) {
                         totalRange = parseRange(rule.getTotalCountRange());
                         if (totalRange != null) {
@@ -91,20 +98,22 @@ public class StatisticsServiceImpl implements StatisticsService {
                     int okCount = 0;
                     int ngCount = 0;
                     int explicitNaCount = 0;
-                    
+
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
                         if (cell.getC() >= valueRange.startCol && cell.getC() <= valueRange.endCol
                                 && cell.getR() >= valueRange.startRow && cell.getR() <= valueRange.endRow) {
-                            
+
                             if (cell.getV() != null && cell.getV().getV() != null) {
                                 String cellValue = String.valueOf(cell.getV().getV()).trim();
-                                if (cellValue.isEmpty()) continue; 
+                                if (cellValue.isEmpty()) {
+                                    continue;
+                                }
 
                                 // 【这里调用了 isOkSymbol 和 isNgSymbol】
                                 if (isOkSymbol(cellValue, rule.getOkSymbol())) {
-                                    okCount++; 
+                                    okCount++;
                                 } else if (isNgSymbol(cellValue, rule.getNgSymbol())) {
-                                    ngCount++; 
+                                    ngCount++;
                                 } else {
                                     explicitNaCount++;
                                 }
@@ -134,19 +143,21 @@ public class StatisticsServiceImpl implements StatisticsService {
                 List<LuckySheetJsonDTO.CellData> celldata = sheet.getCelldata();
                 if (celldata != null && !celldata.isEmpty()) {
                     final int TARGET_COLUMN_I = 8; // I列 (结果列)
-                    
+
                     int totalRiskItems = 0;
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
                         if (cell.getC() == 0) { // A列
-                             if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
-                                 String val = String.valueOf(cell.getV().getV()).trim();
-                                 if (val.matches("^[0-9]+(\\.0)?$")) {
-                                     totalRiskItems++;
-                                 }
-                             }
+                            if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
+                                String val = String.valueOf(cell.getV().getV()).trim();
+                                if (val.matches("^[0-9]+(\\.0)?$")) {
+                                    totalRiskItems++;
+                                }
+                            }
                         }
                     }
-                    if (totalRiskItems == 0) totalRiskItems = 13;
+                    if (totalRiskItems == 0) {
+                        totalRiskItems = 13;
+                    }
 
                     int okCount = 0;
                     int ngCount = 0;
@@ -155,18 +166,20 @@ public class StatisticsServiceImpl implements StatisticsService {
                         if (cell.getC() == TARGET_COLUMN_I) { // I列
                             if (cell.getV() != null && cell.getV().getV() != null) {
                                 String cellValue = String.valueOf(cell.getV().getV()).trim();
-                                if (cellValue.isEmpty()) continue;
+                                if (cellValue.isEmpty()) {
+                                    continue;
+                                }
 
                                 // 【这里也调用了 isOkSymbol 和 isNgSymbol】
                                 if (isOkSymbol(cellValue, "OK")) {
-                                    okCount++; 
+                                    okCount++;
                                 } else if (isNgSymbol(cellValue, "NG")) {
-                                    ngCount++; 
-                                } 
+                                    ngCount++;
+                                }
                             }
                         }
                     }
-                    
+
                     int naCount = Math.max(0, totalRiskItems - okCount - ngCount);
                     saveOrUpdateStatistic(fileId, "重大风险", okCount, ngCount, naCount, totalRiskItems);
                 }
@@ -179,9 +192,13 @@ public class StatisticsServiceImpl implements StatisticsService {
      * 【补全】宽松的 OK 判定逻辑
      */
     private boolean isOkSymbol(String value, String dbSymbol) {
-        if (value == null) return false;
-        if (dbSymbol != null && value.equals(dbSymbol)) return true;
-        
+        if (value == null) {
+            return false;
+        }
+        if (dbSymbol != null && value.equals(dbSymbol)) {
+            return true;
+        }
+
         String v = value.toUpperCase();
         return v.equals("OK") || v.equals("√") || v.equals("TRUE") || v.equals("PASS") || v.equals("YES");
     }
@@ -190,15 +207,18 @@ public class StatisticsServiceImpl implements StatisticsService {
      * 【补全】宽松的 NG 判定逻辑
      */
     private boolean isNgSymbol(String value, String dbSymbol) {
-        if (value == null) return false;
-        if (dbSymbol != null && value.equals(dbSymbol)) return true;
-        
+        if (value == null) {
+            return false;
+        }
+        if (dbSymbol != null && value.equals(dbSymbol)) {
+            return true;
+        }
+
         String v = value.toUpperCase();
         return v.equals("NG") || v.equals("×") || v.equals("X") || v.equals("FALSE") || v.equals("FAIL") || v.equals("NO");
     }
 
     // =================================================================================
-
     private void saveOrUpdateStatistic(Long fileId, String category, int okCount, int ngCount, int naCount, int totalCount) {
         SheetStatistic statisticRecord = new SheetStatistic();
         statisticRecord.setFileId(fileId);
@@ -376,5 +396,152 @@ public class StatisticsServiceImpl implements StatisticsService {
             this.endRow = endRow;
             this.endCol = endCol;
         }
+    }
+
+    @Override
+    public org.example.project.dto.QualityReportDTO calculateFullReport() {
+        // --- 1. 获取全量基础数据快照 (必须放在最前面) ---
+        List<Project> allProjects = projectMapper.selectList(null);
+        List<ProcessRecord> allRecords = processRecordMapper.selectList(null);
+        List<AuditLog> allLogs = auditLogMapper.selectList(null);
+        List<SheetStatistic> allStats = sheetStatisticMapper.selectList(null);
+        List<ProjectFile> allFiles = projectFileMapper.selectList(null);
+        List<User> allUsers = userMapper.selectList(null);
+
+        // --- 2. 建立内存索引映射 (用于后续计算和名称转换) ---
+        // 用户 ID -> 真实姓名
+        Map<Long, String> userNameMap = allUsers.stream()
+                .collect(Collectors.toMap(User::getId, User::getRealName, (k1, k2) -> k1));
+
+        // 项目 ID -> 项目编号 (解决你要求的显示名称问题)
+        Map<Long, String> projectNameMap = allProjects.stream()
+                .collect(Collectors.toMap(
+                        Project::getId,
+                        p -> p.getProjectNumber() != null ? p.getProjectNumber() : "未命名项目",
+                        (k1, k2) -> k1
+                ));
+
+        // 文件 ID -> 统计数据详情
+        Map<Long, SheetStatistic> fileStatMap = allStats.stream()
+                .collect(Collectors.toMap(SheetStatistic::getFileId, s -> s, (k1, k2) -> k1));
+
+        // 记录 ID -> 关联的所有文件 ID 列表 (处理一个零件对应多个表单的情况)
+        Map<Long, List<Long>> recordFilesMap = allFiles.stream()
+                .filter(f -> f.getRecordId() != null)
+                .collect(Collectors.groupingBy(
+                        ProjectFile::getRecordId,
+                        Collectors.mapping(ProjectFile::getId, Collectors.toList())
+                ));
+
+        // --- 3. 执行累加聚合计算：生成每一个零件的明细 (details) ---
+        List<QualityReportDTO.DetailRecord> details = allRecords.stream().map(record -> {
+            int combinedOk = 0, combinedNg = 0, combinedNa = 0, combinedTotal = 0;
+
+            // 获取该记录关联的所有文件 ID 列表并累加数据
+            List<Long> associatedFileIds = recordFilesMap.getOrDefault(record.getId(), new java.util.ArrayList<>());
+            for (Long fId : associatedFileIds) {
+                if (fileStatMap.containsKey(fId)) {
+                    SheetStatistic s = fileStatMap.get(fId);
+                    combinedOk += (s.getOkCount() != null ? s.getOkCount() : 0);
+                    combinedNg += (s.getNgCount() != null ? s.getNgCount() : 0);
+                    combinedNa += (s.getNaCount() != null ? s.getNaCount() : 0);
+                    combinedTotal += (s.getTotalCount() != null ? s.getTotalCount() : 0);
+                }
+            }
+
+            double compliance = 0.0;
+            String partName = record.getPartName() != null ? record.getPartName() : "";
+            String statusStr = record.getStatus() != null ? record.getStatus().name() : "UNKNOWN";
+
+            if (combinedTotal > 0) {
+                if (partName.contains("校审")) {
+                    // 校审算法：(总数 - 差异数) / 总数
+                    compliance = ((double) (combinedTotal - combinedNg) * 100.0) / combinedTotal;
+                } else {
+                    // 设计算法：OK / (总数 - NA)
+                    int effectiveTotal = combinedTotal - combinedNa;
+                    if (effectiveTotal > 0) {
+                        compliance = (combinedOk * 100.0) / effectiveTotal;
+                    }
+                }
+            }
+
+            return org.example.project.dto.QualityReportDTO.DetailRecord.builder()
+                    .partName(record.getPartName())
+                    .memberName(userNameMap.getOrDefault(record.getCreatedByUserId(), "未知"))
+                    .compliance(Math.round(compliance * 10) / 10.0)
+                    .auditRounds(record.getCurrentAuditRound() != null ? record.getCurrentAuditRound() : 1)
+                    .status(statusStr)
+                    .lastReviewTime(record.getUpdatedAt() != null ? record.getUpdatedAt().format(DATE_FORMATTER) : "-")
+                    .projectId(record.getProjectId())
+                    .creatorId(record.getCreatedByUserId())
+                    .isOnePass(record.getCurrentAuditRound() != null && record.getCurrentAuditRound() == 1 && "APPROVED".equals(statusStr))
+                    .build();
+        }).collect(Collectors.toList());
+
+        // --- 4. 执行双维度聚合 (调用你定义的 4 参数方法) ---
+        // 注意：这里必须放在 details 和 Map 计算好之后
+        List<org.example.project.dto.QualityReportDTO.StatEntry> projectEntries = groupByDimension(details, "project", userNameMap, projectNameMap);
+        List<org.example.project.dto.QualityReportDTO.StatEntry> employeeEntries = groupByDimension(details, "employee", userNameMap, projectNameMap);
+
+        List<org.example.project.dto.QualityReportDTO.StatEntry> combinedList = new ArrayList<>();
+        combinedList.addAll(projectEntries);
+        combinedList.addAll(employeeEntries);
+
+        // --- 5. 计算全局 KPI 指标 ---
+        int totalTasks = details.size();
+        double avgComp = details.stream().mapToDouble(d -> d.getCompliance()).average().orElse(0.0);
+        double avgRnd = details.stream().mapToInt(d -> d.getAuditRounds()).average().orElse(0.0);
+        long onePassCount = details.stream().filter(d -> d.getIsOnePass()).count();
+
+        return org.example.project.dto.QualityReportDTO.builder()
+                .global(org.example.project.dto.QualityReportDTO.GlobalSummary.builder()
+                        .avgCompliance(Math.round(avgComp * 10) / 10.0)
+                        .avgRounds(Math.round(avgRnd * 10) / 10.0)
+                        .onePassRate(totalTasks > 0 ? Math.round((onePassCount * 100.0 / totalTasks) * 10) / 10.0 : 0.0)
+                        .totalTasks(totalTasks)
+                        .build())
+                .list(combinedList)
+                .build();
+    }
+
+    private List<org.example.project.dto.QualityReportDTO.StatEntry> groupByDimension(
+            List<org.example.project.dto.QualityReportDTO.DetailRecord> details,
+            String dimension,
+            Map<Long, String> userNameMap,
+            Map<Long, String> projectNameMap) { // 👈 参数里多传一个 projectNameMap
+
+        Map<String, List<org.example.project.dto.QualityReportDTO.DetailRecord>> grouped;
+
+        if ("project".equals(dimension)) {
+            // 使用项目名称映射
+            grouped = details.stream().collect(Collectors.groupingBy(d
+                    -> projectNameMap.getOrDefault(d.getProjectId(), "未知项目(ID:" + d.getProjectId() + ")")
+            ));
+        } else {
+            // 使用用户名映射
+            grouped = details.stream().collect(Collectors.groupingBy(d
+                    -> userNameMap.getOrDefault(d.getCreatorId(), "未知员工")
+            ));
+        }
+
+        return grouped.entrySet().stream().map(entry -> {
+            List<org.example.project.dto.QualityReportDTO.DetailRecord> subList = entry.getValue();
+            double comp = subList.stream().mapToDouble(d -> d.getCompliance()).average().orElse(0.0);
+            double rnds = subList.stream().mapToInt(d -> d.getAuditRounds()).average().orElse(0.0);
+            long onePass = subList.stream().filter(d -> d.getIsOnePass()).count();
+            long ng = subList.stream().filter(d -> "CHANGES_REQUESTED".equals(d.getStatus())).count();
+
+            return org.example.project.dto.QualityReportDTO.StatEntry.builder()
+                    .type(dimension)
+                    .name(entry.getKey())
+                    .avgCompliance(Math.round(comp * 10) / 10.0)
+                    .totalRounds(subList.stream().mapToInt(d -> d.getAuditRounds()).sum())
+                    .avgRounds(Math.round(rnds * 10) / 10.0)
+                    .onePassCount((int) onePass)
+                    .ngCount((int) ng)
+                    .details(subList)
+                    .build();
+        }).collect(Collectors.toList());
     }
 }
