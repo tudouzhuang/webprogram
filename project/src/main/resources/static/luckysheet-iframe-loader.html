@@ -267,6 +267,37 @@
                 // A. 补全必要字段，防止 undefined 报错
                 const rowCount = Math.max(sheet.row || 0, 30); // 默认至少30行
                 const colCount = Math.max(sheet.column || 0, 20); // 默认至少20列
+                sheet.calcChain = [];
+                // 2. 确保 index 存在 (calcChain 必须依赖 index)
+                if (sheet.index === undefined) {
+                    sheet.index = sheet.order; // 兜底策略
+                }
+
+                // 3. 扫描数据
+                if (sheet.data && sheet.data.length > 0) {
+                    for (let r = 0; r < sheet.data.length; r++) {
+                        if (!sheet.data[r]) continue;
+                        for (let c = 0; c < sheet.data[r].length; c++) {
+                            const cell = sheet.data[r][c];
+                            // 只要单元格有公式字符串 'f'
+                            if (cell && cell.f) {
+                                // 推入官方要求的结构: { r, c, index }
+                                sheet.calcChain.push({
+                                    "r": r,
+                                    "c": c,
+                                    "index": sheet.index
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 🕵️ [调试] 输出生成的链长度
+                if (sheet.calcChain.length > 0) {
+                    console.log(`[Iframe Debug] Sheet "${sheet.name}" 生成了 ${sheet.calcChain.length} 条公式索引`);
+                }
+
+
 
                 // 1. 确保 data 二维数组存在且行数足够
                 if (!sheet.data || sheet.data.length === 0) {
@@ -278,7 +309,6 @@
                         sheet.data[i] = new Array(colCount).fill(null);
                     }
                 }
-                delete sheet.calcChain;
                 if (!sheet.celldata) sheet.celldata = [];
                 if (!sheet.config) sheet.config = {};
 
@@ -295,6 +325,11 @@
                         const r = cell.r;
                         const c = cell.c;
 
+                        if (cell.v && cell.v.f) {
+                            delete cell.v.v;
+                            delete cell.v.m;
+                            cell.v.needCompute = true; // 标记需重算
+                        }
                         // 1. 扩容探测
                         if (r >= patchMaxRow) patchMaxRow = r + 5;
                         if (c >= patchMaxCol) patchMaxCol = c + 2;
@@ -352,12 +387,6 @@
 
                 if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
 
-                // B. 【必删】暴力删除 calcChain (计算链)
-                // Excel 导入的计算链往往与当前数据不匹配，是导致 "reading '2'" 崩溃的元凶
-                if (sheet.calcChain) {
-                    console.warn(`[Loader] 🛡️ 已移除 Sheet "${sheet.name}" 的 calcChain 以防止公式计算崩溃。`);
-                    delete sheet.calcChain;
-                }
 
                 if (sheet.config && sheet.config.merge) {
                     const actualRows = sheet.data ? sheet.data.length : (sheet.row || 0);
@@ -405,7 +434,7 @@
                 data: validData,
                 title: fileName,
                 lang: 'zh', // 强制中文
-
+                forceCalculation: true,
                 // --- 【UI 与 字体配置】 ---
                 defaultFontSize: 14, // 修复 '12px default' 报错
                 limitSheetNameLength: false, // 允许长文件名
@@ -432,37 +461,127 @@
                     if (window.luckysheet) {
                         window.luckysheet.refreshMenu = function () { }; // 临时屏蔽可能导致异步报错的菜单刷新
                     }
+
+
+                    console.group("%c🚑 Luckysheet 数据诊断报告", "color:white; background:red; padding:4px; font-size:14px;");
+            
+            let hasCriticalError = false;
+
+            validData.forEach((sheet, i) => {
+                console.group(`📄 Sheet [${i}] "${sheet.name}"`);
+                
+                // 1. 检查 Index (跨表引用的命根子)
+                console.log(`ID检查: order=${sheet.order}, index=${sheet.index}`);
+                if (sheet.index === undefined || sheet.index === null) {
+                    console.error("❌ 致命错误: sheet.index 缺失！跨表公式 (如 Sheet1!A1) 将会导致崩溃！");
+                    hasCriticalError = true;
+                }
+
+                // 2. 检查 CalcChain (自动计算的命根子)
+                const chainLen = sheet.calcChain ? sheet.calcChain.length : 0;
+                if (chainLen === 0) {
+                    // 检查是否真的没有公式
+                    let hasFormula = false;
+                    if(sheet.data) {
+                        for(let r=0; r<sheet.data.length && !hasFormula; r++) {
+                            if(!sheet.data[r]) continue;
+                            for(let c=0; c<sheet.data[r].length; c++) {
+                                if(sheet.data[r][c] && sheet.data[r][c].f) {
+                                    hasFormula = true; 
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (hasFormula) {
+                        console.error("❌ 严重警告: 检测到单元格有公式，但 calcChain 为空！公式将不会自动计算！");
+                        hasCriticalError = true;
+                    } else {
+                        console.log("✅ 无公式，无需 calcChain");
+                    }
+                } else {
+                    console.log(`✅ calcChain 已生成: ${chainLen} 条`);
+                    // 抽查第一条
+                    console.log("   -> 链条样本:", sheet.calcChain[0]);
+                    if (sheet.calcChain[0].index !== sheet.index) {
+                         console.error(`❌ 逻辑错误: 链条中的 index (${sheet.calcChain[0].index}) 与 Sheet index (${sheet.index}) 不一致！`);
+                         hasCriticalError = true;
+                    }
+                }
+                console.groupEnd();
+            });
+
+            if (hasCriticalError) {
+                alert("🛑 检测到致命数据错误，请查看控制台 (F12)");
+            }
+            console.groupEnd();
                     window.luckysheet.create(finalOptions);
                 } catch (createError) {
                     console.error("🔥 创建 Luckysheet 实例失败:", createError);
                 }
             });
 
-            // 步骤 5: 延迟执行 Refresh 和 Hook
-            // 使用 setTimeout 确保 Luckysheet DOM 已经渲染完毕
             setTimeout(() => {
                 try {
                     // 1. 基础安全检查
                     if (!window.luckysheet) return;
 
                     const sheets = luckysheet.getluckysheetfile();
-                    // 检查内部数据结构是否真的转换成了 flowdata
                     if (!sheets || sheets.length === 0 || !sheets[0].data) {
                         console.warn("[Iframe] 渲染未就绪 (flowdata 缺失)，跳过配置");
                         return;
                     }
 
                     // 2. 全局配置与状态修正
-                    luckysheet.luckysheetautofixrowlen = false; // 禁止自动行高，防止布局抖动
+                    luckysheet.luckysheetautofixrowlen = false;
 
-                    // 3. 执行刷新 (手术刀：双重检查容器高度，防止 resize.js 报 offsetHeight 为 null)
+                    // 3. 执行刷新 & 强制计算公式 (修复版：使用 setCellValue 重建公式链)
                     const containerEl = document.getElementById('luckysheet-container');
                     if (containerEl && containerEl.offsetHeight > 0) {
                         try {
-                            luckysheet.refresh();
-                            console.log("[Iframe] Luckysheet 刷新成功");
+                            console.log("[Iframe] 开始重建公式依赖链...");
+
+                            // --- 🔥【核心修复开始】🔥 ---
+
+                            // A. 获取最新所有 sheet 数据
+                            const allFiles = luckysheet.getluckysheetfile();
+
+                            // ============================================================
+                            // 🔥 [关键修复] 触发计算引擎 (替换掉了原来的循环赋值)
+                            // ============================================================
+                            const containerEl = document.getElementById('luckysheet-container');
+                            if (containerEl && containerEl.offsetHeight > 0) {
+                                try {
+                                    // 因为我们在步骤 A 已经生成了 calcChain，这里直接调用官方 API 即可
+                                    // 它会自动读取 calcChain 并按正确顺序计算跨表公式
+                                    if (luckysheet.refreshFormula) {
+                                        console.log("[Iframe] 🚀 触发官方公式计算引擎...");
+                                        luckysheet.refreshFormula();
+                                    } else {
+                                        luckysheet.refresh();
+                                    }
+
+                                    // 延时重绘，防止白屏
+                                    setTimeout(() => luckysheet.refresh(), 50);
+
+                                } catch (resErr) {
+                                    console.warn("[Iframe] 刷新重算异常:", resErr);
+                                }
+                            }
+
+                            // E. 收尾：执行一次全局公式刷新与界面重绘
+                            // 这一步会将上面 setCellValue 建立的链条真正跑通
+                            if (luckysheet.refreshFormula) {
+                                luckysheet.refreshFormula();
+                                console.log("[Iframe] 公式链重建完毕，已强制全表重算");
+                            } else {
+                                luckysheet.refresh(); // 降级方案
+                            }
+
+                            // --- 🔥【核心修复结束】🔥 ---
+
                         } catch (resErr) {
-                            console.warn("[Iframe] 刷新过程出现非致命异常:", resErr.message);
+                            console.warn("[Iframe] 刷新重算过程出现异常:", resErr.message);
                         }
                     }
 
@@ -501,13 +620,13 @@
                 } catch (e) {
                     console.error(`[Iframe] 延迟配置阶段致命失败:`, e);
                 } finally {
-                    // 如果你之前设置了 isRendering 锁，在这里释放它
                     if (typeof isRendering !== 'undefined') {
                         isRendering = false;
                     }
                 }
-            }, 500); // 👈 手术关键：确保 500ms 且括号闭合正确
+            }, 500);
         }
+
 
         /**
          * 从文件URL加载数据
