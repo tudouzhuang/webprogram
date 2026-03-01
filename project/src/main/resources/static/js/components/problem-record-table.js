@@ -330,7 +330,15 @@ const ProblemRecordTable = {
                     <el-button v-if="isReviewerMode" type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                 </div>
 
-                <el-table :data="problems" v-loading="isLoading" stripe border style="width: 100%">
+                <el-table 
+                    :data="problems" 
+                    v-loading="isLoading" 
+                    stripe 
+                    border 
+                    style="width: 100%"
+                    :row-style="{ height: '150px' }"
+                    :cell-style="{padding: '18px 0'}"
+                >
                     <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
                     <el-table-column prop="stage" label="阶段" width="80" align="center"></el-table-column>
                     <el-table-column prop="problemPoint" label="问题点" min-width="100" show-overflow-tooltip></el-table-column>
@@ -341,12 +349,12 @@ const ProblemRecordTable = {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="问题截图" width="100" align="center">
+                    <el-table-column label="问题截图" width="180" align="center">
                         <template slot-scope="scope">
                             <div class="d-flex justify-content-center align-items-center">
                                 <el-image 
                                     v-if="scope.row.screenshotPath"
-                                    style="width: 40px; height: 40px; border:1px solid #eee; border-radius:4px; margin-right:4px;"
+                                    style="width: 160px; height: 160px; border:1px solid #eee; border-radius:4px; margin-right:4px;"
                                     :src="scope.row.screenshotPath" 
                                     :preview-src-list="[scope.row.screenshotPath]">
                                 </el-image>
@@ -361,12 +369,12 @@ const ProblemRecordTable = {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="修复证明" min-width="150">
+                    <el-table-column label="修复证明" min-width="180">
                         <template slot-scope="scope">
                             <div class="d-flex align-items-center">
                                 <el-image 
                                     v-if="scope.row.fixScreenshotPath"
-                                    style="width: 40px; height: 40px; flex-shrink:0; border:1px solid #67c23a; border-radius:4px; margin-right:8px;"
+                                    style="width: 160px; height: 160px; flex-shrink:0; border:1px solid #67c23a; border-radius:4px; margin-right:8px;"
                                     :src="scope.row.fixScreenshotPath" 
                                     :preview-src-list="[scope.row.fixScreenshotPath]">
                                 </el-image>
@@ -386,7 +394,7 @@ const ProblemRecordTable = {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="状态" width="85" align="center">
+                    <el-table-column label="状态" width="80" align="center">
                         <template slot-scope="scope">
                             <el-tag v-if="scope.row.status === 'OPEN'" type="danger" size="small" effect="dark">待解决</el-tag>
                             <el-tag v-else-if="scope.row.status === 'RESOLVED'" type="warning" size="small" effect="dark">待复核</el-tag>
@@ -394,15 +402,6 @@ const ProblemRecordTable = {
                             <el-tag v-else-if="scope.row.status === 'KEPT'" type="primary" size="small" effect="dark">保留</el-tag>
                             
                             <el-tag v-else type="success" size="small" effect="dark">已关闭</el-tag>
-                        </template>
-                    </el-table-column>
-
-                    <el-table-column label="责任人" min-width="110">
-                        <template slot-scope="scope">
-                            <div style="font-size:0.85em;">
-                                <div><span class="text-muted">提:</span> {{ scope.row.createdByUsername }}</div>
-                                <div v-if="scope.row.confirmedByUsername"><span class="text-muted">改:</span> {{ scope.row.confirmedByUsername }}</div>
-                            </div>
                         </template>
                     </el-table-column>
 
@@ -415,9 +414,11 @@ const ProblemRecordTable = {
                                 </template>
                                 
                                 <template v-else-if="scope.row.status === 'RESOLVED'">
-                                    <el-button size="mini" type="warning" @click="handleReopen(scope.row)">打回</el-button>
-                                    <el-button size="mini" type="primary" @click="handleKeep(scope.row)">保留</el-button>
-                                    <el-button size="mini" type="success" @click="handleClose(scope.row)">通过</el-button>
+                                    <div class="d-flex flex-wrap justify-content-center" style="gap: 8px;">
+                                        <el-button size="mini" type="danger" @click="handleReopen(scope.row)" style="margin: 0;">打回</el-button>
+                                        <el-button size="mini" type="primary" @click="handleKeep(scope.row)" style="margin: 0;">保留</el-button>
+                                        <el-button size="mini" type="success" @click="handleClose(scope.row)" style="margin: 0;">通过</el-button>
+                                    </div>
                                 </template>
 
                                 <template v-else-if="scope.row.status === 'KEPT'">
@@ -439,6 +440,18 @@ const ProblemRecordTable = {
                             </div>
                         </template>
                     </el-table-column>
+
+
+
+                    <el-table-column label="责任人" min-width="100">
+                        <template slot-scope="scope">
+                            <div style="font-size:0.85em;">
+                                <div><span class="text-muted">提:</span> {{ scope.row.createdByUsername }}</div>
+                                <div v-if="scope.row.confirmedByUsername"><span class="text-muted">改:</span> {{ scope.row.confirmedByUsername }}</div>
+                            </div>
+                        </template>
+                    </el-table-column>
+
                 </el-table>
 
                 <!-- 1. 新增/编辑弹窗 (审核员) -->

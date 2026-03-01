@@ -1156,7 +1156,29 @@ Vue.component('record-workspace-panel', {
                 loading.close();
             }
         },
+        triggerActiveIframeResize() {
+            const file = this.activeFile;
+            if (file && file.id) {
+                // 这里的 ref 名称需要和模板里的一致：'iframe-' + file.id
+                const iframeRef = this.$refs['iframe-' + file.id];
+                const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
 
+                if (targetIframe && targetIframe.contentWindow) {
+                    try {
+                        const win = targetIframe.contentWindow;
+                        // 1. 触发浏览器原生 resize 事件
+                        win.dispatchEvent(new Event('resize'));
+
+                        // 2. 双重保险：直接调用 Luckysheet 自带的重绘方法
+                        if (win.luckysheet && typeof win.luckysheet.resize === 'function') {
+                            win.luckysheet.resize();
+                        }
+                    } catch (e) {
+                        console.warn("唤醒 iframe 渲染失败", e);
+                    }
+                }
+            }
+        },
 
     },
 
@@ -1309,30 +1331,52 @@ Vue.component('record-workspace-panel', {
             }
         },
 
+        // 🔥【新增】监听全屏弹窗的打开状态，瞬间唤醒画布
+        showFullscreen(newVal) {
+            if (newVal) {
+                this.$nextTick(() => {
+                    if (this.activeTab !== 'recordMeta' && this.activeTab !== 'problemRecord') {
+                        // 延时一点确保全屏动画结束，容器彻底张开
+                        setTimeout(() => {
+                            this.triggerActiveIframeResize();
+                        }, 100);
+                    }
+                });
+            }
+        },
+
         activeTab(newTabName, oldTabName) {
-            // 【新增步骤 0】：在切换瞬间，尝试从旧Tab的状态栏中捕获数据
-            // 这作为一个保险，防止 mounted 中的 watcher 没抓到
+            // 【步骤 0】：尝试捕获数据
             const statusBar = this.$refs.statusBarRef;
             if (statusBar && statusBar.savedStats && statusBar.savedStats.designerName) {
                 this.personnelCache = statusBar.savedStats;
-                console.log('%c[主动捕获] 在Tab切换前成功捕获数据!', 'color: blue', this.personnelCache);
             }
 
             this.$nextTick(() => {
-                const statusBar = this.$refs.statusBarRef;
                 if (statusBar) {
                     this.$watch(
                         () => statusBar.savedStats,
                         (newStats) => {
-                            // 只要有数据，且包含 designerName，就缓存它
                             if (newStats && newStats.designerName) {
-                                this.personnelCache = newStats; // 直接缓存整个对象
+                                this.personnelCache = newStats;
                             }
                         },
                         { deep: true }
                     );
                 }
             });
+
+            // 🔥【核心修复】：如果切换到了表格页，触发唤醒
+            if (newTabName && newTabName !== oldTabName) {
+                if (newTabName !== 'recordMeta' && newTabName !== 'problemRecord') {
+                    this.$nextTick(() => {
+                        // 给 DOM 留一点渲染 v-show 的时间
+                        setTimeout(() => {
+                            this.triggerActiveIframeResize();
+                        }, 50);
+                    });
+                }
+            }
         }
     }
 });

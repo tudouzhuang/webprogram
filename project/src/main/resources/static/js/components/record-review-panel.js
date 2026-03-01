@@ -454,6 +454,27 @@ Vue.component('record-review-panel', {
             }
         },
 
+        triggerActiveIframeResize() {
+            const file = this.activeFile;
+            if (file && file.id) {
+                const iframeRef = this.$refs['iframe-' + file.id];
+                const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
+
+                if (targetIframe && targetIframe.contentWindow) {
+                    try {
+                        const win = targetIframe.contentWindow;
+                        // 1. 触发浏览器原生 resize 事件
+                        win.dispatchEvent(new Event('resize'));
+                        // 2. 双重保险：直接调用 Luckysheet 自带的重绘方法
+                        if (win.luckysheet && typeof win.luckysheet.resize === 'function') {
+                            win.luckysheet.resize();
+                        }
+                    } catch (e) {
+                        console.warn("唤醒 iframe 渲染失败", e);
+                    }
+                }
+            }
+        },
 
         handleIframeFocus() {
             this.scrollTopBeforeFocus = window.scrollY || document.documentElement.scrollTop;
@@ -954,10 +975,26 @@ Vue.component('record-review-panel', {
             }
         },
 
+        // 🔥【新增】当全屏弹窗刚打开时，如果是表格，也需要重绘一次
+        showFullscreen(newVal) {
+            if (newVal) {
+                this.$nextTick(() => {
+                    if (this.activeTab !== 'recordMeta' && this.activeTab !== 'problemRecord') {
+                        this.triggerActiveIframeResize();
+                    }
+                });
+            }
+        },
+
         activeTab(newTabName, oldTabName) {
             if (newTabName && newTabName !== oldTabName) {
                 if (newTabName === 'recordMeta') {
-                    this.fetchMetaData(); // 调用修正后的方法
+                    this.fetchMetaData();
+                } else if (newTabName !== 'problemRecord') {
+                    // 🔥【核心修复】等待 v-show(display:block) 生效后，唤醒画布
+                    this.$nextTick(() => {
+                        this.triggerActiveIframeResize();
+                    });
                 }
             }
         }

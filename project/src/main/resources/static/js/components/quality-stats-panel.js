@@ -7,7 +7,7 @@ Vue.component('quality-stats-panel', {
                     <span class="page-title-icon bg-gradient-primary text-white me-2" style="padding: 8px; border-radius: 4px;">
                         <i class="mdi mdi-chart-bar"></i>
                     </span> 
-                    <span style="vertical-align: middle;">质量与效能监控看板</span>
+                    <span style="vertical-align: middle;">数据研究看板</span>
                 </h3>
                 <div class="header-actions">
                     <el-button type="primary" size="medium" icon="el-icon-refresh" @click="loadAllData">同步最新数据</el-button>
@@ -71,11 +71,17 @@ Vue.component('quality-stats-panel', {
                                                         {{ scope.row.memberName }}
                                                     </template>
                                                 </el-table-column>
-                                                <el-table-column label="符合率" width="150">
-                                                    <template slot-scope="scope">
-                                                        <el-progress :percentage="scope.row.compliance" 
-                                                                    :status="getProgStatus(scope.row.compliance)" 
-                                                                    :stroke-width="12"></el-progress>
+                                                <el-table-column label="符合率" width="200"> <template slot-scope="scope">
+                                                        <div class="d-flex align-items-center">
+                                                            <el-progress :percentage="scope.row.compliance" 
+                                                                        :status="getProgStatus(scope.row.compliance)" 
+                                                                        :stroke-width="12" 
+                                                                        :show-text="false" 
+                                                                        style="flex: 1;"></el-progress>
+                                                            <span class="ms-2 font-weight-bold" style="min-width: 45px; font-size: 13px; color: #606266;">
+                                                                {{ scope.row.compliance }}%
+                                                            </span>
+                                                        </div>
                                                     </template>
                                                 </el-table-column>
                                                 <el-table-column prop="auditRounds" label="审核轮次" width="100" align="center"></el-table-column>

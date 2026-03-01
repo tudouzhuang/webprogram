@@ -44,6 +44,14 @@
     <script src="/js/libs/exceljs.min.js"></script>
 
     <script type="module">
+        // --- [新增护盾 0：阻止非法的 Resize 导致引擎崩溃] ---
+        window.addEventListener('resize', function (e) {
+            const gridWindow = document.getElementById('luckysheet-grid-window');
+            // 如果表格核心 DOM 还没建好，或者 Iframe 处于隐藏状态(高度为0)
+            if (!gridWindow || gridWindow.offsetHeight === 0) {
+                e.stopImmediatePropagation(); // 强行拦截，不让 Luckysheet 处理这个改变
+            }
+        }, true); // 注意这里的 true，开启捕获模式，确保比 Luckysheet 先执行
         // --- [0. 全局异常熔断 (增强版)] ---
         // 捕获 Promise 也就是 Luckysheet 内部抛出的致命异步错误
         window.addEventListener('unhandledrejection', function (event) {
@@ -236,6 +244,14 @@
             // 清空容器，确保干净的 DOM 环境
             document.getElementById('luckysheet-container').innerHTML = '';
 
+            // 🔥【新增护盾 1】：在初始化前，提前强行注入 Excel 私有公式拦截器，防止卡死
+            window.luckysheet_function = window.luckysheet_function || {};
+            window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
+            if (!window.luckysheet_function._XLFN.DISPIMG) {
+                window.luckysheet_function._XLFN.DISPIMG = function () { return ""; };
+            }
+
+
             // --- [数据防御性处理] ---
             let validData = luckysheetData;
 
@@ -316,7 +332,7 @@
 
 
 
-// ============================================================
+            // ============================================================
             // 🔥【最终修复版】数据清洗 + 公式激活 + 边框聚合 + 逻辑合并
             // ============================================================
             validData.forEach((sheet, index) => {
@@ -326,7 +342,7 @@
                 if (sheet.index === undefined) sheet.index = sheet.order;
                 if (!sheet.config) sheet.config = {};
                 if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
-                
+
                 // 1. 初始化计算链（必须是空数组，引擎才能在渲染时填入新指令）
                 sheet.calcChain = [];
 
@@ -366,15 +382,15 @@
                             if (v.f) {
                                 if (typeof v.f === 'string' && v.f.includes('!')) {
                                     console.warn(`[Formula Guard] 屏蔽跨表公式防止崩溃: ${v.f}`);
-                                    delete v.f; 
+                                    delete v.f;
                                     // 注意：这里不要 delete v.v，保留后端传来的原始静态值，这样界面上还是有数据的
                                 } else {
-                                delete v.v; // 彻底删掉缓存值
-                                delete v.m; // 彻底删掉显示值
-                                v.ct = { "fa": "General", "t": "n" }; // 补充数字格式标记
-                                v.needCompute = true;
-                                // 注入计算链
-                                sheet.calcChain.push({ "r": r, "c": c, "index": sheet.index });
+                                    delete v.v; // 彻底删掉缓存值
+                                    delete v.m; // 彻底删掉显示值
+                                    v.ct = { "fa": "General", "t": "n" }; // 补充数字格式标记
+                                    v.needCompute = true;
+                                    // 注入计算链
+                                    sheet.calcChain.push({ "r": r, "c": c, "index": sheet.index });
                                 }
                             }
 
@@ -427,17 +443,141 @@
                     }
                 }
 
-                // 6. 清洗无效合并单元格 (保持原有逻辑)
-                if (sheet.config.merge) {
+                // 6. 清洗无效合并单元格 (双向深度清洗)
+                if (sheet.config && sheet.config.merge) {
                     const actualRows = sheet.data.length;
+                    const actualCols = sheet.data[0] ? sheet.data[0].length : 0;
+
+                    // 6.1 你的原有逻辑：清理注册表
                     Object.keys(sheet.config.merge).forEach(key => {
                         const m = sheet.config.merge[key];
                         if (!m || m.r === undefined || m.r >= actualRows) {
                             delete sheet.config.merge[key];
                         }
                     });
+
+                    // 6.2 🔥【必须增加的护盾】：清理单元格身上的“孤儿”合并标记
+                    for (let r = 0; r < actualRows; r++) {
+                        for (let c = 0; c < actualCols; c++) {
+                            const cell = sheet.data[r][c];
+                            // 如果单元格自称是合并的一部分
+                            if (cell && cell.mc) {
+                                const mKey = `${cell.mc.r}_${cell.mc.c}`;
+                                // 但在刚刚清理过的注册表里查无此人
+                                if (!sheet.config.merge[mKey]) {
+                                    delete cell.mc; // 没收它的合并标记，退化为普通单元格！
+                                }
+                            }
+                        }
+                    }
                 }
-                
+                // ============================================================
+                // 🛡️ 终极护盾序列开始
+                // ============================================================
+
+                // 【护盾 A】：二维数组绝对矩阵化 (防 reading '0' 的最强手段)
+                sheet.row = Math.max(sheet.row || 0, patchMaxRow);
+                let maxColInData = patchMaxCol;
+                if (sheet.data) {
+                    sheet.data.forEach(r => { if (r && r.length > maxColInData) maxColInData = r.length; });
+                }
+                sheet.column = Math.max(sheet.column || 0, maxColInData);
+
+                if (!sheet.data) sheet.data = [];
+                // 1. 补齐行
+                while (sheet.data.length < sheet.row) {
+                    sheet.data.push([]);
+                }
+                // 2. 补齐列并确保每个坑位都有值 (null) 而不是 empty (稀疏数组)
+                for (let r = 0; r < sheet.row; r++) {
+                    if (!sheet.data[r]) sheet.data[r] = [];
+                    // 必须用 push 或直接赋值，不能让数组变成 [empty x 10, {v: 1}]
+                    while (sheet.data[r].length < sheet.column) {
+                        sheet.data[r].push(null);
+                    }
+                    // 额外防御：把 undefined 替换为 null
+                    for (let c = 0; c < sheet.column; c++) {
+                        if (sheet.data[r][c] === undefined) {
+                            sheet.data[r][c] = null;
+                        }
+                    }
+                }
+
+                // 【护盾 B】：严格清洗越界边框
+                if (sheet.config && Array.isArray(sheet.config.borderInfo)) {
+                    sheet.config.borderInfo = sheet.config.borderInfo.filter(b => {
+                        if (!b || !b.range || !b.range[0]) return false;
+                        let rng = b.range[0];
+                        // 彻底防崩溃：确保 rng.row 和 rng.column 存在且是数组
+                        if (!Array.isArray(rng.row) || !Array.isArray(rng.column)) return false;
+                        if (rng.row.length < 2 || rng.column.length < 2) return false;
+
+                        // 完全在界外，丢弃
+                        if (rng.row[0] >= sheet.row || rng.column[0] >= sheet.column) return false;
+
+                        // 部分越界，强行截断
+                        rng.row[1] = Math.min(rng.row[1], sheet.row - 1);
+                        rng.column[1] = Math.min(rng.column[1], sheet.column - 1);
+                        return true;
+                    });
+                }
+
+                // 🔥【新增护盾 C】：无条件清洗合并单元格 (解决 Merge info is null 的真正克星)
+                if (!sheet.config) sheet.config = {};
+                if (!sheet.config.merge) sheet.config.merge = {}; // 🔪 强制初始化为空对象，确保后续清理逻辑必然执行！
+
+                const actualRows = sheet.row;
+                const actualCols = sheet.column;
+
+                // C.1 清理注册表
+                Object.keys(sheet.config.merge).forEach(key => {
+                    const m = sheet.config.merge[key];
+                    // 严格判断 r, c, rs, cs 是否齐备，并且没有越界
+                    if (!m || m.r === undefined || m.c === undefined ||
+                        m.r >= actualRows || m.c >= actualCols ||
+                        (m.r + m.rs) > actualRows || (m.c + m.cs) > actualCols) {
+                        delete sheet.config.merge[key];
+                    }
+                });
+
+                // C.2 清理孤儿标记 (这次不管 config.merge 有没有，我们都必须地毯式搜索)
+                for (let r = 0; r < actualRows; r++) {
+                    for (let c = 0; c < actualCols; c++) {
+                        const cell = sheet.data[r][c];
+                        if (cell && cell.mc) {
+                            // 防御：mc 结构异常
+                            if (cell.mc.r === undefined || cell.mc.c === undefined) {
+                                delete cell.mc;
+                                continue;
+                            }
+                            const mKey = `${cell.mc.r}_${cell.mc.c}`;
+                            if (!sheet.config.merge[mKey]) {
+                                delete cell.mc; // 🔪 查无此人，没收合并标记！
+                            }
+                        }
+                    }
+                }
+
+                // 🔥【新增护盾 D】：强制重置用户的“历史选中区域”和“滚动位置”
+                // 这是防止 restoreselect 导致 draw.js 崩溃的绝对防御！
+                sheet.luckysheet_select_save = [{ row: [0, 0], column: [0, 0] }]; // 强行把焦点拉回 A1 单元格
+                sheet.luckysheet_selection_range = [];
+                sheet.scrollLeft = 0;
+                sheet.scrollTop = 0;
+
+                // 清洗行高列宽字典
+                if (sheet.config.rowlen) {
+                    Object.keys(sheet.config.rowlen).forEach(k => {
+                        if (parseInt(k) >= sheet.row) delete sheet.config.rowlen[k];
+                    });
+                }
+                if (sheet.config.columnlen) {
+                    Object.keys(sheet.config.columnlen).forEach(k => {
+                        if (parseInt(k) >= sheet.column) delete sheet.config.columnlen[k];
+                    });
+                }
+
+                // 🛡️ 护盾序列结束
                 console.log(`[Iframe Fix] Sheet "${sheet.name}" 处理完成，激活公式: ${sheet.calcChain.length} 个`);
             });
 
@@ -530,7 +670,7 @@
                     if (containerEl && containerEl.offsetHeight > 0) {
                         try {
                             console.log("[Iframe] 正在执行界面刷新与公式重算...");
-                            
+
                             // 首次刷新布局
                             luckysheet.refresh();
 
