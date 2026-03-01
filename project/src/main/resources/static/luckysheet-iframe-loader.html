@@ -372,7 +372,6 @@
 
                         if (v) {
                             // --- [I] 强制数据类型转换 (String -> Number) ---
-                            // 解决 SUM("10", "20") = 0 的问题，确保数值能被公式引擎识别
                             if (v.v !== null && v.v !== undefined && !isNaN(Number(v.v))) {
                                 const isDate = typeof v.m === 'string' && (v.m.includes('-') || v.m.includes('/'));
                                 if (!isDate) v.v = Number(v.v);
@@ -383,18 +382,17 @@
                                 if (typeof v.f === 'string' && v.f.includes('!')) {
                                     console.warn(`[Formula Guard] 屏蔽跨表公式防止崩溃: ${v.f}`);
                                     delete v.f;
-                                    // 注意：这里不要 delete v.v，保留后端传来的原始静态值，这样界面上还是有数据的
                                 } else {
-                                    delete v.v; // 彻底删掉缓存值
-                                    delete v.m; // 彻底删掉显示值
-                                    v.ct = { "fa": "General", "t": "n" }; // 补充数字格式标记
+                                    delete v.v;
+                                    delete v.m;
+                                    v.ct = { "fa": "General", "t": "n" };
                                     v.needCompute = true;
-                                    // 注入计算链
                                     sheet.calcChain.push({ "r": r, "c": c, "index": sheet.index });
                                 }
                             }
 
-                            // --- [III] 边框处理 (保持你原有的智能 Range 模式) ---
+                            // --- [III] 边框处理：将单元格级别的 bd 转换为全局 borderInfo ---
+                            // ⚠️ 修复关键：保留你原有的聚合逻辑，这是导出和保存边框的基础！
                             if (v.bd) {
                                 const bd = v.bd;
                                 let rs = 1, cs = 1;
@@ -404,6 +402,7 @@
                                     cs = sheet.config.merge[mKey].cs;
                                 }
                                 const range = { "row": [r, r + rs - 1], "column": [c, c + cs - 1] };
+
                                 const pushRangeBorder = (borderType, styleObj) => {
                                     if (styleObj && (styleObj.style || styleObj.style === 0)) {
                                         sheet.config.borderInfo.push({
@@ -415,6 +414,7 @@
                                         });
                                     }
                                 };
+
                                 if (bd.t) pushRangeBorder("border-top", bd.t);
                                 if (bd.b) pushRangeBorder("border-bottom", bd.b);
                                 if (bd.l) pushRangeBorder("border-left", bd.l);
@@ -501,25 +501,6 @@
                             sheet.data[r][c] = null;
                         }
                     }
-                }
-
-                // 【护盾 B】：严格清洗越界边框
-                if (sheet.config && Array.isArray(sheet.config.borderInfo)) {
-                    sheet.config.borderInfo = sheet.config.borderInfo.filter(b => {
-                        if (!b || !b.range || !b.range[0]) return false;
-                        let rng = b.range[0];
-                        // 彻底防崩溃：确保 rng.row 和 rng.column 存在且是数组
-                        if (!Array.isArray(rng.row) || !Array.isArray(rng.column)) return false;
-                        if (rng.row.length < 2 || rng.column.length < 2) return false;
-
-                        // 完全在界外，丢弃
-                        if (rng.row[0] >= sheet.row || rng.column[0] >= sheet.column) return false;
-
-                        // 部分越界，强行截断
-                        rng.row[1] = Math.min(rng.row[1], sheet.row - 1);
-                        rng.column[1] = Math.min(rng.column[1], sheet.column - 1);
-                        return true;
-                    });
                 }
 
                 // 🔥【新增护盾 C】：无条件清洗合并单元格 (解决 Merge info is null 的真正克星)
