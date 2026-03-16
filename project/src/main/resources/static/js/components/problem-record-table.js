@@ -351,7 +351,7 @@ const ProblemRecordTable = {
                     </div>
 
                     <div class="d-flex align-items-center" style="gap: 15px;">
-                        <el-select v-model="filterStatus" size="small" placeholder="所有状态" clearable style="width: 160px;">
+                        <el-select v-model="filterStatus" size="small" placeholder="所有状态" clearable style="width: 180px;">
                             <el-option label="待解决 (OPEN)" value="OPEN">
                                 <div class="d-flex align-items-center">
                                     <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:#F56C6C; margin-right:8px;"></span>
