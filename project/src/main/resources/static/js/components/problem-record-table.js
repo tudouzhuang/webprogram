@@ -35,6 +35,7 @@ const ProblemRecordTable = {
             // --- 确认解决弹窗 (设计员) ---
             resolveDialogVisible: false,
             isResolving: false,
+            filterStatus: '',
             currentProblemForResolve: null,
             resolveForm: {
                 fixComment: '',
@@ -57,7 +58,19 @@ const ProblemRecordTable = {
                 return `/api/problems/${this.currentProblemForUpload.id}/screenshot`;
             }
         },
-
+        filteredProblems() {
+            if (!this.filterStatus) return this.problems;
+            return this.problems.filter(p => p.status === this.filterStatus);
+        },
+        
+        // 🔥【新增】2. 各状态数量统计
+        problemStats() {
+            const stats = { total: this.problems.length, OPEN: 0, RESOLVED: 0, KEPT: 0, CLOSED: 0 };
+            this.problems.forEach(p => {
+                if (stats[p.status] !== undefined) stats[p.status]++;
+            });
+            return stats;
+        },
         resolveUploadUrl() {
             if (!this.currentProblemForResolve) return '';
             return `/api/problems/${this.currentProblemForResolve.id}/fix-screenshot`;
@@ -79,7 +92,9 @@ const ProblemRecordTable = {
         fetchProblems() {
             this.isLoading = true;
             axios.get(`/api/process-records/${this.recordId}/problems`)
-                .then(res => { this.problems = res.data; })
+                .then(res => { 
+                    this.problems = (res.data || []).sort((a, b) => a.id - b.id); 
+                })
                 .catch(err => this.$message.error('加载失败'))
                 .finally(() => { this.isLoading = false; });
         },
@@ -324,14 +339,54 @@ const ProblemRecordTable = {
     template: `
         <div class="card mt-4">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h4 class="card-title mb-0">问题记录表</h4>
-                    <!-- 只有审核员能新增 -->
-                    <el-button v-if="isReviewerMode" type="primary" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap" style="gap: 15px;">
+                    
+                <div class="d-flex align-items-center flex-wrap" style="gap: 12px;">
+                        <h4 class="card-title mb-0" style="margin-right: 10px;">问题记录表</h4>
+                        <el-tag size="small" type="info" effect="plain">总计: {{ problemStats.total }}</el-tag>
+                        <el-tag size="small" type="danger" effect="plain">待解决: {{ problemStats.OPEN }}</el-tag>
+                        <el-tag size="small" type="warning" effect="plain">待复核: {{ problemStats.RESOLVED }}</el-tag>
+                        <el-tag size="small" type="primary" effect="plain">保留: {{ problemStats.KEPT }}</el-tag>
+                        <el-tag size="small" type="success" effect="plain">已关闭: {{ problemStats.CLOSED }}</el-tag>
+                    </div>
+
+                    <div class="d-flex align-items-center" style="gap: 15px;">
+                        <el-select v-model="filterStatus" size="small" placeholder="所有状态" clearable style="width: 160px;">
+                            <el-option label="待解决 (OPEN)" value="OPEN">
+                                <div class="d-flex align-items-center">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:#F56C6C; margin-right:8px;"></span>
+                                    <span style="color:#F56C6C; font-weight:bold;">待解决 (OPEN)</span>
+                                </div>
+                            </el-option>
+                            
+                            <el-option label="待复核 (RESOLVED)" value="RESOLVED">
+                                <div class="d-flex align-items-center">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:#E6A23C; margin-right:8px;"></span>
+                                    <span style="color:#E6A23C; font-weight:bold;">待复核 (RESOLVED)</span>
+                                </div>
+                            </el-option>
+                            
+                            <el-option label="保留项 (KEPT)" value="KEPT">
+                                <div class="d-flex align-items-center">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:#409EFF; margin-right:8px;"></span>
+                                    <span style="color:#409EFF; font-weight:bold;">保留项 (KEPT)</span>
+                                </div>
+                            </el-option>
+                            
+                            <el-option label="已关闭 (CLOSED)" value="CLOSED">
+                                <div class="d-flex align-items-center">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:#67C23A; margin-right:8px;"></span>
+                                    <span style="color:#67C23A; font-weight:bold;">已关闭 (CLOSED)</span>
+                                </div>
+                            </el-option>
+                        </el-select>
+
+                        <el-button v-if="isReviewerMode" type="primary" size="small" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
+                    </div>
                 </div>
 
                 <el-table 
-                    :data="problems" 
+                    :data="filteredProblems" 
                     v-loading="isLoading" 
                     stripe 
                     border 

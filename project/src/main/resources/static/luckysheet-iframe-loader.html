@@ -69,34 +69,40 @@
                 name === 'TypeError' ||
                 message.includes('fontfaceset') ||
                 message.includes('could not resolve') ||
-                message.includes('cannot read properties') || // 👈 针对本次报错
-                message.includes('reading')                   // 👈 针对本次报错
+                message.includes('cannot read properties') || 
+                message.includes('reading') ||
+                message.includes('fromcol') ||
+                message === 'e' || message === '[object object]' || // 👈 捕捉混淆后的极简错误
+                message.includes('out of memory')
             ) {
-                // 立即显示错误页
                 const container = document.getElementById('luckysheet-container');
                 if (container) {
                     let userFriendlyMsg = "渲染引擎内部逻辑崩溃";
+                    let subMsg = "Technical Info: " + message.slice(0, 50) + "...";
 
-                    if (message.includes('font')) {
-                        userFriendlyMsg = "浏览器无法应用字体设置";
-                    } else if (message.includes('cannot read') || message.includes('reading')) {
-                        userFriendlyMsg = "表格结构过复杂或含非法合并单元格，计算失败";
+                    if (message.includes('fromcol') || message === 'e') {
+                        userFriendlyMsg = "表格内存在无法解析的复杂图形 (CAD/矢量图)";
+                        subMsg = "建议：请用 Excel 打开此文件，将复杂的图纸或自选图形【剪切并粘贴为普通PNG图片】后，另存为新文件重新上传。";
+                    } else if (message.includes('font')) {
+                        userFriendlyMsg = "浏览器无法应用特殊字体";
+                        subMsg = "请尝试将表格字体修改为常规字体(如宋体、微软雅黑)后重试。";
+                    } else if (message.includes('reading')) {
+                        userFriendlyMsg = "表格结构过复杂或含非法合并单元格";
+                        subMsg = "解析器无法读取损坏的行列数据，请清理格式后重试。";
                     }
 
                     container.innerHTML = `
                         <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
-                            <h3 style="margin-bottom:10px;font-size:18px;">❌ 文件解析异常</h3>
-                            <p style="font-size:14px;color:#666;">${userFriendlyMsg}</p>
-                            <p style="font-size:12px;color:#999;margin-top:5px;">Technical Info: ${message.slice(0, 50)}...</p>
+                            <h3 style="margin-bottom:10px;font-size:18px;">❌ ${userFriendlyMsg}</h3>
+                            <p style="font-size:14px;color:#666;">${subMsg}</p>
                         </div>
                     `;
                 }
 
-                // 通知父窗口停止 Loading
                 window.parent.postMessage({
                     type: 'LUCKYSHEET_RENDER_FINISHED',
                     status: 'error',
-                    message: "渲染崩溃: " + (reason.message || "未知内部错误")
+                    message: "渲染崩溃: " + (reason.message || "矢量图形解析失败")
                 }, window.location.origin);
             }
         });
