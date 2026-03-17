@@ -1,5 +1,11 @@
 // src/main/resources/static/js/components/quality-stats-panel.js
 Vue.component('quality-stats-panel', {
+    props: {
+        projectId: {
+            type: [String, Number],
+            required: false // 设为 false 可兼容全局模式
+        }
+    },
     template: `
         <div class="content-wrapper">
             <div class="page-header mb-4" style="display: flex; justify-content: space-between; align-items: center;">
@@ -11,6 +17,19 @@ Vue.component('quality-stats-panel', {
                 </h3>
                 <div class="header-actions">
                     <el-button type="primary" size="medium" icon="el-icon-refresh" @click="loadAllData">同步最新数据</el-button>
+                </div>
+            </div>
+
+            <div class="alert d-flex align-items-center shadow-sm mb-4" style="border-left: 5px solid #409EFF; background-color: #ecf5ff; padding: 15px 20px;">
+                <i class="el-icon-data-analysis text-primary" style="font-size: 28px; margin-right: 15px;"></i>
+                <div>
+                    <div style="font-size: 12px; color: #909399; margin-bottom: 2px;">当前看板分析目标</div>
+                    <div style="font-size: 16px; font-weight: bold; color: #303133;">
+                        {{ currentProjectName || '全局大盘数据' }}
+                    </div>
+                </div>
+                <div class="ms-auto text-muted" style="font-size: 13px;">
+                    <i class="el-icon-mouse"></i> 点击下方列表中的任意一行，即可实时切换上方看板数据
                 </div>
             </div>
 
@@ -117,8 +136,9 @@ Vue.component('quality-stats-panel', {
                                     </template>
                                 </el-table-column>
 
-                                <el-table-column label="总审核轮次" prop="totalRounds" width="120" align="center"></el-table-column>
-                                <el-table-column label="平均轮次" prop="avgRounds" width="120" align="center">
+                                <el-table-column label="总审核轮次" prop="totalRounds" sortable width="140" align="center"></el-table-column>
+
+                                <el-table-column label="平均轮次" prop="avgRounds" sortable width="140" align="center">
                                     <template slot-scope="scope">
                                         <el-tag effect="plain" size="small" :type="scope.row.avgRounds > 2 ? 'danger' : 'info'">
                                             {{ scope.row.avgRounds }}
@@ -126,7 +146,7 @@ Vue.component('quality-stats-panel', {
                                     </template>
                                 </el-table-column>
                                 
-                                <el-table-column label="绩效统计" width="220">
+                                <el-table-column label="绩效统计" prop="onePassCount" sortable width="240">
                                     <template slot-scope="scope">
                                         <div style="font-size: 12px;">
                                             <span class="text-success">一次通过: {{ scope.row.onePassCount }}</span>
@@ -153,7 +173,8 @@ Vue.component('quality-stats-panel', {
                 onePassRate: 0,
                 totalTasks: 0
             },
-            tableData: []
+            tableData: [],
+            currentProjectName: ''
         };
     },
     computed: {
@@ -178,17 +199,73 @@ Vue.component('quality-stats-panel', {
     },
     methods: {
         handleRowClick(row, column, event) {
-            // 调用 el-table 内置的方法：toggleRowExpansion
-            // 第一个参数是行数据，第二个参数如果不传，则会自动切换(toggle)状态
+            // 1. 调用 el-table 内置的方法：展开/折叠该行明细
             this.$refs.statsTable.toggleRowExpansion(row);
+
+            // 🔥 2. 【核心注入】提取当前行数据，实时刷新顶部看板
+            // 更新看板聚焦名称
+            this.currentProjectName = row.name;
+
+            // 计算当前行的累计任务和一次通过率
+            const totalTasks = row.details ? row.details.length : 0;
+            const totalReviews = (row.onePassCount || 0) + (row.ngCount || 0);
+            const onePassRate = totalReviews > 0 ? Math.round((row.onePassCount / totalReviews) * 100) : 0;
+
+            // 将当前行的数据覆盖给全局变量 globalStats，上方卡片会瞬间响应变化
+            this.globalStats = {
+                avgCompliance: row.avgCompliance || 0,
+                avgRounds: row.avgRounds || 0,
+                onePassRate: onePassRate,
+                totalTasks: totalTasks
+            };
         },
         async loadAllData() {
             this.loading = true;
             try {
-                // 后端接口：/api/stats/full-quality-report
+                // 1. 请求全量数据
                 const res = await axios.get('/api/stats/full-quality-report');
-                this.globalStats = res.data.global;
+
+                // 🔥 2. 无论什么模式，下方表格都拿到全量数据
                 this.tableData = res.data.list;
+
+                // 3. 核心计算：分离看板数据与列表数据
+                if (this.projectId) {
+                    const currentProject = res.data.list.find(item =>
+                        item.type === 'project' &&
+                        item.details && item.details.length > 0 &&
+                        item.details[0].projectId == this.projectId
+                    );
+
+                    if (currentProject) {
+                        this.currentProjectName = currentProject.name; // 存下名字给提示框用
+
+                        // 针对该项目计算顶部的 4 个 KPI
+                        const totalTasks = currentProject.details.length;
+                        const totalReviews = currentProject.onePassCount + currentProject.ngCount;
+                        const onePassRate = totalReviews > 0 ? Math.round((currentProject.onePassCount / totalReviews) * 100) : 0;
+
+                        this.globalStats = {
+                            avgCompliance: currentProject.avgCompliance,
+                            avgRounds: currentProject.avgRounds,
+                            onePassRate: onePassRate,
+                            totalTasks: totalTasks
+                        };
+
+                        // 贴心优化：自动展开当前项目的详情行，方便用户第一时间看到
+                        this.$nextTick(() => {
+                            if (this.$refs.statsTable) {
+                                this.$refs.statsTable.toggleRowExpansion(currentProject, true);
+                            }
+                        });
+                    } else {
+                        this.currentProjectName = '未知项目';
+                        this.globalStats = { avgCompliance: 0, avgRounds: 0, onePassRate: 0, totalTasks: 0 };
+                    }
+                } else {
+                    // 全局模式：没有指定项目，显示大盘数据，清空项目名称
+                    this.currentProjectName = '';
+                    this.globalStats = res.data.global;
+                }
             } catch (e) {
                 this.$message.error("无法加载统计详情，请检查后端 API 状态");
             } finally {
@@ -219,6 +296,14 @@ Vue.component('quality-stats-panel', {
                 'REJECTED': 'danger' // 预留打回状态颜色
             };
             return map[status] || 'info';
+        }
+    },
+
+    watch: {
+        projectId(newVal, oldVal) {
+            if (newVal !== oldVal) {
+                this.loadAllData();
+            }
         }
     }
 });

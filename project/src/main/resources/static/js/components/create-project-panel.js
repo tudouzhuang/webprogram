@@ -9,10 +9,10 @@ Vue.component('create-project-panel', {
                            请输入一个唯一的项目号来启动一个新项目。
                         </p>
                         
-                        <el-form ref="projectForm" :model="projectForm" :rules="rules" label-width="120px" label-position="right" style="max-width: 600px;">
+                        <el-form ref="projectForm" :model="projectForm" :rules="rules" label-width="120px" label-position="right" style="max-width: 600px;" @submit.native.prevent>
                             
                             <el-form-item label="项目号" prop="projectNumber">
-                                <el-input v-model="projectForm.projectNumber" placeholder="请输入项目号"></el-input>
+                            <el-input v-model="projectForm.projectNumber" placeholder="请输入项目号" @keyup.enter.native="submitForm"></el-input>
                             </el-form-item>
 
                             <el-form-item>
