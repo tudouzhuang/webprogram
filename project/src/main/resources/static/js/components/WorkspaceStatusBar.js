@@ -1,4 +1,4 @@
-// public/js/components/workspace-status-bar.js
+// src/main/resources/static/js/components/WorkspaceStatusBar.js
 
 const WorkspaceStatusBar = {
     props: {

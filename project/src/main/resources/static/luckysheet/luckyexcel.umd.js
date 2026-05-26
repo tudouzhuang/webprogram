@@ -19450,72 +19450,70 @@
                     xdr_blipfill = xdr_blipfills[0];
                 var rembed = method_1.getXmlAttibute(xdr_blipfill.attributeList, "r:embed", null);
     
-                var imageObject = _this.getBase64ByRid(rembed, drawingRelsFile); // let aoff = xdr_xfrm.getInnerElements("a:off"), aext = xdr_xfrm.getInnerElements("a:ext");
-                // if(aoff!=null && aext!=null && aoff.length>0 && aext.length>0){
-                //     let aoffAttribute = aoff[0].attributeList, aextAttribute = aext[0].attributeList;
-                //     let x = getXmlAttibute(aoffAttribute, "x", null);
-                //     let y = getXmlAttibute(aoffAttribute, "y", null);
-                //     let cx = getXmlAttibute(aextAttribute, "cx", null);
-                //     let cy = getXmlAttibute(aextAttribute, "cy", null);
-                //     if(x!=null && y!=null && cx!=null && cy!=null && imageObject !=null){
-                // let x_n = getPxByEMUs(parseInt(x), "c"),y_n = getPxByEMUs(parseInt(y));
-                // let cx_n = getPxByEMUs(parseInt(cx), "c"),cy_n = getPxByEMUs(parseInt(cy));
+                var imageObject = _this.getBase64ByRid(rembed, drawingRelsFile); 
+                
+                // 【核心修复】：加上判空防护，只有 imageObject 存在时才进行后续属性赋值和处理
+                if (imageObject != null) {
+                    var x_n = 0,
+                        y_n = 0;
+                    var cx_n = 0,
+                        cy_n = 0;
+                        
+                    imageObject.fromCol = _this.getXdrValue(xdrFrom.getInnerElements("xdr:col"));
+                    imageObject.fromColOff = method_1.getPxByEMUs(_this.getXdrValue(xdrFrom.getInnerElements("xdr:colOff")));
+                    imageObject.fromRow = _this.getXdrValue(xdrFrom.getInnerElements("xdr:row"));
+                    imageObject.fromRowOff = method_1.getPxByEMUs(_this.getXdrValue(xdrFrom.getInnerElements("xdr:rowOff")));
+                    imageObject.toCol = _this.getXdrValue(xdrTo.getInnerElements("xdr:col"));
+                    imageObject.toColOff = method_1.getPxByEMUs(_this.getXdrValue(xdrTo.getInnerElements("xdr:colOff")));
+                    imageObject.toRow = _this.getXdrValue(xdrTo.getInnerElements("xdr:row"));
+                    imageObject.toRowOff = method_1.getPxByEMUs(_this.getXdrValue(xdrTo.getInnerElements("xdr:rowOff")));
+                    imageObject.originWidth = cx_n;
+                    imageObject.originHeight = cy_n;
     
+                    if (editAs == "absolute") {
+                      imageObject.type = "3";
+                    } else if (editAs == "oneCell") {
+                      imageObject.type = "2";
+                    } else {
+                      imageObject.type = "1";
+                    }
     
-                var x_n = 0,
-                    y_n = 0;
-                var cx_n = 0,
-                    cy_n = 0;
-                imageObject.fromCol = _this.getXdrValue(xdrFrom.getInnerElements("xdr:col"));
-                imageObject.fromColOff = method_1.getPxByEMUs(_this.getXdrValue(xdrFrom.getInnerElements("xdr:colOff")));
-                imageObject.fromRow = _this.getXdrValue(xdrFrom.getInnerElements("xdr:row"));
-                imageObject.fromRowOff = method_1.getPxByEMUs(_this.getXdrValue(xdrFrom.getInnerElements("xdr:rowOff")));
-                imageObject.toCol = _this.getXdrValue(xdrTo.getInnerElements("xdr:col"));
-                imageObject.toColOff = method_1.getPxByEMUs(_this.getXdrValue(xdrTo.getInnerElements("xdr:colOff")));
-                imageObject.toRow = _this.getXdrValue(xdrTo.getInnerElements("xdr:row"));
-                imageObject.toRowOff = method_1.getPxByEMUs(_this.getXdrValue(xdrTo.getInnerElements("xdr:rowOff")));
-                imageObject.originWidth = cx_n;
-                imageObject.originHeight = cy_n;
+                    imageObject.isFixedPos = false;
+                    imageObject.fixedLeft = 0;
+                    imageObject.fixedTop = 0;
+                    
+                    var imageBorder = {
+                      color: "#000",
+                      radius: 0,
+                      style: "solid",
+                      width: 0
+                    };
+                    imageObject.border = imageBorder;
+                    
+                    var imageCrop = {
+                      height: cy_n,
+                      offsetLeft: 0,
+                      offsetTop: 0,
+                      width: cx_n
+                    };
+                    imageObject.crop = imageCrop;
+                    
+                    var imageDefault = {
+                      height: cy_n,
+                      left: x_n,
+                      top: y_n,
+                      width: cx_n
+                    };
+                    imageObject["default"] = imageDefault;
     
-                if (editAs == "absolute") {
-                  imageObject.type = "3";
-                } else if (editAs == "oneCell") {
-                  imageObject.type = "2";
+                    if (_this.images == null) {
+                      _this.images = {};
+                    }
+    
+                    _this.images[method_1.generateRandomIndex("image")] = imageObject;
                 } else {
-                  imageObject.type = "1";
+                    console.warn("⚠️ 检测到无法解析的图片对象，已安全跳过以防崩溃。");
                 }
-    
-                imageObject.isFixedPos = false;
-                imageObject.fixedLeft = 0;
-                imageObject.fixedTop = 0;
-                var imageBorder = {
-                  color: "#000",
-                  radius: 0,
-                  style: "solid",
-                  width: 0
-                };
-                imageObject.border = imageBorder;
-                var imageCrop = {
-                  height: cy_n,
-                  offsetLeft: 0,
-                  offsetTop: 0,
-                  width: cx_n
-                };
-                imageObject.crop = imageCrop;
-                var imageDefault = {
-                  height: cy_n,
-                  left: x_n,
-                  top: y_n,
-                  width: cx_n
-                };
-                imageObject["default"] = imageDefault;
-    
-                if (_this.images == null) {
-                  _this.images = {};
-                }
-    
-                _this.images[method_1.generateRandomIndex("image")] = imageObject; //     }
-                // }
               }
             }
           }

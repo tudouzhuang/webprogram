@@ -1,4 +1,4 @@
-// public/js/components/mold-surface-panel.js
+// src/main/resources/static/js/components/mold-surface-panel.js
 Vue.component('mold-surface-panel', {
     template: `
         <div class="content-wrapper">

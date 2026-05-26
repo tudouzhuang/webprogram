@@ -7,9 +7,9 @@ Vue.component('luckysheet-viewer', {
         }
     },
     // 【模板】: 完全重构，增加了详细的项目信息展示区域
-    template: `
-        <div class="main-panel">
-            <div class="content-wrapper">
+        template: `
+        <div class="content-wrapper">
+            
                 
                 <!-- 1. 顶部项目详细信息展示卡片 -->
                 <div class="card mb-4">
@@ -70,9 +70,7 @@ Vue.component('luckysheet-viewer', {
                     id="luckysheet-viewer-container" 
                     v-show="!isLoadingSheet" 
                     style="width: 100%; height: 80vh; border: 1px solid #ddd;">
-                </div>
-
-            </div>
+        </div>
         </div>
     `,
     

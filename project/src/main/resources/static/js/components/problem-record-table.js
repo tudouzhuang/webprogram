@@ -1,4 +1,4 @@
-// public/js/components/problem-record-table.js
+// src/main/resources/static/js/components/problem-record-table.js
 
 const ProblemRecordTable = {
     props: {
@@ -646,7 +646,10 @@ const ProblemRecordTable = {
                     </span>
                 </el-dialog>
 
-            </div>
+                        </div>
         </div>
     `
 };
+
+// 【核心修复】全局注册组件，使其他组件（如 record-review-panel）可以使用 <problem-record-table>
+Vue.component('problem-record-table', ProblemRecordTable);

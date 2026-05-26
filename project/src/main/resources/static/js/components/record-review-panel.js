@@ -1,4 +1,5 @@
-import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
+// 注意：exportWithExcelJS 函数需要通过 <script> 标签在 HTML 中预加载
+// import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
 
 Vue.component('record-review-panel', {
     components: {
@@ -337,8 +338,7 @@ Vue.component('record-review-panel', {
             // 移除了重复的 metaData
             planningDocs: [],             // 存放主策划书文件
             allProjectFiles: [],          // 存放项目下所有文件（用于找子Sheet）
-            expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
-            showFullscreen: false,
+                        expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
         }
     },
     // 修改后

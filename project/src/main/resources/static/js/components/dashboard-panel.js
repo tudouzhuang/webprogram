@@ -1,4 +1,4 @@
-// public/js/components/dashboard-panel.js
+// src/main/resources/static/js/components/dashboard-panel.js
 
 Vue.component('dashboard-panel', {
   props: {
@@ -176,8 +176,7 @@ Vue.component('dashboard-panel', {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+  </div>
       </div>
     </div>
   </div>

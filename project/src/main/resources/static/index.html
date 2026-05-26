@@ -25,12 +25,16 @@
 
 
     <style>
-        /* WorkspaceStatusBar 组件样式 */
+                /* WorkspaceStatusBar 组件样式 */
         .kpi-card { padding: 10px; background-color: #f8f9fa; border-radius: 4px; text-align: center; }
         .kpi-label { font-size: 0.8em; margin-bottom: 5px; }
         .shadow-sm { box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important; }
         .align-middle { vertical-align: middle !important; }
         .h-100 { height: 100%; }
+                /* top-navbar 问候语样式 */
+        .greeting-icon { font-size: 1.3em; margin-right: 6px; vertical-align: middle; }
+        /* main-panel 背景色统一 */
+        .main-panel { background-color: #F4F5F7; min-height: 100vh; }
     </style>
     <style>
         .screenshot-paste-area { padding: 20px; border: 1px dashed #d9d9d9; border-radius: 6px; text-align: center; }
@@ -324,10 +328,11 @@
     <div id="app">
         <div class="container-scroller">
 
-            <top-navbar 
+                        <top-navbar 
                 v-if="currentUser" 
                 :current-user="currentUser" 
-                @request-logout="handleLogout">
+                @request-logout="handleLogout"
+                @open-profile="profileDialogVisible = true">
             </top-navbar>
 
             <!-- partial -->
@@ -772,34 +777,11 @@
                                     </li>
                                 </ul>
                             </div>
-                        </li>
-
-                        <li class="nav-item nav-category">用户</li>
-                        <li class="nav-item">
-                            <a class="nav-link" data-bs-toggle="collapse" href="#auth" aria-expanded="false"
-                                aria-controls="auth">
-                                <i class="menu-icon mdi mdi-account-circle-outline"></i>
-                                <span class="menu-title">用户页面</span>
-                                <i class="menu-arrow"></i>
-                            </a>
-                            <div class="collapse" id="auth">
-                                <ul class="nav flex-column sub-menu">
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 登录
-                                        </a>
-                                    </li>
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html"> 注销
-                                        </a>
-                                    </li>
-                                    <li class="nav-item"><a class="nav-link" href="main/pages/samples/login.html">
-                                            用户信息 </a>
-                                    </li>
-                                </ul>
-                            </div>
-                        </li>
+                                                </li>
                     </ul>
-                </nav>
+                                </nav>
                 <div class="main-panel">
-                    <component 
+                    <component  
                         :is="activePanel" 
                         :project-id="currentProjectId" 
                         :record-id="currentRecordId"   
@@ -813,6 +795,37 @@
                         @review-record="onReviewRecord"
                         @edit-record="handleEditRecord">
                     </component>
+
+                    <!-- ========== 个人信息编辑弹窗 ========== -->
+                    <el-dialog 
+                        title="个人资料" 
+                        :visible.sync="profileDialogVisible" 
+                        width="500px"
+                        :close-on-click-modal="false"
+                        append-to-body>
+                        <el-form v-if="currentUser" label-width="100px" label-position="right">
+                            <el-form-item label="用户名">
+                                <el-input :value="currentUser.username" disabled></el-input>
+                            </el-form-item>
+                            <el-form-item label="邮箱">
+                                <el-input :value="currentUser.email" disabled></el-input>
+                            </el-form-item>
+                            <el-form-item label="角色">
+                                <el-tag type="primary" size="medium">{{ currentUser.identity || '用户' }}</el-tag>
+                            </el-form-item>
+                            <el-divider></el-divider>
+                            <el-form-item label="头像">
+                                <img :src="currentUser.avatarUrl || 'main/images/faces/face1.jpg'" 
+                                     style="width: 80px; height: 80px; border-radius: 50%; border: 1px solid #eee;">
+                            </el-form-item>
+                        </el-form>
+                        <div v-else class="text-center text-muted p-4">
+                            <i class="el-icon-loading"></i> 加载用户信息中...
+                        </div>
+                        <span slot="footer">
+                            <el-button @click="profileDialogVisible = false">关闭</el-button>
+                        </span>
+                    </el-dialog>
                 </div>
             </div>
         </div>
@@ -898,8 +911,10 @@
                     showRecordProjectMenu: false, // 设计人员的“过程记录”菜单
                     showRecordReviewMenu: false,  // 审查人员的“审查记录”菜单
                     showRecordPlanningProjectMenu: false,
-                    // --- 数据 ---
-                    projectList: []
+                                        // --- 数据 ---
+                    projectList: [],
+                    // --- 个人信息弹窗 ---
+                    profileDialogVisible: false
                 }
             },
 

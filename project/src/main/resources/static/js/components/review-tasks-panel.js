@@ -110,17 +110,9 @@ Vue.component('review-tasks-panel', {
                                         <div v-else-if="scope.row.status === 'REJECTED'">
                                             <el-button @click="viewRecord(scope.row)" type="text" size="small">查看详情</el-button>
                                         </div>
-                                        <div v-else-if="scope.row.status === 'DRAFT'">
+                                                                                <div v-else-if="scope.row.status === 'DRAFT'">
                                             <el-tag type="info" size="small" style="margin-right: 5px;">设计员草稿</el-tag>
                                             <el-button @click="editRecord(scope.row)" type="primary" size="small" plain icon="el-icon-edit">协助编辑</el-button>
-                                        </div>
-                                        <div v-else-if="scope.row.status === 'DRAFT'">
-                                            <el-tag type="info" size="small" style="margin-right: 5px;">设计员草稿</el-tag>
-                                            <!-- 【核心修改】增加协助编辑按钮 -->
-                                            <el-button @click="editRecord(scope.row)" type="primary" size="small" plain icon="el-icon-edit">协助编辑</el-button>
-                                        </div>
-                                        <div v-else-if="scope.row.status === 'DRAFT'">
-                                            <el-tag type="info" size="small">设计员草稿</el-tag>
                                         </div>
 
                                         <el-button 

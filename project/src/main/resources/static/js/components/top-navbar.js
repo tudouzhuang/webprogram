@@ -1,4 +1,4 @@
-// public/js/components/top-navbar.js
+// src/main/resources/static/js/components/top-navbar.js
 
 Vue.component('top-navbar', {
     // 【核心修正 1】：不再需要 `components` 选项，因为 'user-dropdown' 也将被全局注册。
@@ -11,20 +11,44 @@ Vue.component('top-navbar', {
         }
     },
     
-    // 【Computed】: 计算属性 (保持不变)
+        // 【Computed】: 计算属性
     computed: {
         welcomeUserName() {
             // 安全地获取用户名，如果 currentUser 不存在则提供默认值
             return this.currentUser ? this.currentUser.username : '尊敬的用户';
+        },
+        // 【新增】根据系统时间返回不同问候语
+        greeting() {
+            const hour = new Date().getHours();
+            if (hour >= 5 && hour < 9)  return { text: '早上好', icon: '🌅' };
+            if (hour >= 9 && hour < 12) return { text: '上午好', icon: '☀️' };
+            if (hour >= 12 && hour < 14) return { text: '中午好', icon: '🌤️' };
+            if (hour >= 14 && hour < 18) return { text: '下午好', icon: '🌇' };
+            if (hour >= 18 && hour < 22) return { text: '晚上好', icon: '🌆' };
+            return { text: '夜深了', icon: '🌙' };
+        },
+        // 【新增】格式化当前日期
+        todayDate() {
+            const d = new Date();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+            const weekday = weekdays[d.getDay()];
+            return `${year}年${month}月${day}日 星期${weekday}`;
         }
     },
     
     // 【Methods】: 方法 (保持不变)
     methods: {
         // 当子组件发出 'request-logout' 事件时，此方法被调用
-        onRequestLogout() {
+                onRequestLogout() {
             // 将事件继续向上冒泡给主 Vue 实例
             this.$emit('request-logout');
+        },
+        onOpenProfile() {
+            // 将个人资料弹窗事件向上冒泡给主 Vue 实例
+            this.$emit('open-profile');
         }
     },
     
@@ -48,8 +72,12 @@ Vue.component('top-navbar', {
             <div class="navbar-menu-wrapper d-flex align-items-top">
                 <ul class="navbar-nav">
                     <li class="nav-item font-weight-semibold d-none d-lg-block ms-0">
-                        <h1 class="welcome-text">早上好, <span class="text-black fw-bold">{{ welcomeUserName }}</span></h1>
-                        <h3 class="welcome-sub-text">Your performance summary this week</h3>
+                                                <h1 class="welcome-text">
+                            <span class="greeting-icon">{{ greeting.icon }}</span>
+                            {{ greeting.text }},
+                            <span class="text-black fw-bold">{{ welcomeUserName }}</span>
+                        </h1>
+                        <h3 class="welcome-sub-text">{{ todayDate }}</h3>
                     </li>
                 </ul>
                 <ul class="navbar-nav ms-auto">
@@ -156,7 +184,7 @@ Vue.component('top-navbar', {
                         <user-dropdown> 标签现在可以直接使用，因为它将被全局注册。
                         它监听的事件名 @request-logout 与子组件发出的事件名保持一致。
                     -->
-                    <user-dropdown v-if="currentUser" :user="currentUser" @request-logout="onRequestLogout"></user-dropdown>
+                    <user-dropdown v-if="currentUser" :user="currentUser" @request-logout="onRequestLogout" @open-profile="onOpenProfile"></user-dropdown>
                 </ul>
                 <button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button"
                     data-bs-toggle="offcanvas">

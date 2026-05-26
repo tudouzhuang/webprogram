@@ -623,6 +623,15 @@
                 ...options
             };
 
+            if (luckysheetData && Array.isArray(luckysheetData)) {
+                luckysheetData.forEach(sheet => {
+                    if (sheet.drawing) {
+                        console.warn(`⚠️ 警告：Sheet "${sheet.name}" 包含复杂的图形/绘图对象，为了防止引擎崩溃，已强行剥离图形数据。`);
+                        delete sheet.drawing; // 核心：删掉它，这玩意儿是导致 'fromCol' 崩溃的罪魁祸首
+                    }
+                });
+            }
+            
             requestAnimationFrame(() => { // 👈 手术刀：确保在下一帧渲染时执行，此时 DOM offsetHeight 必然存在
                 try {
                     console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
