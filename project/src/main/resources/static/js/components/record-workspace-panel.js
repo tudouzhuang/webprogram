@@ -363,7 +363,8 @@ Vue.component('record-workspace-panel', {
                                 <div v-if="activeTab === 'problemRecord'" class="scrollable-tab-content">
                                     <problem-record-table
                                         :record-id="Number(recordId)"
-                                        mode="designer">
+                                        mode="designer"
+                                        :current-user="currentUser">
                                     </problem-record-table>
                                 </div>
                         

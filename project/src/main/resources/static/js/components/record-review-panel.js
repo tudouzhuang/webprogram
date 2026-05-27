@@ -7,10 +7,14 @@ Vue.component('record-review-panel', {
         'problem-record-table': ProblemRecordTable
     },
     // 【Props】: 从父组件接收要查看的过程记录ID
-    props: {
+        props: {
         recordId: {
             type: [String, Number],
             required: true
+        },
+        currentUser: {
+            type: Object,
+            default: null
         }
     },
     // 【模板】: 完整模板，包含iframe和按钮
@@ -811,7 +815,7 @@ Vue.component('record-review-panel', {
                 });
         },
 
-        rejectRecord() {
+                                rejectRecord() {
             this.$prompt('请输入打回意见（必填）：', '打回修改', {
                 confirmButtonText: '确定打回',
                 cancelButtonText: '取消',
@@ -829,7 +833,29 @@ Vue.component('record-review-panel', {
                     this.goBack();
 
                 } catch (error) {
-                    this.$message.error('打回失败：' + (error.response?.data?.message || '未知错误'));
+                    const errorMsg = error.response?.data?.message || '未知错误';
+                    // 判断当前用户是不是管理员
+                    const userRole = this.currentUser?.identity || '';
+                    const isAdmin = userRole.toUpperCase() === 'MANAGER' || userRole.toUpperCase() === 'ADMIN';
+                    
+                    if (isAdmin) {
+                        this.$alert(
+                            `<div>
+                                <p style="color: #E6A23C; font-size: 16px; font-weight: bold; margin-bottom: 10px;">
+                                    <i class="el-icon-warning"></i> 打回失败：权限越权
+                                </p>
+                                <p>当前操作账户与记录指定的审核人不一致，无法直接打回。</p>
+                                <p style="margin-top: 10px; padding: 12px; background: #fdf6ec; border-radius: 6px; border-left: 4px solid #E6A23C;">
+                                    <strong>建议方案：</strong><br>
+                                    请先将该记录 <strong>转交</strong> 到您自己的账户下，再进行打回操作。
+                                </p>
+                            </div>`,
+                            '打回失败',
+                            { dangerouslyUseHTMLString: true, type: 'warning', confirmButtonText: '知道了' }
+                        );
+                    } else {
+                        this.$message.error('打回失败：' + errorMsg);
+                    }
                     console.error("打回操作失败:", error);
                 }
             }).catch(() => {

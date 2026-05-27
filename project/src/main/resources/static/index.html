@@ -575,12 +575,12 @@
                                 <span class="menu-title">数据研究</span>
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#">
-                                <i class="menu-icon mdi mdi-checkbox-marked-outline"></i>
-                                <span class="menu-title">待办事项</span>
-                            </a>
-                        </li>
+                                                                                                <li class="nav-item">
+                                                    <a class="nav-link" href="javascript:void(0)" @click="navigateTo('dashboard-panel'); $nextTick(() => { setTimeout(() => { const tabTrigger = document.querySelector('#contact-tab'); if (tabTrigger) tabTrigger.click(); }, 300); })">
+                                                        <i class="menu-icon mdi mdi-checkbox-marked-outline"></i>
+                                                        <span class="menu-title">待办事项</span>
+                                                    </a>
+                                                </li>
 
                         <li class="nav-item">
                             <a class="nav-link" href="javascript:void(0)" @click="changePanel('create-project-panel')">
@@ -620,11 +620,6 @@
                                             </a>
                                             </li>
                                         </ul>
-                                    </li>
-                                    <li class="nav-item">
-                                        <a class="nav-link" href="javascript:void(0)">
-                                            模具类别
-                                        </a>
                                     </li>
                                 </ul>
                             </div>
@@ -668,9 +663,6 @@
                                                 </a>
                                             </li>
                                         </ul>
-                                        <li class="nav-item">
-                                            <a class="nav-link" href="javascript:void(0)">模具类别</a>
-                                          </li>
                                     </li>
                                 </ul>
                             </div>
@@ -1003,7 +995,7 @@
                 // --------------------------------------------------
                 // (A) 核心导航方法 - 所有面板切换的唯一入口
                 // --------------------------------------------------
-                navigateTo(panelName, props = {}) {
+                                navigateTo(panelName, props = {}) {
                     console.log(`【父组件-导航】-> ${panelName}, 参数:`, props);
                     // 只有在明确提供了 projectId 时才更新，否则保持上一次的值
                     if (props.projectId !== undefined) {
@@ -1012,6 +1004,28 @@
                     // 只有在明确提供了 recordId 时才更新，否则清空
                     this.currentRecordId = props.recordId || null;
                     this.activePanel = panelName;
+                    // 跳转到具体内容面板时自动滚动到顶部
+                    // 排除只切换菜单展开/折叠或面板不变的情况
+                    const contentPanels = [
+                        'dashboard-panel', 'create-project-panel', 'craft-planning-panel',
+                        'process-sheet-viewer', 'cae-review-panel', 'rebound-panel',
+                        'mold-surface-panel', 'rectification-panel', 'quality-stats-panel',
+                        'project-planning-panel', 'project-details-panel',
+                        'process-record-panel', 'process-record-list-panel',
+                        'record-workspace-panel', 'record-review-panel', 'review-tasks-panel'
+                    ];
+                    // 如果跳转到的是内容面板，滚动到顶部
+                    if (contentPanels.includes(panelName)) {
+                        this.$nextTick(() => {
+                            // 滚动 main-panel 或页面主体到顶部
+                            const mainPanel = document.querySelector('.main-panel');
+                            if (mainPanel) {
+                                mainPanel.scrollTop = 0;
+                            }
+                            // 同时滚动 window 到顶部（兼容）
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        });
+                    }
                 },
 
                 goToDashboard() {

@@ -3,7 +3,8 @@
 const ProblemRecordTable = {
     props: {
         recordId: { type: Number, required: true },
-        mode: { type: String, default: 'reviewer' } // 'reviewer' | 'designer'
+        mode: { type: String, default: 'reviewer' }, // 'reviewer' | 'designer'
+        currentUser: { type: Object, default: null }  // 当前登录用户
     },
     
     data() {
@@ -44,10 +45,28 @@ const ProblemRecordTable = {
         };
     },
 
-    computed: {
+        computed: {
         
         isReviewerMode() { return this.mode === 'reviewer'; },
         isDesignerMode() { return this.mode === 'designer'; },
+        // 判断当前用户是否为管理员
+        isAdmin() {
+            return this.currentUser && this.currentUser.identity &&
+                   this.currentUser.identity.toUpperCase() === 'MANAGER';
+        },
+        // 判断当前用户是否可以编辑/解决该问题
+        canEditProblem() {
+            return function(row) {
+                // 管理员拥有所有权限
+                if (this.isAdmin) return true;
+                // 如果是设计员模式，必须与问题的 createdByUsername 匹配
+                if (this.isDesignerMode) {
+                    return this.currentUser && this.currentUser.username === row.createdByUsername;
+                }
+                // 审核员模式允许编辑
+                return this.isReviewerMode;
+            };
+        },
 
         // 动态计算通用上传接口 (用于列操作)
         uploadActionUrl() {
@@ -198,7 +217,14 @@ const ProblemRecordTable = {
         },
 
         // --- 通用：表格列内的截图上传 ---
-        openScreenshotUploader(row, type) {
+                openScreenshotUploader(row, type) {
+            // 权限检查：非管理员且不是本人，禁止操作
+            if (this.isDesignerMode && !this.isAdmin) {
+                if (this.currentUser && this.currentUser.username !== row.createdByUsername) {
+                    this.$message.warning('非当前用户，请勿修改');
+                    return;
+                }
+            }
             this.currentProblemForUpload = row;
             this.uploadType = type;
             this.screenshotUploadVisible = true;
@@ -239,8 +265,13 @@ const ProblemRecordTable = {
             }
         },
 
-        // --- 设计员：解决问题闭环 ---
+                // --- 设计员：解决问题闭环 ---
         handleResolve(row) {
+            // 权限检查
+            if (!this.isAdmin && this.currentUser && this.currentUser.username !== row.createdByUsername) {
+                this.$message.warning('非当前用户，请勿修改');
+                return;
+            }
             this.currentProblemForResolve = row;
             this.resolveForm = {
                 fixComment: row.fixComment || '',
@@ -438,13 +469,20 @@ const ProblemRecordTable = {
                                     <div class="text-muted text-truncate" :title="scope.row.fixComment">{{ scope.row.fixComment || '无备注' }}</div>
                                 </div>
                                 <div v-else class="text-muted small flex-grow-1">(待修复)</div>
-                                <el-button 
-                                    v-if="isDesignerMode && scope.row.status === 'OPEN'"
+                                                                <el-button 
+                                    v-if="isDesignerMode && scope.row.status === 'OPEN' && canEditProblem(scope.row)"
                                     type="text" 
                                     :icon="scope.row.fixScreenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
                                     :title="scope.row.fixScreenshotPath ? '更换证明' : '上传证明'"
                                     @click="openScreenshotUploader(scope.row, 'fix')">
                                 </el-button>
+                                <el-tooltip v-else-if="isDesignerMode && scope.row.status === 'OPEN' && !canEditProblem(scope.row)" effect="dark" content="非当前用户，请勿修改" placement="top">
+                                    <el-button 
+                                        type="text" disabled
+                                        :icon="scope.row.fixScreenshotPath ? 'el-icon-refresh' : 'el-icon-plus'"
+                                        :title="scope.row.fixScreenshotPath ? '更换证明' : '上传证明'">
+                                    </el-button>
+                                </el-tooltip>
                             </div>
                         </template>
                     </el-table-column>
@@ -482,13 +520,19 @@ const ProblemRecordTable = {
 
                                 <span v-else class="text-muted small">已存档</span>
                             </div>
-                            <div v-if="isDesignerMode">
+                                                        <div v-if="isDesignerMode">
                                 <el-button 
-                                    v-if="scope.row.status === 'OPEN'"
+                                    v-if="scope.row.status === 'OPEN' && canEditProblem(scope.row)"
                                     size="mini" type="primary" icon="el-icon-check" 
                                     @click="handleResolve(scope.row)">
                                     解决
                                 </el-button>
+                                <el-tooltip v-else-if="scope.row.status === 'OPEN' && !canEditProblem(scope.row)" effect="dark" content="非当前用户，请勿修改" placement="top">
+                                    <el-button 
+                                        size="mini" type="info" icon="el-icon-check" disabled>
+                                        解决
+                                    </el-button>
+                                </el-tooltip>
                                 <span v-else-if="!isReviewerMode" class="text-muted small">
                                     {{ scope.row.status === 'RESOLVED' ? '等待复核' : '已完成' }}
                                 </span>

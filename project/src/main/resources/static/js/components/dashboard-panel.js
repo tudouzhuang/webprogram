@@ -35,12 +35,7 @@ Vue.component('dashboard-panel', {
                     </a>
                   </li>
                 </ul>
-                <div>
-                  <div class="btn-wrapper">
-                    <a href="#" class="btn btn-otline-dark align-items-center"><i class="icon-share"></i> 分享</a>
-                    <a href="#" class="btn btn-otline-dark"><i class="icon-printer"></i> 打印</a>
-                    <a href="#" class="btn btn-primary text-white me-0"><i class="icon-download"></i> 导出</a>
-                  </div>
+                                <div>
                 </div>
               </div>
               <div class="tab-content tab-content-basic">

@@ -3,21 +3,33 @@
 Vue.component('top-navbar', {
     // 【核心修正 1】：不再需要 `components` 选项，因为 'user-dropdown' 也将被全局注册。
     
-    // 【Props】: 接收从主 Vue 实例传来的 props (保持不变)
+        // 【Props】: 接收从主 Vue 实例传来的 props
     props: {
         currentUser: {
             type: Object,
             default: null
         }
     },
-    
-        // 【Computed】: 计算属性
+
+        // 【Data】: 组件数据
+    data() {
+        return {
+            notifications: [],
+            isNotificationsLoading: false,
+            notificationCount: 0,
+            // 搜索
+            searchDialogVisible: false,
+            searchKeyword: '',
+            searchResults: [],
+            isSearching: false
+        };
+    },
+
+    // 【Computed】: 计算属性
     computed: {
         welcomeUserName() {
-            // 安全地获取用户名，如果 currentUser 不存在则提供默认值
             return this.currentUser ? this.currentUser.username : '尊敬的用户';
         },
-        // 【新增】根据系统时间返回不同问候语
         greeting() {
             const hour = new Date().getHours();
             if (hour >= 5 && hour < 9)  return { text: '早上好', icon: '🌅' };
@@ -27,7 +39,6 @@ Vue.component('top-navbar', {
             if (hour >= 18 && hour < 22) return { text: '晚上好', icon: '🌆' };
             return { text: '夜深了', icon: '🌙' };
         },
-        // 【新增】格式化当前日期
         todayDate() {
             const d = new Date();
             const year = d.getFullYear();
@@ -38,17 +49,84 @@ Vue.component('top-navbar', {
             return `${year}年${month}月${day}日 星期${weekday}`;
         }
     },
-    
-    // 【Methods】: 方法 (保持不变)
+
+    // 【Methods】
     methods: {
-        // 当子组件发出 'request-logout' 事件时，此方法被调用
-                onRequestLogout() {
-            // 将事件继续向上冒泡给主 Vue 实例
+        onRequestLogout() {
             this.$emit('request-logout');
         },
         onOpenProfile() {
-            // 将个人资料弹窗事件向上冒泡给主 Vue 实例
             this.$emit('open-profile');
+        },
+        // 获取待办任务通知
+        async fetchNotifications() {
+            if (this.isNotificationsLoading) return;
+            this.isNotificationsLoading = true;
+            try {
+                const response = await axios.get('/api/stats/user-tasks');
+                this.notifications = response.data || [];
+                this.notificationCount = this.notifications.length;
+            } catch (error) {
+                console.error('获取通知失败:', error);
+                this.notifications = [];
+                this.notificationCount = 0;
+            } finally {
+                this.isNotificationsLoading = false;
+            }
+        },
+        // 点击通知项跳转到对应任务
+        handleNotificationClick(task) {
+            console.log('通知点击，跳转到任务:', task);
+            if (this.currentUser && this.currentUser.identity) {
+                const role = this.currentUser.identity.toUpperCase();
+                if (task.taskType === '待审核' && (role === 'REVIEWER' || role === 'MANAGER')) {
+                    this.$root.navigateTo('record-review-panel', { recordId: task.recordId });
+                } else {
+                    this.$root.navigateTo('record-workspace-panel', { recordId: task.recordId });
+                }
+            }
+        },
+                // 获取任务类型对应的标签样式
+        getTaskTagType(taskType) {
+            const typeMap = { '待审核': 'warning', '待修改': 'primary', '草稿': 'info' };
+            return typeMap[taskType] || '';
+        },
+        // 打开搜索弹窗
+        openSearchDialog() {
+            this.searchDialogVisible = true;
+            this.searchKeyword = '';
+            this.searchResults = [];
+            this.$nextTick(() => {
+                this.$refs.searchInput && this.$refs.searchInput.focus();
+            });
+        },
+        // 执行搜索
+        async performSearch() {
+            const keyword = this.searchKeyword.trim();
+            if (!keyword) {
+                this.searchResults = [];
+                return;
+            }
+            this.isSearching = true;
+            try {
+                const response = await axios.get('/api/search', { params: { q: keyword } });
+                this.searchResults = response.data || [];
+            } catch (error) {
+                console.error('搜索失败:', error);
+                this.searchResults = [];
+                this.$message.error('搜索失败，请稍后重试');
+            } finally {
+                this.isSearching = false;
+            }
+        },
+        // 点击搜索结果跳转
+        handleSearchResultClick(item) {
+            this.searchDialogVisible = false;
+            if (item.type === 'project') {
+                this.$root.navigateTo('project-planning-panel', { projectId: item.id });
+            } else if (item.type === 'record') {
+                this.$root.navigateTo('record-workspace-panel', { recordId: item.id });
+            }
         }
     },
     
@@ -80,117 +158,114 @@ Vue.component('top-navbar', {
                         <h3 class="welcome-sub-text">{{ todayDate }}</h3>
                     </li>
                 </ul>
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item d-none d-lg-block">
-                        <div id="datepicker-popup" class="input-group date datepicker navbar-date-picker">
-                            <span class="input-group-addon input-group-prepend border-right">
-                                <span class="icon-calendar input-group-text calendar-icon"></span>
-                            </span>
-                            <input type="text" class="form-control">
-                        </div>
-                    </li>
+                                                                <ul class="navbar-nav ms-auto">
+                    <!-- 搜索图标 -->
                     <li class="nav-item">
-                        <form class="search-form" action="#">
+                        <a class="nav-link" href="javascript:void(0)" @click="openSearchDialog" title="搜索">
                             <i class="icon-search"></i>
-                            <input type="search" class="form-control" placeholder="Search Here" title="Search here">
-                        </form>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link count-indicator" id="notificationDropdown" href="#"
-                            data-bs-toggle="dropdown">
-                            <i class="icon-mail icon-lg"></i>
                         </a>
-                        <div class="dropdown-menu dropdown-menu-right navbar-dropdown preview-list pb-0"
-                            aria-labelledby="notificationDropdown">
-                            <a class="dropdown-item py-3 border-bottom">
-                                <p class="mb-0 font-weight-medium float-left">你有四条新的通知 </p>
-                                <span class="badge badge-pill badge-primary float-right">查看所有</span>
-                            </a>
-                            <a class="dropdown-item preview-item py-3">
-                                <div class="preview-thumbnail">
-                                    <i class="mdi mdi-alert m-auto text-primary"></i>
-                                </div>
-                                <div class="preview-item-content">
-                                    <h6 class="preview-subject fw-normal text-dark mb-1">应用错误</h6>
-                                    <p class="fw-light small-text mb-0"> 刚刚 </p>
-                                </div>
-                            </a>
-                            <a class="dropdown-item preview-item py-3">
-                                <div class="preview-thumbnail">
-                                    <i class="mdi mdi-settings m-auto text-primary"></i>
-                                </div>
-                                <div class="preview-item-content">
-                                    <h6 class="preview-subject fw-normal text-dark mb-1">设置</h6>
-                                    <p class="fw-light small-text mb-0"> 私人消息 </p>
-                                </div>
-                            </a>
-                            <a class="dropdown-item preview-item py-3">
-                                <div class="preview-thumbnail">
-                                    <i class="mdi mdi-airballoon m-auto text-primary"></i>
-                                </div>
-                                <div class="preview-item-content">
-                                    <h6 class="preview-subject fw-normal text-dark mb-1">新的用户注册</h6>
-                                    <p class="fw-light small-text mb-0"> 2天前 </p>
-                                </div>
-                            </a>
-                        </div>
                     </li>
+                    <!-- 通知铃铛 -->
                     <li class="nav-item dropdown">
                         <a class="nav-link count-indicator" id="countDropdown" href="#" data-bs-toggle="dropdown"
-                            aria-expanded="false">
+                            aria-expanded="false" @click="fetchNotifications">
                             <i class="icon-bell"></i>
-                            <span class="count"></span>
+                            <span class="count" v-if="notificationCount > 0">{{ notificationCount > 99 ? '99+' : notificationCount }}</span>
                         </a>
                         <div class="dropdown-menu dropdown-menu-right navbar-dropdown preview-list pb-0"
-                            aria-labelledby="countDropdown">
-                            <a class="dropdown-item py-3">
-                                <p class="mb-0 font-weight-medium float-left">You have 7 unread mails </p>
-                                <span class="badge badge-pill badge-primary float-right">View all</span>
-                            </a>
-                            <div class="dropdown-divider"></div>
-                            <a class="dropdown-item preview-item">
-                                <div class="preview-thumbnail">
-                                    <img src="main/images/faces/face10.jpg" alt="image" class="img-sm profile-pic">
+                            aria-labelledby="countDropdown" style="min-width: 360px;">
+                            <!-- 标题栏 -->
+                            <div class="dropdown-item py-3 border-bottom d-flex justify-content-between align-items-center">
+                                <p class="mb-0 font-weight-medium">待办事项</p>
+                                <el-badge :value="notificationCount" type="warning" :hidden="notificationCount === 0"></el-badge>
+                            </div>
+                            <div style="max-height: 400px; overflow-y: auto;">
+                                <!-- 加载中 -->
+                                <div v-if="isNotificationsLoading" class="text-center py-4">
+                                    <i class="el-icon-loading"></i> 加载中...
                                 </div>
-                                <div class="preview-item-content flex-grow py-2">
-                                    <p class="preview-subject ellipsis font-weight-medium text-dark">Marian Garner
-                                    </p>
-                                    <p class="fw-light small-text mb-0"> The meeting is cancelled </p>
+                                <!-- 无待办 -->
+                                <div v-else-if="notifications.length === 0" class="text-center py-4 text-muted">
+                                    <i class="mdi mdi-check-circle-outline" style="font-size: 2rem;"></i>
+                                    <p class="mt-2 mb-0">暂无待办事项</p>
                                 </div>
-                            </a>
-                            <a class="dropdown-item preview-item">
-                                <div class="preview-thumbnail">
-                                    <img src="main/images/faces/face12.jpg" alt="image" class="img-sm profile-pic">
+                                <!-- 有待办 -->
+                                <div v-else>
+                                    <a class="dropdown-item preview-item py-2 border-bottom"
+                                       v-for="(task, index) in notifications" :key="index"
+                                       href="javascript:void(0)" @click="handleNotificationClick(task)">
+                                        <div class="preview-item-content flex-grow py-1">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <h6 class="preview-subject font-weight-medium text-dark mb-1 text-truncate" style="max-width: 200px;">
+                                                    {{ task.recordName || '未命名记录' }}
+                                                </h6>
+                                                <el-tag :type="getTaskTagType(task.taskType)" size="mini">{{ task.taskType }}</el-tag>
+                                            </div>
+                                            <p class="fw-light small-text mb-0 text-muted">
+                                                {{ task.projectNumber || '' }}
+                                                <span v-if="task.updatedAt" class="ms-2">{{ new Date(task.updatedAt).toLocaleDateString() }}</span>
+                                            </p>
+                                        </div>
+                                    </a>
                                 </div>
-                                <div class="preview-item-content flex-grow py-2">
-                                    <p class="preview-subject ellipsis font-weight-medium text-dark">David Grey </p>
-                                    <p class="fw-light small-text mb-0"> The meeting is cancelled </p>
-                                </div>
-                            </a>
-                            <a class="dropdown-item preview-item">
-                                <div class="preview-thumbnail">
-                                    <img src="main/images/faces/face1.jpg" alt="image" class="img-sm profile-pic">
-                                </div>
-                                <div class="preview-item-content flex-grow py-2">
-                                    <p class="preview-subject ellipsis font-weight-medium text-dark">Travis Jenkins
-                                    </p>
-                                    <p class="fw-light small-text mb-0"> The meeting is cancelled </p>
-                                </div>
-                            </a>
+                            </div>
                         </div>
                     </li>
                     
-                    <!-- 
-                        <user-dropdown> 标签现在可以直接使用，因为它将被全局注册。
-                        它监听的事件名 @request-logout 与子组件发出的事件名保持一致。
-                    -->
+                                        <!-- user-dropdown 监听事件名 @request-logout 与子组件发出的事件名保持一致 -->
                     <user-dropdown v-if="currentUser" :user="currentUser" @request-logout="onRequestLogout" @open-profile="onOpenProfile"></user-dropdown>
-                </ul>
+                                </ul>
                 <button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button"
                     data-bs-toggle="offcanvas">
                     <span class="mdi mdi-menu"></span>
                 </button>
             </div>
+
+                        <!-- 搜索弹窗 -->
+            <el-dialog title="全局搜索" :visible.sync="searchDialogVisible" width="600px" :modal="false" :close-on-click-modal="false" @opened="openSearchDialog">
+                <div>
+                    <el-input
+                        ref="searchInput"
+                        v-model="searchKeyword"
+                        placeholder="输入项目编号、记录名称搜索..."
+                        clearable
+                        @keyup.enter.native="performSearch"
+                        size="medium">
+                        <i slot="prefix" class="el-input__icon el-icon-search"></i>
+                        <el-button slot="append" @click="performSearch" :loading="isSearching">搜索</el-button>
+                    </el-input>
+                </div>
+                <div style="margin-top: 16px; max-height: 400px; overflow-y: auto;">
+                    <!-- 加载中 -->
+                    <div v-if="isSearching" class="text-center py-4">
+                        <i class="el-icon-loading"></i> 搜索中...
+                    </div>
+                    <!-- 无结果 -->
+                    <div v-else-if="searchKeyword && searchResults.length === 0 && !isSearching" class="text-center py-4 text-muted">
+                        <i class="el-icon-document" style="font-size: 2rem;"></i>
+                        <p class="mt-2">未找到相关结果</p>
+                    </div>
+                    <!-- 有结果 -->
+                    <div v-else-if="searchResults.length > 0">
+                        <div v-for="(item, index) in searchResults" :key="index"
+                             class="search-result-item"
+                             style="padding: 10px 12px; cursor: pointer; border-radius: 6px; border: 1px solid #EBEEF5; margin-bottom: 8px;"
+                             @mouseenter="$event.currentTarget.style.backgroundColor = '#F5F7FA'"
+                             @mouseleave="$event.currentTarget.style.backgroundColor = ''"
+                             @click="handleSearchResultClick(item)">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ item.name || item.projectNumber || item.recordName }}</strong>
+                                    <p class="mb-0 text-muted small mt-1">{{ item.description || '' }}</p>
+                                </div>
+                                <el-tag :type="item.type === 'project' ? 'primary' : 'success'" size="mini">
+                                    {{ item.type === 'project' ? '项目' : '记录' }}
+                                </el-tag>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </el-dialog>
         </nav>
     `
 });
