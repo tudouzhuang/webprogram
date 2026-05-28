@@ -124,12 +124,10 @@
          */
 
         /* 1. 默认折叠状态：所有影响空间的属性都为0 */
-        #design-planning,
+                #design-planning,
         #process-record-menu,
         #record-planning,
         #record-review,
-        #charts,
-        #auth,
         .sub-menu .sub-menu {
             max-height: 0;
             opacity: 0;
@@ -156,8 +154,6 @@
         #process-record-menu.show,
         #record-planning.show,
         #record-review.show,
-        #charts.show,
-        #auth.show,
         .sub-menu .sub-menu.show {
             max-height: 25rem;
             /* 动画目标高度 */
@@ -198,6 +194,18 @@
                 padding 0.3s ease-out,
                 margin 0.3s ease-out,
                 box-shadow 0.3s ease;
+        }
+
+        /* ===== Bootstrap collapse 兼容修复 ===== */
+        /* 让 #charts（设变整改）使用 Bootstrap 原生的 collapse 机制，不与自定义动画冲突 */
+        #charts.collapse:not(.show) {
+            display: none;
+        }
+        #charts.collapsing {
+            overflow: hidden;
+        }
+        #charts.collapse.show {
+            display: block;
         }
 
         /* 2. 【兼容方案】干脆把所有一级菜单的下圆角都去掉 */
@@ -748,9 +756,8 @@
                                 <i class="menu-arrow"></i>
                             </a>
                             <div class="collapse" id="charts">
-                                <ul class="nav flex-column sub-menu">
-                                    <li class="nav-item"><a class="nav-link"
-                                            href="main/pages/charts/chartjs.html">整改台账</a>
+                                                                <ul class="nav flex-column sub-menu">
+                                    <li class="nav-item"><a class="nav-link" href="javascript:void(0)" @click="$message.info('功能开发中，敬请期待')">整改台账</a>
                                     </li>
                                     <li class="nav-item">
                                         <a class="nav-link" href="javascript:void(0)" @click="toggleInfoSummaryMenu">
@@ -760,10 +767,10 @@
                                         <ul class="nav flex-column sub-menu" :class="{'show': showInfoSummaryMenu}"
                                             id="info-summary-submenu">
                                             <li class="nav-item">
-                                                <a class="nav-link" href="main/pages/charts/chartjs.html">汇总1</a>
+                                                <a class="nav-link" href="javascript:void(0)" @click="$message.info('功能开发中，敬请期待')">汇总1</a>
                                             </li>
                                             <li class="nav-item">
-                                                <a class="nav-link" href="main/pages/charts/chartjs.html">汇总2</a>
+                                                <a class="nav-link" href="javascript:void(0)" @click="$message.info('功能开发中，敬请期待')">汇总2</a>
                                             </li>
                                         </ul>
                                     </li>
