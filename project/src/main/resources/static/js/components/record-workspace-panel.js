@@ -879,7 +879,6 @@ Vue.component('record-workspace-panel', {
                 return;
             }
 
-            console.log('[Parent Panel] 接收到 message 事件:', event.data);
             const { type, payload } = event.data;
 
             // =================================================================

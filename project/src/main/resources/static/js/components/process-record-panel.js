@@ -224,20 +224,22 @@ Vue.component('process-record-panel', {
                                                 <el-col :span="12">
                                                     <div class="d-flex align-items-center">
                                                         <el-select 
-                                                            v-model="selectedTemplateKeys" 
-                                                            multiple 
-                                                            collapse-tags 
-                                                            placeholder="请勾选需要的模板(可多选)" 
-                                                            size="small" 
-                                                            style="flex-grow: 1; margin-right: 10px;">
-                                                            <el-option
-                                                                v-for="item in availableSheetTemplates"
-                                                                :key="item.key"
-                                                                :label="item.name"
-                                                                :value="item.key"
-                                                                :disabled="isItemAlreadyAdded(item.key)">
-                                                            </el-option>
-                                                        </el-select>
+                                                                                                        v-model="selectedTemplateKeys" 
+                                                                                                        multiple 
+                                                                                                        collapse-tags 
+                                                                                                        placeholder="请勾选需要的模板(可多选)" 
+                                                                                                        size="small" 
+                                                                                                        style="flex-grow: 1; margin-right: 10px;">
+                                                                                                        <el-option
+                                                                                                            v-for="item in availableSheetTemplates"
+                                                                                                            :key="item.key"
+                                                                                                            :label="item.label"
+                                                                                                            :value="item.key"
+                                                                                                            :disabled="isItemAlreadyAdded(item.key) || mandatoryTemplateKeys.includes(item.key)">
+                                                                                                            <span v-if="mandatoryTemplateKeys.includes(item.key)" style="color: #909399;">(必选) </span>
+                                                                                                            <span>{{ item.name }}</span>
+                                                                                                        </el-option>
+                                                                                                    </el-select>
                                                         <el-button @click="addSelectedTemplates" type="primary" size="small" icon="el-icon-plus" :loading="isTemplateLoading">批量添加</el-button>
                                                     </div>
                                                 </el-col>
@@ -258,10 +260,11 @@ Vue.component('process-record-panel', {
                                             </el-row>
                                 
                                             <el-table v-if="recordForm.sheetFiles.length > 0" :data="recordForm.sheetFiles" style="width: 100%" border size="medium">
-                                                <el-table-column prop="name" label="检查项名称" min-width="180">
+                                                                                                <el-table-column prop="name" label="检查项名称" min-width="180">
                                                     <template slot-scope="scope">
                                                         <span style="color: #F56C6C;">* </span>
                                                         <span>{{ scope.row.name }}</span>
+                                                        <el-tag v-if="mandatoryTemplateKeys.includes(scope.row.key)" size="mini" type="danger" effect="plain" style="margin-left:5px">必选</el-tag>
                                                     </template>
                                                 </el-table-column>
                                                 
@@ -302,9 +305,10 @@ Vue.component('process-record-panel', {
                                                     </template>
                                                 </el-table-column>
                                 
-                                                <el-table-column label="删除" width="100" align="center">
+                                                                                                <el-table-column label="删除" width="100" align="center">
                                                     <template slot-scope="scope">
-                                                        <el-button @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
+                                                        <el-button v-if="!mandatoryTemplateKeys.includes(scope.row.key)" @click="removeSheetFileItem(scope.row.key)" type="danger" size="mini" icon="el-icon-delete" circle plain></el-button>
+                                                        <span v-else class="text-muted" style="font-size:12px;">不可删除</span>
                                                     </template>
                                                 </el-table-column>
                                             </el-table>
@@ -381,25 +385,28 @@ Vue.component('process-record-panel', {
                 auditorDate: null,
                 sheetFiles: []
             },
-            availableSheetTemplates: [
-                { key: '减重问题清单', name: '减重问题清单' },
-                { key: '动态干涉检查', name: '动态干涉检查' },
-                { key: '包边', name: '包边' },
-                { key: '后工序', name: '后工序' },
-                { key: '后序压力控制专项检查表', name: '后序压力控制专项检查表' },
-                { key: '安全部件检查表', name: '安全部件检查表' },
-                { key: '废料滑落检查表', name: '废料滑落检查表' },
-                { key: '拉延', name: '拉延' },
-                { key: '拉延调试工艺卡', name: '拉延调试工艺卡' },
-                { key: '机床参数检查表', name: '机床参数检查表' },
-                { key: '材质确认表', name: '材质确认表' },
-                { key: '目录', name: '目录' },
-                { key: '筋厚检查报告', name: '筋厚检查报告' },
-                { key: '结构FMC审核记录表', name: '结构FMC审核记录表' },
-                { key: '结构正式图审核记录表', name: '结构正式图审核记录表' },
-                { key: '设计重大风险排查表', name: '设计重大风险排查表' },
-                { key: '静态干涉检查', name: '静态干涉检查' }
-            ],
+                        availableSheetTemplates: [
+                            // 必选项（置顶）
+                            { key: '设计重大风险排查表', name: '设计重大风险排查表', label: '设计重大风险排查表' },
+                            { key: '结构FMC审核记录表', name: '结构FMC审核记录表', label: '结构FMC审核记录表' },
+                            { key: '材质确认表', name: '材质确认表', label: '材质确认表' },
+                            // 其余可选项
+                            { key: '减重问题清单', name: '减重问题清单', label: '减重问题清单' },
+                            { key: '动态干涉检查', name: '动态干涉检查', label: '动态干涉检查' },
+                            { key: '包边', name: '包边', label: '包边' },
+                            { key: '后工序', name: '后工序', label: '后工序' },
+                            { key: '后序压力控制专项检查表', name: '后序压力控制专项检查表', label: '后序压力控制专项检查表' },
+                            { key: '安全部件检查表', name: '安全部件检查表', label: '安全部件检查表' },
+                            { key: '废料滑落检查表', name: '废料滑落检查表', label: '废料滑落检查表' },
+                            { key: '拉延', name: '拉延', label: '拉延' },
+                            { key: '拉延调试工艺卡', name: '拉延调试工艺卡', label: '拉延调试工艺卡' },
+                            { key: '机床参数检查表', name: '机床参数检查表', label: '机床参数检查表' },
+                            { key: '目录', name: '目录', label: '目录' },
+                            { key: '筋厚检查报告', name: '筋厚检查报告', label: '筋厚检查报告' },
+                            { key: '结构正式图审核记录表', name: '结构正式图审核记录表', label: '结构正式图审核记录表' },
+                            { key: '静态干涉检查', name: '静态干涉检查', label: '静态干涉检查' }
+                        ],
+            mandatoryTemplateKeys: ['设计重大风险排查表', '结构FMC审核记录表', '材质确认表'],
             rules: {
                 partName: [{ required: true, message: '零件名称不能为空', trigger: 'blur' }],
                 processName: [{ required: true, message: '工序名称不能为空', trigger: 'blur' }],
@@ -426,15 +433,17 @@ Vue.component('process-record-panel', {
             }
         }
     },
-    watch: {
+                watch: {
         // 自动加载逻辑
         projectId: {
             immediate: true,
-            handler(newId) {
-                if (newId) this.loadFromCache(newId);
+            async handler(newId) {
+                if (newId) {
+                    await this.loadFromCache(newId);
+                }
             }
         },
-        // 脏检查 + 自动保存
+                // 脏检查 + 自动保存
         recordForm: {
             handler(newVal) {
                 const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
@@ -444,7 +453,7 @@ Vue.component('process-record-panel', {
                     // 防抖自动保存 (2秒)
                     if (this._saveTimer) clearTimeout(this._saveTimer);
                     this._saveTimer = setTimeout(() => {
-                        this.saveToCache(this.projectId);
+                        this.saveToCache(this.projectId, true);
                     }, 2000);
                 }
             },
@@ -523,26 +532,13 @@ Vue.component('process-record-panel', {
         // 1. 拦截关闭/刷新 (防止误操作直接关掉)
 
 
-        // 2. 页面不可见时立即保存 (例如最小化、切Tab)
+                // 2. 页面不可见时立即保存 (例如最小化、切Tab)
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
 
-
-        this.$watch('recordForm', (newVal) => {
-            const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
-
-            if (this.initialSnapshot && currentString !== this.initialSnapshot) {
-                this.hasUnsavedChanges = true;
-
-                if (this._saveTimer) clearTimeout(this._saveTimer);
-                this._saveTimer = setTimeout(() => {
-                    // 【修改点】：传入 true，表示这是自动保存 (静默)
-                    this.saveToCache(this.projectId, true);
-                }, 2000);
-            }
-        }, { deep: true });
-
-        // 监听模板选择变化
-        this.$watch('selectedTemplateKeys', () => { this.hasUnsavedChanges = true; });
+        // 组件挂载完成后，确保必选项已添加
+        this.$nextTick(() => {
+            this.ensureMandatoryItems();
+        });
     },
     beforeDestroy() {
         // 【核心修改】：移除监听器
@@ -564,51 +560,10 @@ Vue.component('process-record-panel', {
     },
     methods: {
 
-        handleVisibilityChange() {
+                handleVisibilityChange() {
             if (document.visibilityState === 'hidden' && this.hasUnsavedChanges) {
                 console.log('[Cache] 页面隐藏，触发紧急保存...');
                 this.saveToCache(this.projectId, true); // true = 静默保存
-            }
-        },
-        // 【修正后的读取】：安全恢复
-        loadFromCache(pid) {
-            if (!pid) return;
-
-            const key = `ProcessRecordDraft_${pid}`;
-            const draftStr = localStorage.getItem(key);
-
-            if (draftStr) {
-                try {
-                    const draft = JSON.parse(draftStr);
-
-                    // 恢复数据
-                    this.recordForm = { ...draft.recordForm };
-                    this.selectedTemplateKeys = draft.selectedTemplateKeys || [];
-                    this.customSheetName = draft.customSheetName || '';
-                    this.lastSavedTime = draft.timestamp || '';
-
-                    // 确保恢复回来的 sheetFiles 里的 file 确实是 null
-                    if (this.recordForm.sheetFiles) {
-                        this.recordForm.sheetFiles.forEach(item => {
-                            item.file = null; // 确保 UI 显示“选择文件”而不是错误的已上传状态
-                        });
-                    }
-
-                    // 恢复后更新快照
-                    this.initialSnapshot = JSON.stringify({ ...this.recordForm, sheetFiles: [] });
-                    this.hasUnsavedChanges = false;
-
-                    console.log(`[Cache] 恢复成功: ${key}`);
-                    // 只有当真的恢复了数据（例如有填写的字段）才提示，避免每次刷新都弹窗干扰
-                    if (this.recordForm.partName || this.recordForm.sheetFiles.length > 0) {
-                        this.$message.info(`已恢复上次(${this.lastSavedTime})填写的表单内容，请重新上传附件。`);
-                    }
-                } catch (e) {
-                    console.error("[Cache] 解析失败:", e);
-                }
-            } else {
-                // 没有缓存，初始化快照
-                this.initialSnapshot = JSON.stringify({ ...this.recordForm, sheetFiles: [] });
             }
         },
 
@@ -666,7 +621,7 @@ Vue.component('process-record-panel', {
             }
         },
 
-        // 【核心修改】：从 IndexedDB 读取
+                // 【核心修改】：从 IndexedDB 读取
         async loadFromCache(pid) {
             if (!pid) return;
 
@@ -698,6 +653,9 @@ Vue.component('process-record-panel', {
             } catch (e) {
                 console.error("读取草稿失败", e);
             }
+
+            // 【修复】无论是否有草稿，加载完成后确保必选项已添加
+            this.ensureMandatoryItems();
         },
 
         handleManualSave() {
@@ -822,7 +780,12 @@ Vue.component('process-record-panel', {
             this.$refs.recordForm.validateField('sheetFiles');
         },
 
-        removeSheetFileItem(sheetKeyToRemove) {
+                removeSheetFileItem(sheetKeyToRemove) {
+            // 阻止删除必选项
+            if (this.mandatoryTemplateKeys.includes(sheetKeyToRemove)) {
+                this.$message.warning(`"${sheetKeyToRemove}" 为必选检查项，无法删除。`);
+                return;
+            }
             this.$confirm('确定要移除此检查项及其已选择的文件吗?', '确认删除', {
                 confirmButtonText: '确定',
                 cancelButtonText: '取消',
@@ -847,8 +810,27 @@ Vue.component('process-record-panel', {
             }
         },
 
-        handleFileExceed(sheetKey) {
+                handleFileExceed(sheetKey) {
             this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
+        },
+
+        // 确保必选检查项已存在于 sheetFiles 中
+        ensureMandatoryItems() {
+            this.mandatoryTemplateKeys.forEach(key => {
+                const alreadyAdded = this.recordForm.sheetFiles.some(item => item.key === key);
+                if (!alreadyAdded) {
+                    const template = this.availableSheetTemplates.find(t => t.key === key);
+                    if (template) {
+                        this.recordForm.sheetFiles.push({
+                            key: template.key,
+                            name: template.name,
+                            file: null,
+                            isTemplate: false,
+                            isMandatory: true
+                        });
+                    }
+                }
+            });
         },
 
         submitRecord() {
@@ -885,7 +867,7 @@ Vue.component('process-record-panel', {
             });
         },
 
-        // 【修改】：resetForm 中也要清理
+                // 【修改】：resetForm 中也要清理
         async resetForm() {
             this.$refs.recordForm.resetFields();
             this.recordForm.sheetFiles = [];
@@ -899,6 +881,11 @@ Vue.component('process-record-panel', {
             this.hasUnsavedChanges = false;
             this.lastSavedTime = '';
             this.initialSnapshot = JSON.stringify(this.recordForm);
+
+            // 重置后重新添加必选项
+            this.$nextTick(() => {
+                this.ensureMandatoryItems();
+            });
         },
     }
 });

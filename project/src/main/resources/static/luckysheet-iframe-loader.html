@@ -69,7 +69,7 @@
                 name === 'TypeError' ||
                 message.includes('fontfaceset') ||
                 message.includes('could not resolve') ||
-                message.includes('cannot read properties') || 
+                message.includes('cannot read properties') ||
                 message.includes('reading') ||
                 message.includes('fromcol') ||
                 message === 'e' || message === '[object object]' || // 👈 捕捉混淆后的极简错误
@@ -201,26 +201,24 @@
          * 自动标红函数
          */
         function autoHighlightCell(r, c, cell) {
-            // 【探头 A】: 确认函数是否被调用
-            // console.log(`[Highlight-Debug] autoHighlightCell 被调用！坐标: (r=${r}, c=${c})`);
-
-            if (!window.luckysheet || !cell) {
-                // console.log('[Highlight-Debug] Luckysheet 实例或 cell 对象为空，已终止。');
-                return;
-            }
-
+            if (!window.luckysheet || !cell) return;
+            console.log(`[调试] 触发检查: r=${r}, c=${c}, value=${cell.v}`);
             const cellValue = cell.v ? String(cell.v).trim() : '';
-            const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E=4, F=5, ..., K=10
+            const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E列到K列
 
-            // 【探头 C】: 确认列坐标是否在目标范围内
             if (targetColumns.includes(c)) {
                 if (cellValue === '×') {
-                    // 【探头 D-1】: 确认是否匹配 "×"
+                    // 标红逻辑
                     luckysheet.setCellFormat(r, c, 'bg', '#ffdddd');
                     luckysheet.setCellFormat(r, c, 'fc', '#9c0006');
+                } else if (cellValue === '√') {
+                    // 【新增】：标绿逻辑
+                    luckysheet.setCellFormat(r, c, 'bg', '#e6ffed'); // 浅绿底
+                    luckysheet.setCellFormat(r, c, 'fc', '#237804'); // 深绿字
                 } else {
-                    // 【探头 D-2】: 确认是否进入“清除颜色”的逻辑
-                    if (cell.bg === '#ffdddd') {
+                    // 清除逻辑：如果既不是 × 也不是 √，则清除颜色
+                    // 检查是否之前有背景色（无论是红还是绿），如果有，则清除
+                    if (cell.bg === '#ffdddd' || cell.bg === '#e6ffed') {
                         luckysheet.setCellFormat(r, c, 'bg', null);
                         luckysheet.setCellFormat(r, c, 'fc', null);
                     }
@@ -253,6 +251,11 @@
             // 🔥【新增护盾 1】：在初始化前，提前强行注入 Excel 私有公式拦截器，防止卡死
             window.luckysheet_function = window.luckysheet_function || {};
             window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
+
+            // 彻底修复 DISPIMG 崩溃问题
+            const emptyFunc = function () { return ""; };
+            window.luckysheet_function._XLFN.DISPIMG = { f: emptyFunc };
+            window.luckysheet_function._XLFN.DISPIMG.f = emptyFunc;
             if (!window.luckysheet_function._XLFN.DISPIMG) {
                 window.luckysheet_function._XLFN.DISPIMG = function () { return ""; };
             }
@@ -618,7 +621,16 @@
                 allowUpdate: true,
                 enableAddRow: true,
                 enableAddBackTop: true,
-
+                hook: {
+                    cellUpdated: function (r, c, oldVal, newVal, isTargetSheet) {
+                        // 这里确保你引用了上面的 autoHighlightCell 函数
+                        // 确保该函数在同一个作用域或 window 上
+                        if (typeof window.autoHighlightCell === 'function') {
+                            // 只有在数据改变时才触发
+                            window.autoHighlightCell(r, c, { v: newVal });
+                        }
+                    }
+                },
                 // 合并传入的自定义选项
                 ...options
             };
@@ -631,7 +643,7 @@
                     }
                 });
             }
-            
+
             requestAnimationFrame(() => { // 👈 手术刀：确保在下一帧渲染时执行，此时 DOM offsetHeight 必然存在
                 try {
                     console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
