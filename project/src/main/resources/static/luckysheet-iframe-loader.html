@@ -202,26 +202,34 @@
          */
         function autoHighlightCell(r, c, cell) {
             if (!window.luckysheet || !cell) return;
-            console.log(`[调试] 触发检查: r=${r}, c=${c}, value=${cell.v}`);
+
             const cellValue = cell.v ? String(cell.v).trim() : '';
             const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E列到K列
 
-            if (targetColumns.includes(c)) {
-                if (cellValue === '×') {
-                    // 标红逻辑
-                    luckysheet.setCellFormat(r, c, 'bg', '#ffdddd');
-                    luckysheet.setCellFormat(r, c, 'fc', '#9c0006');
-                } else if (cellValue === '√') {
-                    // 【新增】：标绿逻辑
-                    luckysheet.setCellFormat(r, c, 'bg', '#e6ffed'); // 浅绿底
-                    luckysheet.setCellFormat(r, c, 'fc', '#237804'); // 深绿字
-                } else {
-                    // 清除逻辑：如果既不是 × 也不是 √，则清除颜色
-                    // 检查是否之前有背景色（无论是红还是绿），如果有，则清除
-                    if (cell.bg === '#ffdddd' || cell.bg === '#e6ffed') {
-                        luckysheet.setCellFormat(r, c, 'bg', null);
-                        luckysheet.setCellFormat(r, c, 'fc', null);
-                    }
+            if (!targetColumns.includes(c)) return;
+
+            // 状态配置表 (颜色可根据你的喜好微调)
+            const statusMap = {
+                '√': { bg: '#99ff99', fc: '#000000' }, // 符合 - 绿色
+                '×': { bg: '#ff9999', fc: '#000000' }, // 不符合 - 红色
+                '/': { bg: '#d9d9d9', fc: '#000000' }, // 无关项 - 灰色
+                '待': { bg: '#fff9c4', fc: '#000000' }  // 待确认 - 黄色
+            };
+
+            // 检查当前值是否在配置表中
+            const config = statusMap[cellValue];
+
+            if (config) {
+                // 设置颜色
+                luckysheet.setCellFormat(r, c, 'bg', config.bg);
+                luckysheet.setCellFormat(r, c, 'fc', config.fc);
+            } else {
+                // 清除逻辑：如果输入的是其他内容，则清除掉背景色和前景色
+                // 遍历所有可能的颜色进行清除，防止残留
+                const colorsToClear = ['#99ff99', '#ff9999', '#d9d9d9', '#fff9c4'];
+                if (cell.bg && colorsToClear.includes(cell.bg)) {
+                    luckysheet.setCellFormat(r, c, 'bg', null);
+                    luckysheet.setCellFormat(r, c, 'fc', null);
                 }
             }
         }
@@ -237,6 +245,12 @@
                  * 渲染 Luckysheet 实例 (终极修复版：防崩溃 + 数据清洗 + 移除无效依赖)
                  */
         function renderSheet(luckysheetData, fileName, options) {
+            window.luckysheet_function = window.luckysheet_function || {};
+            window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
+            window.luckysheet_function._XLFN.DISPIMG = {
+                f: function () { return ""; }
+            };
+            console.log("[护盾] DISPIMG 已被成功锁定为空函数");
             if (window.luckysheet) {
                 try {
                     window.onresize = null; // 👈 手术刀：强制切断全局 resize 监听，防止旧 resize.js 运行
@@ -349,6 +363,19 @@
                 const rowCount = Math.max(sheet.row || 0, 30);
                 const colCount = Math.max(sheet.column || 0, 20);
                 if (sheet.index === undefined) sheet.index = sheet.order;
+                const hasRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
+                if (!hasRules) {
+                    // 尝试去浏览器的记忆晶片里召回
+                    const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
+                    const backupData = sessionStorage.getItem(storageKey);
+
+                    if (backupData) {
+                        sheet.dataVerification = JSON.parse(backupData);
+                        console.log(`%c[重力锁召回] 🚀 成功！从浏览器全局 Session 中强行逆向召回了 Sheet [${sheet.name}] 的全部下拉框规则！`, "color: #52c41a; font-weight: bold;");
+                    } else {
+                        console.warn(`[重力锁失效] 晶片中未发现备份数据，Key: ${storageKey}`);
+                    }
+                }
                 if (!sheet.config) sheet.config = {};
                 if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
 
@@ -585,7 +612,16 @@
             // 步骤 2: 备份原始数据 (用于后续对比或导出)
             originalDataValidation = {}; // 确保全局变量存在
             validData.forEach(sheet => {
-                if (sheet && sheet.order != null && sheet.dataVerification) {
+                if (sheet && sheet.order != null) {
+                    // 如果这次进来的数据没带规则，但我们有全局备份（比如切Tab回显）
+                    if ((!sheet.dataVerification || Object.keys(sheet.dataVerification).length === 0) && originalDataValidation[sheet.order]) {
+                        sheet.dataVerification = originalDataValidation[sheet.order];
+                        console.log(`[Load Guard] 🔄 已从全局缓存中为 Sheet "${sheet.name}" 重新挂载下拉框验证`);
+                    }
+                }
+            });
+            validData.forEach(sheet => {
+                if (sheet && sheet.order != null && sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0) {
                     originalDataValidation[sheet.order] = sheet.dataVerification;
                 }
             });
@@ -691,7 +727,19 @@
                                 luckysheet.refreshFormula();
                                 console.log("[Iframe] 已执行 refreshFormula");
                             }
-
+                            console.log("[护盾] 开始强制全表扫描并标色...");
+                            const sheetData = luckysheet.flowdata(); // 获取当前 sheet 的数据
+                            if (sheetData) {
+                                for (let r = 0; r < sheetData.length; r++) {
+                                    for (let c = 0; c < sheetData[0].length; c++) {
+                                        const cell = sheetData[r][c];
+                                        if (cell) {
+                                            autoHighlightCell(r, c, cell); // 这里直接调用你的标红函数
+                                        }
+                                    }
+                                }
+                            }
+                            console.log("[护盾] 全表扫描标色完成。");
                             // 短延时二次重绘，确保计算后的数值显示出来
                             setTimeout(() => luckysheet.refresh(), 50);
 
@@ -744,8 +792,8 @@
 
 
         /**
-         * 从文件URL加载数据
-         */
+                 * 从文件URL加载数据 (终极修复版：集成作用域防御 + ExcelJS下拉框重力锁)
+                 */
         function loadSheetFromFile(fileUrl, fileName, options) {
             container.innerHTML = `<div class="loader">正在加载数据...</div>`;
 
@@ -757,98 +805,155 @@
                     return response.json()
                         .then(jsonData => {
                             console.log("[Iframe] ✅ 成功将响应解析为JSON！");
+                            console.log("[调试点 2] 从后端收到的原始数据样例:", jsonData[0].celldata[0]);
                             // 兼容直接是数组或对象包含 sheets 的情况
                             const dataToRender = Array.isArray(jsonData) ? jsonData : (jsonData.sheets || []);
                             renderSheet(dataToRender, fileName, options);
                         })
-                        // ... 前面的 fetch(...).then(...).then(...) 保持不变
-
                         .catch(jsonError => {
                             console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
                             container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
 
+                            // ✨【核心修复点 1】：声明一个高生命周期的寄存变量，用于安全跨 Promise 链传递二进制数据
+                            let currentFileBlob = null;
+
                             // 1. 获取 Blob 数据
-                            return clonedResponse.blob().then(fileBlob => {
+                            return clonedResponse.blob()
+                                .then(fileBlob => {
+                                    // ✨【核心修复点 2】：把局部的 fileBlob 寄存到上一层作用域变量中，防止后续链条读取不到
+                                    currentFileBlob = fileBlob;
 
-                                // 🔥🔥🔥【插入侦探代码开始】🔥🔥🔥
-                                console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
-                                console.log("   - 大小:", fileBlob.size, "字节");
-                                console.log("   - 类型:", fileBlob.type);
+                                    // 🔥🔥🔥【插入侦探代码开始】🔥🔥🔥
+                                    console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
+                                    console.log("   - 大小:", fileBlob.size, "字节");
+                                    console.log("   - 类型:", fileBlob.type);
 
-                                // 如果文件小于 1KB，极有可能不是 Excel，而是后端报错文本
-                                if (fileBlob.size < 1000) {
-                                    const reader = new FileReader();
-                                    reader.onload = function () {
-                                        console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
+                                    // 如果文件小于 1KB，极有可能不是 Excel，而是后端报错文本
+                                    if (fileBlob.size < 1000) {
+                                        const reader = new FileReader();
+                                        reader.onload = function () {
+                                            console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
+                                        }
+                                        reader.readAsText(fileBlob);
                                     }
-                                    reader.readAsText(fileBlob);
-                                }
+                                    // 🔥🔥🔥【插入侦探代码结束】🔥🔥🔥
 
-                                // 🔥🔥🔥【插入侦探代码结束】🔥🔥🔥
-                                // 2. 定义超时竞速 Promise (1000秒)
-                                const timeoutPromise = new Promise((_, reject) => {
-                                    setTimeout(() => {
-                                        reject(new Error('TIMEOUT'));
-                                    }, 1000000);
-                                });
+                                    // 2. 定义超时竞速 Promise (1000秒)
+                                    const timeoutPromise = new Promise((_, reject) => {
+                                        setTimeout(() => {
+                                            reject(new Error('TIMEOUT'));
+                                        }, 1000000);
+                                    });
 
-                                // 3. 定义解析 Promise (包裹 LuckyExcel)
-                                const parsingPromise = new Promise((resolve, reject) => {
-                                    try {
-                                        LuckyExcel.transformExcelToLucky(fileBlob,
-                                            function (exportJson, luckysheetfile) {
+                                    // 3. 定义解析 Promise (包裹 LuckyExcel)
+                                    const parsingPromise = new Promise((resolve, reject) => {
+                                        try {
+                                            LuckyExcel.transformExcelToLucky(fileBlob,
+                                                function (exportJson, luckysheetfile) {
+                                                    // 🔥🔥🔥🔥🔥 [调试探针 START] 🔥🔥🔥🔥🔥
+                                                    console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
 
-                                                // 🔥🔥🔥🔥🔥 [调试探针 START] 🔥🔥🔥🔥🔥
-                                                console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
+                                                    if (exportJson.sheets && exportJson.sheets.length > 0) {
+                                                        exportJson.sheets.forEach((sheet, index) => {
+                                                            console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
 
-                                                if (exportJson.sheets && exportJson.sheets.length > 0) {
-                                                    exportJson.sheets.forEach((sheet, index) => {
-                                                        console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
-
-                                                        // 检查 dataVerification 字段
-                                                        if (sheet.dataVerification) {
-                                                            const rules = Object.keys(sheet.dataVerification);
-                                                            if (rules.length > 0) {
-                                                                console.log(`   ✅ 发现 ${rules.length} 条验证规则:`, sheet.dataVerification);
+                                                            // 检查 dataVerification 字段
+                                                            if (sheet.dataVerification) {
+                                                                const rules = Object.keys(sheet.dataVerification);
+                                                                if (rules.length > 0) {
+                                                                    console.log(`   ✅ 发现 ${rules.length} 条验证规则:`, sheet.dataVerification);
+                                                                } else {
+                                                                    console.warn(`   ⚠️ dataVerification 对象存在，但是是空的 (Empty Object)`);
+                                                                }
                                                             } else {
-                                                                console.warn(`   ⚠️ dataVerification 对象存在，但是是空的 (Empty Object)`);
+                                                                console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
                                                             }
-                                                        } else {
-                                                            console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
-                                                        }
-                                                    });
-                                                } else {
-                                                    console.error("❌ 解析结果中没有找到 sheets！");
-                                                }
-                                                console.groupEnd();
-                                                // 🔥🔥🔥🔥🔥 [调试探针 END] 🔥🔥🔥🔥🔥
+                                                        });
+                                                    } else {
+                                                        console.error("❌ 解析结果中没有找到 sheets！");
+                                                    }
+                                                    console.groupEnd();
+                                                    // 🔥🔥🔥🔥🔥 [调试探针 END] 🔥🔥🔥🔥🔥
 
-                                                if (exportJson.sheets == null || exportJson.sheets.length == 0) {
-                                                    reject(new Error('EMPTY_CONTENT'));
-                                                } else {
-                                                    resolve(exportJson);
+                                                    if (exportJson.sheets == null || exportJson.sheets.length == 0) {
+                                                        reject(new Error('EMPTY_CONTENT'));
+                                                    } else {
+                                                        resolve(exportJson);
+                                                    }
+                                                },
+                                                function (err) {
+                                                    console.error("LuckyExcel internal error:", err);
+                                                    reject(new Error('PARSE_ERROR'));
                                                 }
-                                            },
-                                            function (err) {
-                                                console.error("LuckyExcel internal error:", err);
-                                                reject(new Error('PARSE_ERROR'));
-                                            }
-                                        );
-                                    } catch (e) {
-                                        // 捕获同步崩溃 (如 INTERSECTCLIPRECT)
-                                        console.error("LuckyExcel crash:", e);
-                                        reject(new Error('CRASH'));
-                                    }
-                                });
+                                            );
+                                        } catch (e) {
+                                            // 捕获同步崩溃 (如 INTERSECTCLIPRECT)
+                                            console.error("LuckyExcel crash:", e);
+                                            reject(new Error('CRASH'));
+                                        }
+                                    });
 
-                                // 4. 【核心】竞速：解析 vs 超时
-                                return Promise.race([parsingPromise, timeoutPromise]);
-                            })
-                                .then(exportJson => {
+                                    // 4. 【核心】竞速：解析 vs 超时
+                                    return Promise.race([parsingPromise, timeoutPromise]);
+                                })
+                                .then(async exportJson => {
                                     // --- 竞速胜利：解析成功 ---
                                     console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
                                     const sheets = exportJson.sheets || [];
                                     const name = (exportJson.info && exportJson.info.name) || fileName;
+
+                                    // 🔥🔥🔥【绝对防御：ExcelJS 逆向全盘检索并强制缝合下拉框】🔥🔥🔥🔥
+                                    try {
+                                        if (window.ExcelJS && currentFileBlob) {
+                                            console.log("Automated Scan 🕵️ [ExcelJS 深度扫描] 正在绕过 LuckyExcel 盲区，破译底层二进制规则...");
+                                            const workbook = new ExcelJS.Workbook();
+
+                                            // ✨【核心修复点 3】：此处安全使用寄存的高层 currentFileBlob 矩阵数据
+                                            await workbook.xlsx.load(currentFileBlob);
+
+                                            workbook.eachSheet((worksheet, sheetIdx) => {
+                                                // 匹配 Luckysheet 对应的目标 sheet 内存页面
+                                                const targetSheet = sheets[sheetIdx - 1] || sheets.find(s => s.name === worksheet.name);
+                                                if (!targetSheet) return;
+
+                                                // 强制初始化可能丢失的验证对象根节点
+                                                if (!targetSheet.dataVerification) targetSheet.dataVerification = {};
+
+                                                // 地毯式搜索单元格级别的原生 dataValidation 下拉框属性
+                                                worksheet.eachRow((row, rowNum) => {
+                                                    row.eachCell((cell, colNum) => {
+                                                        if (cell.dataValidation && cell.dataValidation.type === 'list') {
+                                                            const r = rowNum - 1;
+                                                            const c = colNum - 1;
+
+                                                            // 提取 Excel 内置规则公式 (对纯文本列表脱除双引号包装)
+                                                            let formula = cell.dataValidation.formulae ? cell.dataValidation.formulae[0] : '';
+                                                            if (formula && formula.startsWith('"') && formula.endsWith('"')) {
+                                                                formula = formula.substring(1, formula.length - 1);
+                                                            }
+
+                                                            // 强力缝合、逆向矫正前端内存
+                                                            targetSheet.dataVerification[`${r}_${c}`] = {
+                                                                type: 'dropdown',
+                                                                value1: formula,
+                                                                prohibitInput: true
+                                                            };
+                                                        }
+                                                    });
+                                                });
+
+                                                const hackedRulesCount = Object.keys(targetSheet.dataVerification).length;
+                                                if (hackedRulesCount > 0) {
+                                                    console.log(`%c[ExcelJS 破译成功] 🛡️ 成功突破底层，为 Sheet [${targetSheet.name}] 强行召回 ${hackedRulesCount} 条下拉框规则！`, "color: #52c41a; font-weight: bold;");
+                                                }
+                                            });
+                                        }
+                                    } catch (excelJsError) {
+                                        console.error("💀 [ExcelJS] 紧急扫描下拉框时发生致命错误:", excelJsError);
+                                    }
+                                    // 🔥🔥🔥【绝对防御结束】🔥🔥🔥🔥
+
+                                    // 执行最终安全视图渲染
                                     renderSheet(sheets, name, options);
                                 })
                                 .catch(err => {
@@ -865,27 +970,26 @@
 
                                     // A. Iframe 界面显示红屏错误
                                     container.innerHTML = `
-                            <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
-                                <h3 style="margin-bottom:10px;font-size:18px;">❌ ${displayMsg}</h3>
-                                <p style="font-size:14px;color:#666;">${subMsg}</p>
-                            </div>
-                        `;
+                                        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
+                                            <h3 style="margin-bottom:10px;font-size:18px;">❌ ${displayMsg}</h3>
+                                            <p style="font-size:14px;color:#666;">${subMsg}</p>
+                                        </div>
+                                    `;
 
-                                    // B. 通知父窗口 (Vue) 停止 Loading 并报错
+                                    // B. 通知父窗口 (Vue) 停止 Loading 状态并抛错
                                     window.parent.postMessage({
                                         type: 'LUCKYSHEET_RENDER_FINISHED',
                                         status: 'error',
                                         message: displayMsg
                                     }, window.location.origin);
                                 });
-                        }); // fetch 的 catch 结束
+                        }); // json的 catch 结束
                 })
                 .catch(error => {
                     console.error("[Iframe] ❌ 加载文件失败:", error);
                     container.innerHTML = `<div class="loader">文件加载失败。</div>`;
                 });
         }
-
         /**
          * 融合验证规则
          */
@@ -963,8 +1067,18 @@
                     }
 
                     // 2. 获取原始数据 (深拷贝以防引用问题)
-                    const rawSheets = window.luckysheet.getAllSheets();
+                    const rawSheets = window.luckysheet.getluckysheetfile();
                     const sheets = JSON.parse(JSON.stringify(rawSheets));
+                    sheets.forEach(sheet => {
+                        const hasLiveRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
+
+                        // 如果当前导出的数据里丢了下拉框，但是我们有初始备份，强行逆向追回！
+                        if (!hasLiveRules && originalDataValidation && originalDataValidation[sheet.order]) {
+                            sheet.dataVerification = originalDataValidation[sheet.order];
+                            console.log(`%c[Save Guard] 🛡️ 检测到内存中数据验证规则丢失，已成功从初始备份中追回 Sheet [${sheet.name}] 的下拉框！`, "color: green; font-weight: bold;");
+                        }
+                    });
+                    console.log("[调试] 打包前的 Sheet 数据:", sheets[0]);
                     if (rawSheets && rawSheets.length > 0) {
                         const firstSheet = rawSheets[0];
                         const hasBorder = firstSheet.config && firstSheet.config.borderInfo && firstSheet.config.borderInfo.length > 0;
@@ -989,7 +1103,14 @@
                             console.warn("⚠️ [Iframe数据检查] Sheet1 没有检测到验证规则 (dataVerification 为空)");
                         }
                     }
+                    if (sheets.length > 0 && sheets[0].dataVerification) {
+                        // 建立一个和当前文件绑定的唯一 Key (如果没有 fileId 就用 fileName)
+                        const storageKey = `luckysheet_dv_backup_${payload.fileId || fileName}`;
 
+                        // 强制备份到浏览器 Session 中，跨刷新不灭
+                        sessionStorage.setItem(storageKey, JSON.stringify(sheets[0].dataVerification));
+                        console.log(`%c[晶片注入] 🛡️ 下拉框规则已安全托管至浏览器 Session 晶片，Key: ${storageKey}`, "color: #1890ff; font-weight: bold;");
+                    }
                     // 4. 发送数据回父窗口
                     const responsePayload = {
                         type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',

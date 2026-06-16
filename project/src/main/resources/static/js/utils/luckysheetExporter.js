@@ -179,8 +179,6 @@ export async function exportWithExcelJS(dataSource) {
                     // --- 场景 B: Cell ---
                     else if (bInfo.rangeType === 'cell' && bInfo.value) {
                         const { row_index, col_index } = bInfo.value;
-                        console.log(`  -> 命中 Cell 逻辑: (${row_index}, ${col_index})`);
-
                         const cell = worksheet.getCell(row_index + 1, col_index + 1);
                         const currentBorder = cell.border || {};
                         const v = bInfo.value;

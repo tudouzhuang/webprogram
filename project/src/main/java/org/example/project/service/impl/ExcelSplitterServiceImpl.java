@@ -488,6 +488,7 @@ public class ExcelSplitterServiceImpl implements ExcelSplitterService {
                                 log.trace("后端标红: 单元格 (r={}, c={}) 值为'{}'，设置红色背景。", r, c, ngSymbol);
                                 cellValue.setBg("#ffdddd");
                                 cellValue.setFc("#9c0006");
+                                log.info("【后端调试】单元格(r={}, c={})命中 NG 规则，已注入背景色: {}", r, c, cellValue.getBg());
                             } else {
                                 if (cellValue.getBg() != null && "#ffdddd".equalsIgnoreCase(cellValue.getBg())) {
                                     log.trace("后端清除标红: 单元格 (r={}, c={}) 值不再是'{}'，清除红色背景。", r, c, ngSymbol);
