@@ -146,12 +146,12 @@ Vue.component('quality-stats-panel', {
                                     </template>
                                 </el-table-column>
                                 
-                                <el-table-column label="绩效统计" prop="onePassCount" sortable width="240">
+                                <el-table-column label="首次执行情况" prop="firstComplianceRate" sortable width="240">
                                     <template slot-scope="scope">
                                         <div style="font-size: 12px;">
-                                            <span class="text-success">一次通过: {{ scope.row.onePassCount }}</span>
+                                            <span class="text-success">首次符合: {{ scope.row.firstComplianceRate !== undefined ? scope.row.firstComplianceRate : (scope.row.onePassRate || 0) }}%</span>
                                             <el-divider direction="vertical"></el-divider>
-                                            <span class="text-danger">NG/修正: {{ scope.row.ngCount }}</span>
+                                            <span class="text-danger">首轮整改: {{ scope.row.firstRoundNgCount !== undefined ? scope.row.firstRoundNgCount : (scope.row.ngCount || 0) }}项</span>
                                         </div>
                                     </template>
                                 </el-table-column>
@@ -182,7 +182,15 @@ Vue.component('quality-stats-panel', {
             return [
                 { title: '平均符合率', value: this.globalStats.avgCompliance, unit: '%', icon: 'mdi-shield-check', bgClass: 'bg-gradient-danger', desc: '全量零件统计均值' },
                 { title: '平均审核轮次', value: this.globalStats.avgRounds, unit: '轮', icon: 'mdi-trending-down', bgClass: 'bg-gradient-info', desc: '数值越低质量越稳' },
-                { title: '一次通过率', value: this.globalStats.onePassRate, unit: '%', icon: 'mdi-lightning-bolt', bgClass: 'bg-gradient-success', desc: '首轮即合格的比例' },
+                { 
+                    title: '首次符合率', 
+                    // 兼容层：如果后端还没改完字段，自动使用 onePassRate 垫底，防止看板显示空白
+                    value: this.globalStats.firstComplianceRate !== undefined ? this.globalStats.firstComplianceRate : this.globalStats.onePassRate, 
+                    unit: '%', 
+                    icon: 'mdi-lightning-bolt', 
+                    bgClass: 'bg-gradient-success', 
+                    desc: '首次评审即符合的项数比例' 
+                },
                 { title: '累计任务总数', value: this.globalStats.totalTasks, unit: '项', icon: 'mdi-file-tree', bgClass: 'bg-gradient-primary', desc: '系统内总记录覆盖' }
             ];
         },
@@ -212,10 +220,14 @@ Vue.component('quality-stats-panel', {
             const onePassRate = totalReviews > 0 ? Math.round((row.onePassCount / totalReviews) * 100) : 0;
 
             // 将当前行的数据覆盖给全局变量 globalStats，上方卡片会瞬间响应变化
+            const firstRate = totalReviews > 0 ? Math.round((row.onePassCount / totalReviews) * 100) : 0;
+
             this.globalStats = {
                 avgCompliance: row.avgCompliance || 0,
                 avgRounds: row.avgRounds || 0,
-                onePassRate: onePassRate,
+                // 写入新旧两个字段，确保大盘卡片无论读哪个都能拿到值
+                firstComplianceRate: row.firstComplianceRate !== undefined ? row.firstComplianceRate : firstRate,
+                onePassRate: firstRate, 
                 totalTasks: totalTasks
             };
         },

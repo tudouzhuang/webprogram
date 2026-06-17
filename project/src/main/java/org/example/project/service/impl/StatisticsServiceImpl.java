@@ -29,8 +29,8 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Autowired
     private AuditLogMapper auditLogMapper;
-    private static final java.time.format.DateTimeFormatter DATE_FORMATTER
-            = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final java.time.format.DateTimeFormatter DATE_FORMATTER = java.time.format.DateTimeFormatter
+            .ofPattern("yyyy-MM-dd HH:mm");
     @Autowired
     private StatisticRuleMapper statisticRuleMapper;
     @Autowired
@@ -53,7 +53,8 @@ public class StatisticsServiceImpl implements StatisticsService {
         log.info("开始为 fileId: {} 计算统计数据...", fileId);
 
         // --- [第一部分：执行所有数据库中定义的常规规则] ---
-        List<StatisticRule> rules = statisticRuleMapper.selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
+        List<StatisticRule> rules = statisticRuleMapper
+                .selectList(new QueryWrapper<StatisticRule>().eq("is_active", true));
 
         if (rules.isEmpty()) {
             log.warn("系统中没有配置任何有效的统计规则，跳过常规计算。");
@@ -86,7 +87,8 @@ public class StatisticsServiceImpl implements StatisticsService {
                             for (LuckySheetJsonDTO.CellData cell : celldata) {
                                 if (cell.getC() >= totalRange.startCol && cell.getC() <= totalRange.endCol
                                         && cell.getR() >= totalRange.startRow && cell.getR() <= totalRange.endRow) {
-                                    if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
+                                    if (cell.getV() != null && cell.getV().getV() != null
+                                            && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
                                         totalCount++;
                                     }
                                 }
@@ -130,7 +132,8 @@ public class StatisticsServiceImpl implements StatisticsService {
                         totalCount = okCount + ngCount + naCount;
                     }
 
-                    log.info("规则 '{}' 统计: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount, totalCount);
+                    log.info("规则 '{}' 统计: OK={}, NG={}, NA={}, Total={}", rule.getRuleName(), okCount, ngCount, naCount,
+                            totalCount);
                     saveOrUpdateStatistic(fileId, rule.getCategory(), okCount, ngCount, naCount, totalCount);
                 }
             }
@@ -147,7 +150,8 @@ public class StatisticsServiceImpl implements StatisticsService {
                     int totalRiskItems = 0;
                     for (LuckySheetJsonDTO.CellData cell : celldata) {
                         if (cell.getC() == 0) { // A列
-                            if (cell.getV() != null && cell.getV().getV() != null && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
+                            if (cell.getV() != null && cell.getV().getV() != null
+                                    && !String.valueOf(cell.getV().getV()).trim().isEmpty()) {
                                 String val = String.valueOf(cell.getV().getV()).trim();
                                 if (val.matches("^[0-9]+(\\.0)?$")) {
                                     totalRiskItems++;
@@ -215,11 +219,13 @@ public class StatisticsServiceImpl implements StatisticsService {
         }
 
         String v = value.toUpperCase();
-        return v.equals("NG") || v.equals("×") || v.equals("X") || v.equals("FALSE") || v.equals("FAIL") || v.equals("NO");
+        return v.equals("NG") || v.equals("×") || v.equals("X") || v.equals("FALSE") || v.equals("FAIL")
+                || v.equals("NO");
     }
 
     // =================================================================================
-    private void saveOrUpdateStatistic(Long fileId, String category, int okCount, int ngCount, int naCount, int totalCount) {
+    private void saveOrUpdateStatistic(Long fileId, String category, int okCount, int ngCount, int naCount,
+            int totalCount) {
         SheetStatistic statisticRecord = new SheetStatistic();
         statisticRecord.setFileId(fileId);
         statisticRecord.setCategory(category);
@@ -300,7 +306,8 @@ public class StatisticsServiceImpl implements StatisticsService {
         }
 
         // 5. 根据 fileId 查询并转换统计数据 (这是你原有的、完整的逻辑)
-        List<SheetStatistic> stats = sheetStatisticMapper.selectList(new QueryWrapper<SheetStatistic>().eq("file_id", fileId));
+        List<SheetStatistic> stats = sheetStatisticMapper
+                .selectList(new QueryWrapper<SheetStatistic>().eq("file_id", fileId));
         List<StatisticsResultDTO.CategoryStat> categoryStats = new ArrayList<>();
         if (stats != null) {
             categoryStats = stats.stream().map(stat -> {
@@ -418,8 +425,7 @@ public class StatisticsServiceImpl implements StatisticsService {
                 .collect(Collectors.toMap(
                         Project::getId,
                         p -> p.getProjectNumber() != null ? p.getProjectNumber() : "未命名项目",
-                        (k1, k2) -> k1
-                ));
+                        (k1, k2) -> k1));
 
         // 文件 ID -> 统计数据详情
         Map<Long, SheetStatistic> fileStatMap = allStats.stream()
@@ -430,8 +436,7 @@ public class StatisticsServiceImpl implements StatisticsService {
                 .filter(f -> f.getRecordId() != null)
                 .collect(Collectors.groupingBy(
                         ProjectFile::getRecordId,
-                        Collectors.mapping(ProjectFile::getId, Collectors.toList())
-                ));
+                        Collectors.mapping(ProjectFile::getId, Collectors.toList())));
 
         // --- 3. 执行累加聚合计算：生成每一个零件的明细 (details) ---
         List<QualityReportDTO.DetailRecord> details = allRecords.stream().map(record -> {
@@ -475,30 +480,38 @@ public class StatisticsServiceImpl implements StatisticsService {
                     .lastReviewTime(record.getUpdatedAt() != null ? record.getUpdatedAt().format(DATE_FORMATTER) : "-")
                     .projectId(record.getProjectId())
                     .creatorId(record.getCreatedByUserId())
-                    .isOnePass(record.getCurrentAuditRound() != null && record.getCurrentAuditRound() == 1 && "APPROVED".equals(statusStr))
+                    .isOnePass(record.getCurrentAuditRound() != null && record.getCurrentAuditRound() == 1
+                            && "APPROVED".equals(statusStr))
                     .build();
         }).collect(Collectors.toList());
 
         // --- 4. 执行双维度聚合 (调用你定义的 4 参数方法) ---
         // 注意：这里必须放在 details 和 Map 计算好之后
-        List<org.example.project.dto.QualityReportDTO.StatEntry> projectEntries = groupByDimension(details, "project", userNameMap, projectNameMap);
-        List<org.example.project.dto.QualityReportDTO.StatEntry> employeeEntries = groupByDimension(details, "employee", userNameMap, projectNameMap);
+        List<org.example.project.dto.QualityReportDTO.StatEntry> projectEntries = groupByDimension(details, "project",
+                userNameMap, projectNameMap);
+        List<org.example.project.dto.QualityReportDTO.StatEntry> employeeEntries = groupByDimension(details, "employee",
+                userNameMap, projectNameMap);
 
         List<org.example.project.dto.QualityReportDTO.StatEntry> combinedList = new ArrayList<>();
         combinedList.addAll(projectEntries);
         combinedList.addAll(employeeEntries);
 
         // --- 5. 计算全局 KPI 指标 ---
+        // --- 5. 计算全局 KPI 指标 ---
         int totalTasks = details.size();
         double avgComp = details.stream().mapToDouble(d -> d.getCompliance()).average().orElse(0.0);
         double avgRnd = details.stream().mapToInt(d -> d.getAuditRounds()).average().orElse(0.0);
         long onePassCount = details.stream().filter(d -> d.getIsOnePass()).count();
 
+        // 🔮 【手术刀注入】计算全局大盘的首次符合率
+        double calculatedFirstRate = totalTasks > 0 ? Math.round((onePassCount * 100.0 / totalTasks) * 10) / 10.0 : 0.0;
+
         return org.example.project.dto.QualityReportDTO.builder()
                 .global(org.example.project.dto.QualityReportDTO.GlobalSummary.builder()
                         .avgCompliance(Math.round(avgComp * 10) / 10.0)
                         .avgRounds(Math.round(avgRnd * 10) / 10.0)
-                        .onePassRate(totalTasks > 0 ? Math.round((onePassCount * 100.0 / totalTasks) * 10) / 10.0 : 0.0)
+                        .onePassRate(calculatedFirstRate) // 保持旧字段向前兼容
+                        .firstComplianceRate(calculatedFirstRate) // 🔥【新增】大盘首次符合率
                         .totalTasks(totalTasks)
                         .build())
                 .list(combinedList)
@@ -515,14 +528,12 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         if ("project".equals(dimension)) {
             // 使用项目名称映射
-            grouped = details.stream().collect(Collectors.groupingBy(d
-                    -> projectNameMap.getOrDefault(d.getProjectId(), "未知项目(ID:" + d.getProjectId() + ")")
-            ));
+            grouped = details.stream().collect(Collectors.groupingBy(
+                    d -> projectNameMap.getOrDefault(d.getProjectId(), "未知项目(ID:" + d.getProjectId() + ")")));
         } else {
             // 使用用户名映射
-            grouped = details.stream().collect(Collectors.groupingBy(d
-                    -> userNameMap.getOrDefault(d.getCreatorId(), "未知员工")
-            ));
+            grouped = details.stream()
+                    .collect(Collectors.groupingBy(d -> userNameMap.getOrDefault(d.getCreatorId(), "未知员工")));
         }
 
         return grouped.entrySet().stream().map(entry -> {
@@ -532,6 +543,10 @@ public class StatisticsServiceImpl implements StatisticsService {
             long onePass = subList.stream().filter(d -> d.getIsOnePass()).count();
             long ng = subList.stream().filter(d -> "CHANGES_REQUESTED".equals(d.getStatus())).count();
 
+            // 🔮 【手术刀注入】计算当前分组维度下的首次符合率与首轮整改项数
+            double firstComplianceRate = subList.size() > 0 ? Math.round((onePass * 100.0 / subList.size()) * 10) / 10.0 : 0.0;
+            int firstRoundNgCount = (int) ng;
+
             return org.example.project.dto.QualityReportDTO.StatEntry.builder()
                     .type(dimension)
                     .name(entry.getKey())
@@ -540,6 +555,8 @@ public class StatisticsServiceImpl implements StatisticsService {
                     .avgRounds(Math.round(rnds * 10) / 10.0)
                     .onePassCount((int) onePass)
                     .ngCount((int) ng)
+                    .firstComplianceRate(firstComplianceRate) // 🔥【新增】表格行的首次符合率
+                    .firstRoundNgCount(firstRoundNgCount)     // 🔥【新增】表格行的首轮整改项数
                     .details(subList)
                     .build();
         }).collect(Collectors.toList());
