@@ -106,6 +106,53 @@ Vue.component('process-record-panel', {
                                     </el-col>
                                 </el-row>
                                 
+                                <el-row :gutter="20" style="background: #f8f9fa; padding: 15px 10px; border-radius: 6px; margin: 0 1px 15px 1px; border-left: 4px solid #67c23a;">
+                                    <el-col :span="24">
+                                        <el-form-item label="模具类型" prop="moldType" :rules="[{ required: true, message: '请选择模具类型', trigger: 'change' }]">
+                                            <el-radio-group v-model="recordForm.moldType">
+                                                <el-radio label="拉延模">拉延模</el-radio>
+                                                <el-radio label="后工序模具">后工序模具</el-radio>
+                                                <el-radio label="落料模具">落料模具</el-radio>
+                                                <el-radio label="包边模具">包边模具</el-radio>
+                                                <el-radio label="多工位模具">多工位模具</el-radio>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                    
+                                    <el-col :span="12" v-if="['拉延模', '后工序模具', '多工位模具'].includes(recordForm.moldType)">
+                                        <el-form-item label="有无修边">
+                                            <el-radio-group v-model="recordForm.hasTrimming">
+                                                <el-radio label="有">有修边</el-radio>
+                                                <el-radio label="无">无修边</el-radio>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12" v-if="recordForm.moldType === '拉延模'">
+                                        <el-form-item label="有无压料芯">
+                                            <el-radio-group v-model="recordForm.hasBlankHolder">
+                                                <el-radio label="有">有压料芯</el-radio>
+                                                <el-radio label="无">无压料芯</el-radio>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12" v-if="recordForm.moldType === '落料模具'">
+                                        <el-form-item label="有无压料托料芯">
+                                            <el-radio-group v-model="recordForm.hasBlankSupportPad">
+                                                <el-radio label="有">有压料托料芯</el-radio>
+                                                <el-radio label="无">无压料托料芯</el-radio>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                    <el-col :span="12" v-if="recordForm.moldType === '多工位模具'">
+                                        <el-form-item label="有无拉延">
+                                            <el-radio-group v-model="recordForm.hasDrawing">
+                                                <el-radio label="有">有拉延</el-radio>
+                                                <el-radio label="无">无拉延</el-radio>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                    </el-col>
+                                </el-row>
+
                                 <el-divider>详细规格信息</el-divider>
                                 
                                 <!-- 基础信息部分 -->
@@ -366,6 +413,11 @@ Vue.component('process-record-panel', {
             recordForm: {
                 partName: '',
                 processName: '',
+                moldType: '',          // 🔥 模具类型
+                hasTrimming: '无',      // 🔥 有无修边
+                hasBlankHolder: '无',   // 🔥 有无压料芯
+                hasBlankSupportPad: '无',// 🔥 有无压料托料芯
+                hasDrawing: '无',       // 🔥 有无拉延
                 material: '',
                 thickness: '',
                 tensileStrength: '',
@@ -385,28 +437,27 @@ Vue.component('process-record-panel', {
                 auditorDate: null,
                 sheetFiles: []
             },
-                        availableSheetTemplates: [
-                            // 必选项（置顶）
-                            { key: '设计重大风险排查表', name: '设计重大风险排查表', label: '设计重大风险排查表' },
-                            { key: '结构FMC审核记录表', name: '结构FMC审核记录表', label: '结构FMC审核记录表' },
-                            { key: '材质确认表', name: '材质确认表', label: '材质确认表' },
-                            // 其余可选项
-                            { key: '减重问题清单', name: '减重问题清单', label: '减重问题清单' },
-                            { key: '动态干涉检查', name: '动态干涉检查', label: '动态干涉检查' },
-                            { key: '包边', name: '包边', label: '包边' },
-                            { key: '后工序', name: '后工序', label: '后工序' },
-                            { key: '后序压力控制专项检查表', name: '后序压力控制专项检查表', label: '后序压力控制专项检查表' },
-                            { key: '安全部件检查表', name: '安全部件检查表', label: '安全部件检查表' },
-                            { key: '废料滑落检查表', name: '废料滑落检查表', label: '废料滑落检查表' },
-                            { key: '拉延', name: '拉延', label: '拉延' },
-                            { key: '拉延调试工艺卡', name: '拉延调试工艺卡', label: '拉延调试工艺卡' },
-                            { key: '机床参数检查表', name: '机床参数检查表', label: '机床参数检查表' },
-                            { key: '目录', name: '目录', label: '目录' },
-                            { key: '筋厚检查报告', name: '筋厚检查报告', label: '筋厚检查报告' },
-                            { key: '结构正式图审核记录表', name: '结构正式图审核记录表', label: '结构正式图审核记录表' },
-                            { key: '静态干涉检查', name: '静态干涉检查', label: '静态干涉检查' }
-                        ],
-            mandatoryTemplateKeys: ['设计重大风险排查表', '结构FMC审核记录表', '材质确认表'],
+            availableSheetTemplates: [
+                // 必选项（置顶）
+                { key: '设计重大风险排查表', name: '设计重大风险排查表', label: '设计重大风险排查表' },
+                { key: '结构FMC审核记录表', name: '结构FMC审核记录表', label: '结构FMC审核记录表' },
+                { key: '材质确认表', name: '材质确认表', label: '材质确认表' },
+                // 其余可选项
+                { key: '减重问题清单', name: '减重问题清单', label: '减重问题清单' },
+                { key: '动态干涉检查', name: '动态干涉检查', label: '动态干涉检查' },
+                { key: '包边', name: '包边', label: '包边' },
+                { key: '后工序', name: '后工序', label: '后工序' },
+                { key: '后序压力控制专项检查表', name: '后序压力控制专项检查表', label: '后序压力控制专项检查表' },
+                { key: '安全部件检查表', name: '安全部件检查表', label: '安全部件检查表' },
+                { key: '废料滑落检查表', name: '废料滑落检查表', label: '废料滑落检查表' },
+                { key: '拉延', name: '拉延', label: '拉延' },
+                { key: '拉延调试工艺卡', name: '拉延调试工艺卡', label: '拉延调试工艺卡' },
+                { key: '机床参数检查表', name: '机床参数检查表', label: '机床参数检查表' },
+                { key: '目录', name: '目录', label: '目录' },
+                { key: '筋厚检查报告', name: '筋厚检查报告', label: '筋厚检查报告' },
+                { key: '结构正式图审核记录表', name: '结构正式图审核记录表', label: '结构正式图审核记录表' },
+                { key: '静态干涉检查', name: '静态干涉检查', label: '静态干涉检查' }
+            ],
             rules: {
                 partName: [{ required: true, message: '零件名称不能为空', trigger: 'blur' }],
                 processName: [{ required: true, message: '工序名称不能为空', trigger: 'blur' }],
@@ -433,7 +484,7 @@ Vue.component('process-record-panel', {
             }
         }
     },
-                watch: {
+    watch: {
         // 自动加载逻辑
         projectId: {
             immediate: true,
@@ -443,7 +494,14 @@ Vue.component('process-record-panel', {
                 }
             }
         },
-                // 脏检查 + 自动保存
+        // 监听必选规则集的改变，一旦单选框变化，自动驱动文件补封
+        mandatoryTemplateKeys: {
+            handler(newKeys) {
+                this.ensureMandatoryItems();
+            },
+            deep: true
+        },
+        // 脏检查 + 自动保存
         recordForm: {
             handler(newVal) {
                 const currentString = JSON.stringify(newVal, (k, v) => v instanceof File ? 'FILE_OBJECT' : v);
@@ -532,7 +590,7 @@ Vue.component('process-record-panel', {
         // 1. 拦截关闭/刷新 (防止误操作直接关掉)
 
 
-                // 2. 页面不可见时立即保存 (例如最小化、切Tab)
+        // 2. 页面不可见时立即保存 (例如最小化、切Tab)
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
 
         // 组件挂载完成后，确保必选项已添加
@@ -556,11 +614,46 @@ Vue.component('process-record-panel', {
                 return false;
             }
             return this.recordForm.sheetFiles.every(item => item.file !== null);
+        },
+        // ====== 【手术刀注入：全量自动路由规则矩阵】 ======
+        mandatoryTemplateKeys() {
+            // 1. 图表左上角：4张任何情况都必选的底层基础表
+            let keys = ['减重问题清单', '材质确认表', '结构FMC审核记录表', '结构正式图审核记录表'];
+
+            if (!this.recordForm.moldType) return keys;
+
+            // 2. 根据不同的模具类型注入对应必选表单
+            switch (this.recordForm.moldType) {
+                case '拉延模':
+                    keys.push('拉延', '拉延调试工艺卡');
+                    if (this.recordForm.hasTrimming === '有') keys.push('废料滑落检查表');
+                    if (this.recordForm.hasBlankHolder === '有') keys.push('后序压力控制专项检查表');
+                    break;
+                case '后工序模具':
+                    keys.push('后工序', '后序压力控制专项检查表');
+                    if (this.recordForm.hasTrimming === '有') keys.push('废料滑落检查表');
+                    break;
+                case '落料模具':
+                    keys.push('落料');
+                    if (this.recordForm.hasBlankSupportPad === '有') keys.push('后序压力控制专项检查表');
+                    break;
+                case '包边模具':
+                    keys.push('包边');
+                    break;
+                case '多工位模具':
+                    keys.push('后工序', '后序压力控制专项检查表');
+                    if (this.recordForm.hasTrimming === '有') keys.push('废料滑落检查表');
+                    if (this.recordForm.hasDrawing === '有') keys.push('拉延', '拉延调试工艺卡');
+                    break;
+            }
+
+            // 去重输出安全键集
+            return [...new Set(keys)];
         }
     },
     methods: {
 
-                handleVisibilityChange() {
+        handleVisibilityChange() {
             if (document.visibilityState === 'hidden' && this.hasUnsavedChanges) {
                 console.log('[Cache] 页面隐藏，触发紧急保存...');
                 this.saveToCache(this.projectId, true); // true = 静默保存
@@ -621,7 +714,7 @@ Vue.component('process-record-panel', {
             }
         },
 
-                // 【核心修改】：从 IndexedDB 读取
+        // 【核心修改】：从 IndexedDB 读取
         async loadFromCache(pid) {
             if (!pid) return;
 
@@ -780,7 +873,7 @@ Vue.component('process-record-panel', {
             this.$refs.recordForm.validateField('sheetFiles');
         },
 
-                removeSheetFileItem(sheetKeyToRemove) {
+        removeSheetFileItem(sheetKeyToRemove) {
             // 阻止删除必选项
             if (this.mandatoryTemplateKeys.includes(sheetKeyToRemove)) {
                 this.$message.warning(`"${sheetKeyToRemove}" 为必选检查项，无法删除。`);
@@ -810,27 +903,67 @@ Vue.component('process-record-panel', {
             }
         },
 
-                handleFileExceed(sheetKey) {
+        handleFileExceed(sheetKey) {
             this.$message.warning(`"${sheetKey}" 只能选择一个文件，新选择的将覆盖旧的。`);
         },
 
         // 确保必选检查项已存在于 sheetFiles 中
-        ensureMandatoryItems() {
-            this.mandatoryTemplateKeys.forEach(key => {
-                const alreadyAdded = this.recordForm.sheetFiles.some(item => item.key === key);
-                if (!alreadyAdded) {
-                    const template = this.availableSheetTemplates.find(t => t.key === key);
-                    if (template) {
-                        this.recordForm.sheetFiles.push({
-                            key: template.key,
-                            name: template.name,
-                            file: null,
-                            isTemplate: false,
-                            isMandatory: true
-                        });
-                    }
+        // ====== 【手术刀升级：必选表单无感静默后台下载装配引擎】 ======
+        async ensureMandatoryItems() {
+            if (!this.mandatoryTemplateKeys || this.mandatoryTemplateKeys.length === 0) return;
+
+            // 1. 清理工作：如果切换了模具类型，把之前动态生成、且用户还没手动传文件的“过时旧必选表”剔除掉
+            this.recordForm.sheetFiles = this.recordForm.sheetFiles.filter(item => {
+                // 如果该表已不在当前的必选清单里，且它是系统预设的没上传过实体文件的，允许抹除
+                if (!this.mandatoryTemplateKeys.includes(item.key) && item.isTemplate) {
+                    return false;
                 }
+                return true;
             });
+
+            // 2. 补齐工作：地毯式扫描缺失的必选表，启动异步抓取
+            for (const key of this.mandatoryTemplateKeys) {
+                const alreadyAdded = this.recordForm.sheetFiles.some(item => item.key === key);
+                if (alreadyAdded) continue;
+
+                const template = this.availableSheetTemplates.find(t => t.key === key);
+                if (!template) continue;
+
+                // 预先占坑，UI 状态立刻展示加载中
+                this.recordForm.sheetFiles.push({
+                    key: template.key,
+                    name: template.name,
+                    file: null,
+                    isTemplate: true,
+                    loading: true // 加载动画
+                });
+
+                // 异步抓取服务器上的标准 .xlsx 文件
+                const fileUrl = `/templates/${encodeURIComponent(template.name)}.xlsx`;
+                axios.get(fileUrl, { responseType: 'blob' })
+                    .then(res => {
+                        const file = new File([res.data], template.name + '.xlsx', {
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        });
+                        // 精准替换占坑对象，补齐核心 file 字节
+                        const idx = this.recordForm.sheetFiles.findIndex(item => item.key === template.key);
+                        if (idx !== -1) {
+                            this.$set(this.recordForm.sheetFiles, idx, {
+                                key: template.key,
+                                name: template.name,
+                                file: file,
+                                isTemplate: true
+                            });
+                        }
+                    })
+                    .catch(err => {
+                        console.error(`静默加装必选模板 [${template.name}] 失败，转为人工上传模式:`, err);
+                        const idx = this.recordForm.sheetFiles.findIndex(item => item.key === template.key);
+                        if (idx !== -1) {
+                            this.recordForm.sheetFiles[idx].isTemplate = false;
+                        }
+                    });
+            }
         },
 
         submitRecord() {
@@ -867,7 +1000,7 @@ Vue.component('process-record-panel', {
             });
         },
 
-                // 【修改】：resetForm 中也要清理
+        // 【修改】：resetForm 中也要清理
         async resetForm() {
             this.$refs.recordForm.resetFields();
             this.recordForm.sheetFiles = [];
