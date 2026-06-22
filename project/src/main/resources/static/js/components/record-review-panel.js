@@ -288,9 +288,9 @@ Vue.component('record-review-panel', {
 
                             <div v-if="activeTab === 'problemRecord'" class="scrollable-tab-content">
                                 <problem-record-table
+                                    ref="problemTableRef" 
                                     :record-id="Number(recordId)"
-                                    :mode="reviewer" 
-                                    @trigger-submit="handleTriggerReview">
+                                    :mode="problemPanelMode" @trigger-submit="handleTriggerReview">
                                 </problem-record-table>
                             </div>
 
@@ -740,7 +740,10 @@ Vue.component('record-review-panel', {
                 // c. 执行文件上传和后续操作
                 // 注意：这里不再需要 this.isSaving = true，因为 saveChanges 方法已经设置过了
                 try {
-                    const exportBlob = await exportWithExcelJS(payload);
+                    const exporterModule = await import('/js/utils/luckysheetExporter.js');
+                    
+                    // 通过对象属性点出来调用，绝不触发 TDZ 报错
+                    const exportBlob = await exporterModule.exportWithExcelJS(payload);
                     const formData = new FormData();
                     const fileName = currentFile.fileName || `${payload.documentType}.xlsx`;
                     formData.append('file', exportBlob, fileName);
@@ -775,6 +778,35 @@ Vue.component('record-review-panel', {
                 console.log('[Parent Panel] 接收到实时统计更新:', payload);
                 this.currentLiveStats = payload;
 
+            } else if (type === 'NAVIGATE_TO_PROBLEM_RECORD') {
+                
+                console.log('[Parent Panel] 🛡️ 捕获到不符合项联动指令，准备切换视窗...', payload);
+                const { row, sheetName } = payload;
+
+                // 1. 秒切侧边栏视图到问题记录表
+                this.activeTab = 'problemRecord';
+
+                // 2. 利用 nextTick 等待 Vue 重新把问题组件挂载出来后，利用 Ref 强行唤醒其内部的新增表单
+                this.$nextTick(() => {
+                    const problemTableComponent = this.$refs.problemTableRef;
+                    if (problemTableComponent && typeof problemTableComponent.handleAddNew === 'function') {
+                        // 预填部分已知元数据进入子组件的临时对象（可选项，方便专家少打字）
+                        if (problemTableComponent.currentProblem) {
+                            problemTableComponent.currentProblem.stage = 'FMC';
+                            problemTableComponent.currentProblem.problemPoint = `${sheetName}：第 ${row + 1} 行检测出不符合项`;
+                        }
+                        
+                        // 强行调起新建问题弹窗
+                        problemTableComponent.handleAddNew();
+                        this.$message({
+                            message: `已自动定位并开启 [${sheetName}] 第 ${row + 1} 行的问题整改登记框`,
+                            type: 'success',
+                            duration: 4000
+                        });
+                    } else {
+                        console.warn("[Parent Panel] 问题记录表组件实例未就绪或 handleAddNew 方法不存在");
+                    }
+                });
             }
         },
 

@@ -1,497 +1,470 @@
 <!doctype html>
 <html lang="zh">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Luckysheet Iframe Loader</title>
-    <link rel="stylesheet" href="/luckysheet/plugins/css/pluginsCss.css" />
-    <link rel="stylesheet" href="/luckysheet/plugins/plugins.css" />
-    <link rel="stylesheet" href="/luckysheet/css/luckysheet.css" />
-    <link rel="stylesheet" href="/luckysheet/assets/iconfont/iconfont.css" />
-    <style>
-      html,
-      body,
-      #luckysheet-container {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-      }
 
-      .loader {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100%;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
-        font-size: 1.1em;
-        color: #888;
-        text-align: center;
-        padding: 10px;
-      }
-    </style>
-  </head>
+<head>
+  <meta charset="UTF-8" />
+  <title>Luckysheet Iframe Loader</title>
+  <link rel="stylesheet" href="/luckysheet/plugins/css/pluginsCss.css" />
+  <link rel="stylesheet" href="/luckysheet/plugins/plugins.css" />
+  <link rel="stylesheet" href="/luckysheet/css/luckysheet.css" />
+  <link rel="stylesheet" href="/luckysheet/assets/iconfont/iconfont.css" />
+  <style>
+    html,
+    body,
+    #luckysheet-container {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
 
-  <body>
-    <div id="luckysheet-container">
-      <div class="loader">等待父窗口指令...</div>
-    </div>
+    .loader {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      font-size: 1.1em;
+      color: #888;
+      text-align: center;
+      padding: 10px;
+    }
+  </style>
+</head>
 
-    <script src="/luckysheet/plugins/js/plugin.js"></script>
-    <script src="/luckysheet/luckysheet.umd.js"></script>
-    <script src="/luckysheet/luckyexcel.umd.js"></script>
-    <script src="/js/libs/exceljs.min.js"></script>
+<body>
+  <div id="luckysheet-container">
+    <div class="loader">等待父窗口指令...</div>
+  </div>
 
-    <script type="module">
-      // --- [新增护盾 0：阻止非法的 Resize 导致引擎崩溃] ---
-      window.addEventListener(
-        "resize",
-        function (e) {
-          const gridWindow = document.getElementById("luckysheet-grid-window");
-          // 如果表格核心 DOM 还没建好，或者 Iframe 处于隐藏状态(高度为0)
-          if (!gridWindow || gridWindow.offsetHeight === 0) {
-            e.stopImmediatePropagation(); // 强行拦截，不让 Luckysheet 处理这个改变
+  <script src="/luckysheet/plugins/js/plugin.js"></script>
+  <script src="/luckysheet/luckysheet.umd.js"></script>
+  <script src="/luckysheet/luckyexcel.umd.js"></script>
+  <script src="/js/libs/exceljs.min.js"></script>
+
+  <script type="module">
+    // --- [新增护盾 0：阻止非法的 Resize 导致引擎崩溃] ---
+    window.addEventListener(
+      "resize",
+      function (e) {
+        const gridWindow = document.getElementById("luckysheet-grid-window");
+        // 如果表格核心 DOM 还没建好，或者 Iframe 处于隐藏状态(高度为0)
+        if (!gridWindow || gridWindow.offsetHeight === 0) {
+          e.stopImmediatePropagation(); // 强行拦截，不让 Luckysheet 处理这个改变
+        }
+      },
+      true,
+    ); // 注意这里的 true，开启捕获模式，确保比 Luckysheet 先执行
+
+    // --- [0. 全局异常熔断 (增强版)] ---
+    window.addEventListener("unhandledrejection", function (event) {
+      console.error("[Iframe] ⚠️ 捕获到未处理的 Promise 异常:", event.reason);
+
+      const reason = event.reason || {};
+      const message = (
+        reason.message ||
+        reason.toString() ||
+        ""
+      ).toLowerCase();
+      const name = reason.name || "";
+
+      if (
+        name === "SyntaxError" ||
+        name === "TypeError" ||
+        message.includes("fontfaceset") ||
+        message.includes("could not resolve") ||
+        message.includes("cannot read properties") ||
+        message.includes("reading") ||
+        message.includes("fromcol") ||
+        message === "e" ||
+        message === "[object object]" ||
+        message.includes("out of memory")
+      ) {
+        const container = document.getElementById("luckysheet-container");
+        if (container) {
+          let userFriendlyMsg = "渲染引擎内部逻辑崩溃";
+          let subMsg = "Technical Info: " + message.slice(0, 50) + "...";
+
+          if (message.includes("fromcol") || message === "e") {
+            userFriendlyMsg = "表格内存在无法解析的复杂图形 (CAD/矢量图)";
+            subMsg =
+              "建议：请用 Excel 打开此文件，将复杂的图纸或自选图形【剪切并粘贴为普通PNG图片】后，另存为新文件重新上传。";
+          } else if (message.includes("font")) {
+            userFriendlyMsg = "浏览器无法应用特殊字体";
+            subMsg =
+              "请尝试将表格字体修改为常规字体(如宋体、微软雅黑)后重试。";
+          } else if (message.includes("reading")) {
+            userFriendlyMsg = "表格结构过复杂或含非法合并单元格";
+            subMsg = "解析器无法读取损坏的行列数据，请清理格式后重试。";
           }
-        },
-        true,
-      ); // 注意这里的 true，开启捕获模式，确保比 Luckysheet 先执行
 
-      // --- [0. 全局异常熔断 (增强版)] ---
-      window.addEventListener("unhandledrejection", function (event) {
-        console.error("[Iframe] ⚠️ 捕获到未处理的 Promise 异常:", event.reason);
-
-        const reason = event.reason || {};
-        const message = (
-          reason.message ||
-          reason.toString() ||
-          ""
-        ).toLowerCase();
-        const name = reason.name || "";
-
-        if (
-          name === "SyntaxError" ||
-          name === "TypeError" ||
-          message.includes("fontfaceset") ||
-          message.includes("could not resolve") ||
-          message.includes("cannot read properties") ||
-          message.includes("reading") ||
-          message.includes("fromcol") ||
-          message === "e" ||
-          message === "[object object]" || 
-          message.includes("out of memory")
-        ) {
-          const container = document.getElementById("luckysheet-container");
-          if (container) {
-            let userFriendlyMsg = "渲染引擎内部逻辑崩溃";
-            let subMsg = "Technical Info: " + message.slice(0, 50) + "...";
-
-            if (message.includes("fromcol") || message === "e") {
-              userFriendlyMsg = "表格内存在无法解析的复杂图形 (CAD/矢量图)";
-              subMsg =
-                "建议：请用 Excel 打开此文件，将复杂的图纸或自选图形【剪切并粘贴为普通PNG图片】后，另存为新文件重新上传。";
-            } else if (message.includes("font")) {
-              userFriendlyMsg = "浏览器无法应用特殊字体";
-              subMsg =
-                "请尝试将表格字体修改为常规字体(如宋体、微软雅黑)后重试。";
-            } else if (message.includes("reading")) {
-              userFriendlyMsg = "表格结构过复杂或含非法合并单元格";
-              subMsg = "解析器无法读取损坏的行列数据，请清理格式后重试。";
-            }
-
-            container.innerHTML = `
+          container.innerHTML = `
                         <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
                             <h3 style="margin-bottom:10px;font-size:18px;">❌ ${userFriendlyMsg}</h3>
                             <p style="font-size:14px;color:#666;">${subMsg}</p>
                         </div>
                     `;
-          }
-
-          window.parent.postMessage(
-            {
-              type: "LUCKYSHEET_RENDER_FINISHED",
-              status: "error",
-              message: "渲染崩溃: " + (reason.message || "矢量图形解析失败"),
-            },
-            window.location.origin,
-          );
         }
-      });
-
-      // --- [1. 导入外部模块] ---
-      import { exportWithExcelJS } from "/js/utils/luckysheetExporter.js";
-
-      // --- [2. 全局变量与状态] ---
-      const container = document.getElementById("luckysheet-container");
-      let originalDataValidation = {};
-      let originalRowlen = {};
-
-      // --- [3. 辅助函数定义] ---
-
-      /**
-       * 恢复行高函数
-       */
-      function restoreRowHeight(startRow, rowCount) {
-        if (!window.luckysheet) return;
-
-        for (let i = 0; i < rowCount; i++) {
-          const rowIndex = String(startRow + i);
-          const originalHeight = originalRowlen[rowIndex];
-
-          if (originalHeight !== undefined) {
-            const currentHeight = luckysheet.getRowHeight([parseInt(rowIndex)])[
-              rowIndex
-            ];
-
-            if (currentHeight !== originalHeight) {
-              console.log(
-                `[Row Height Fix] 检测到行 ${parseInt(rowIndex) + 1} 高度被自动修改，正在从 ${currentHeight} 恢复至 ${originalHeight}`,
-              );
-              luckysheet.setRowHeight({ [rowIndex]: originalHeight });
-            }
-          }
-        }
-      }
-
-      /**
-       * Debounce 防抖函数
-       */
-      function debounce(func, wait) {
-        let timeout;
-        return function (...args) {
-          const context = this;
-          clearTimeout(timeout);
-          timeout = setTimeout(() => func.apply(context, args), wait);
-        };
-      }
-
-      /**
-       * 核心统计与汇报函数
-       */
-      function calculateAndReportStats() {
-        if (!window.luckysheet) return;
-
-        const rules = [
-          {
-            category: "内审自检",
-            range: "G10:G50",
-            ok: "√",
-            ng: "×",
-            na: "无",
-          },
-          { category: "FMC自检", range: "H10:H50", ok: "√", ng: "×", na: "无" },
-        ];
-        const statsResult = {};
-
-        rules.forEach((rule) => {
-          try {
-            const rangeData = luckysheet.getRangeArray(rule.range);
-            let okCount = 0,
-              ngCount = 0,
-              naCount = 0;
-
-            rangeData.forEach((row) => {
-              row.forEach((cellValue) => {
-                if (cellValue) {
-                  if (cellValue === rule.ok) okCount++;
-                  else if (cellValue === rule.ng) ngCount++;
-                  else if (cellValue === rule.na) naCount++;
-                }
-              });
-            });
-
-          } catch (e) {
-            console.error(`[Iframe] 统计规则 "${rule.category}" 执行失败:`, e);
-          }
-        });
 
         window.parent.postMessage(
           {
-            type: "STATS_UPDATE",
-            payload: statsResult,
+            type: "LUCKYSHEET_RENDER_FINISHED",
+            status: "error",
+            message: "渲染崩溃: " + (reason.message || "矢量图形解析失败"),
           },
           window.location.origin,
         );
       }
+    });
 
-      /**
-       * 自动标红/标绿/标黄/标灰的多状态映射函数
-       */
-      function autoHighlightCell(r, c, cell) {
-        if (!window.luckysheet || !cell) return;
-        
-        const cellValue = cell.v ? String(cell.v).trim() : "";
-        const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E列到K列
+    // --- [1. 导入外部模块] ---
+    import { exportWithExcelJS } from "/js/utils/luckysheetExporter.js";
 
-        if (targetColumns.includes(c)) {
-          // 状态颜色高对比度字典配置表
-          const statusMap = {
-            "√": { bg: "#99ff99", fc: "#000000" }, // 符合 - 强绿
-            "×": { bg: "#ff9999", fc: "#000000" }, // 不符合 - 强红
-            "/": { bg: "#d9d9d9", fc: "#000000" }, // 无关项 - 灰色
-            "待": { bg: "#fff9c4", fc: "#000000" }  // 待确认 - 黄色
-          };
+    // --- [2. 全局变量与状态] ---
+    const container = document.getElementById("luckysheet-container");
+    let originalDataValidation = {};
+    let originalRowlen = {};
 
-          const config = statusMap[cellValue];
+    // --- [3. 辅助函数定义] ---
 
-          if (config) {
-            luckysheet.setCellFormat(r, c, "bg", config.bg);
-            luckysheet.setCellFormat(r, c, "fc", config.fc);
-          } else {
-            const colorsToClear = ["#99ff99", "#ff9999", "#d9d9d9", "#fff9c4", "#ffdddd", "#e6ffed"];
-            if (cell.bg && colorsToClear.includes(cell.bg)) {
-              luckysheet.setCellFormat(r, c, "bg", null);
-              luckysheet.setCellFormat(r, c, "fc", null);
-            }
+    /**
+     * 恢复行高函数
+     */
+    function restoreRowHeight(startRow, rowCount) {
+      if (!window.luckysheet) return;
+
+      for (let i = 0; i < rowCount; i++) {
+        const rowIndex = String(startRow + i);
+        const originalHeight = originalRowlen[rowIndex];
+
+        if (originalHeight !== undefined) {
+          const currentHeight = luckysheet.getRowHeight([parseInt(rowIndex)])[
+            rowIndex
+          ];
+
+          if (currentHeight !== originalHeight) {
+            console.log(
+              `[Row Height Fix] 检测到行 ${parseInt(rowIndex) + 1} 高度被自动修改，正在从 ${currentHeight} 恢复至 ${originalHeight}`,
+            );
+            luckysheet.setRowHeight({ [rowIndex]: originalHeight });
           }
         }
       }
+    }
 
-      // 注册挂载到 window 作用域以保证全盘扫描可以访问
-      window.autoHighlightCell = autoHighlightCell;
+    /**
+     * Debounce 防抖函数
+     */
+    function debounce(func, wait) {
+      let timeout;
+      return function (...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+      };
+    }
 
-      /**
-       * 创建防抖函数的实例，延迟500ms执行。
-       */
-      const debouncedCalculate = debounce(calculateAndReportStats, 500);
+    /**
+     * 核心统计与汇报函数
+     */
+    function calculateAndReportStats() {
+      if (!window.luckysheet) return;
 
-      // --- [4. 核心功能函数] ---
+      const rules = [
+        {
+          category: "内审自检",
+          range: "G10:G50",
+          ok: "√",
+          ng: "×",
+          na: "无",
+        },
+        { category: "FMC自检", range: "H10:H50", ok: "√", ng: "×", na: "无" },
+      ];
+      const statsResult = {};
 
-      /**
-       * 渲染 Luckysheet 实例
-       */
-      function renderSheet(luckysheetData, fileName, options) {
-        // 【绝对防御补丁】：强行锁定全局对象防止 DISPIMG 运行崩溃
-        window.luckysheet_function = window.luckysheet_function || {};
-        window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
-        const emptyFunc = function () { return ""; };
-        window.luckysheet_function._XLFN.DISPIMG = { f: emptyFunc };
-        window.luckysheet_function._XLFN.DISPIMG.f = emptyFunc;
-        console.log("[护盾] DISPIMG 已被成功锁定为空函数");
+      rules.forEach((rule) => {
+        try {
+          const rangeData = luckysheet.getRangeArray(rule.range);
+          let okCount = 0,
+            ngCount = 0,
+            naCount = 0;
 
-        if (window.luckysheet) {
-          try {
-            window.onresize = null;
-            luckysheet.destroy();
-          } catch (e) {
-            console.warn("销毁旧实例时出现非致命错误:", e);
-          }
+          rangeData.forEach((row) => {
+            row.forEach((cellValue) => {
+              if (cellValue) {
+                if (cellValue === rule.ok) okCount++;
+                else if (cellValue === rule.ng) ngCount++;
+                else if (cellValue === rule.na) naCount++;
+              }
+            });
+          });
+
+        } catch (e) {
+          console.error(`[Iframe] 统计规则 "${rule.category}" 执行失败:`, e);
         }
-        document.getElementById("luckysheet-container").innerHTML = "";
+      });
 
-        let validData = luckysheetData;
+      window.parent.postMessage(
+        {
+          type: "STATS_UPDATE",
+          payload: statsResult,
+        },
+        window.location.origin,
+      );
+    }
 
-        if (!Array.isArray(validData) || validData.length === 0) {
-          console.warn("[Iframe] 数据源为空，初始化为默认 Sheet1。");
-          validData = [
-            {
-              name: "Sheet1",
-              status: 1,
-              order: 0,
-              row: 30,
-              column: 20,
-              celldata: [],
-              config: {},
-            },
-          ];
+    /**
+           * 自动标红/标绿/标黄/标灰的多状态映射函数 (深度兼容与容错加固版)
+           */
+    function autoHighlightCell(r, c, cell, isInteractive = false) {
+      if (!window.luckysheet || !cell) return;
+
+      // 🔮【手术刀加固】：全方位兼容 cell.v 是纯字符串或嵌套单元格对象的情况，确保提取出真实的字面值
+      let cellValue = "";
+      if (cell.v !== null && cell.v !== undefined) {
+        if (typeof cell.v === "object" && cell.v.v !== undefined) {
+          cellValue = String(cell.v.v).trim();
         } else {
-          try {
-            validData = JSON.parse(JSON.stringify(validData));
-          } catch (e) {
-            console.error("数据深拷贝失败:", e);
+          cellValue = String(cell.v).trim();
+        }
+      }
+
+      const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E列到K列
+      if (!targetColumns.includes(c)) return;
+
+      // 判断是否为不符合项（包容全角乘号 ×、英文小写 x、英文大写 X）
+      const isNgValue = ["×", "x", "X"].includes(cellValue);
+
+      // 状态颜色高对比度字典配置表
+      const statusMap = {
+        "√": { bg: "#99ff99", fc: "#000000" },
+        "/": { bg: "#d9d9d9", fc: "#000000" },
+        "待": { bg: "#fff9c4", fc: "#000000" }
+      };
+
+      // 渲染色彩
+      if (isNgValue) {
+        luckysheet.setCellFormat(r, c, "bg", "#ff9999");
+        luckysheet.setCellFormat(r, c, "fc", "#000000");
+
+        // 🔮【联动核心触发】：双重校验防首屏轰炸，确保只有交互录入时执行
+        if (isInteractive) {
+          console.log(`[Iframe Alert] 检测到手动输入不符合项: r=${r}, c=${c}, value=${cellValue}`);
+          setTimeout(() => {
+            if (confirm(`检测到当前检查项被评为不符合(×)，是否需要立刻跳转到【问题记录】页面登记详细缺陷描述？`)) {
+              window.parent.postMessage({
+                type: "NAVIGATE_TO_PROBLEM_RECORD",
+                payload: {
+                  row: r,
+                  col: c,
+                  sheetName: luckysheet.getSheetName() || "当前表单"
+                }
+              }, window.location.origin);
+            }
+          }, 100);
+        }
+      } else if (statusMap[cellValue]) {
+        const config = statusMap[cellValue];
+        luckysheet.setCellFormat(r, c, "bg", config.bg);
+        luckysheet.setCellFormat(r, c, "fc", config.fc);
+      } else {
+        // 清除逻辑
+        const colorsToClear = ["#99ff99", "#ff9999", "#d9d9d9", "#fff9c4", "#ffdddd", "#e6ffed"];
+        if (cell.bg && colorsToClear.includes(cell.bg)) {
+          luckysheet.setCellFormat(r, c, "bg", null);
+          luckysheet.setCellFormat(r, c, "fc", null);
+        }
+      }
+    }
+
+    // 注册挂载到 window 作用域以保证全盘扫描可以访问
+    window.autoHighlightCell = autoHighlightCell;
+
+    /**
+     * 创建防抖函数的实例，延迟500ms执行。
+     */
+    const debouncedCalculate = debounce(calculateAndReportStats, 500);
+
+    // --- [4. 核心功能函数] ---
+
+    /**
+     * 渲染 Luckysheet 实例
+     */
+    function renderSheet(luckysheetData, fileName, options) {
+      // 【绝对防御补丁】：强行锁定全局对象防止 DISPIMG 运行崩溃
+      window.luckysheet_function = window.luckysheet_function || {};
+      window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
+      const emptyFunc = function () { return ""; };
+      window.luckysheet_function._XLFN.DISPIMG = { f: emptyFunc };
+      window.luckysheet_function._XLFN.DISPIMG.f = emptyFunc;
+      console.log("[护盾] DISPIMG 已被成功锁定为空函数");
+
+      if (window.luckysheet) {
+        try {
+          window.onresize = null;
+          luckysheet.destroy();
+        } catch (e) {
+          console.warn("销毁旧实例时出现非致命错误:", e);
+        }
+      }
+      document.getElementById("luckysheet-container").innerHTML = "";
+
+      let validData = luckysheetData;
+
+      if (!Array.isArray(validData) || validData.length === 0) {
+        console.warn("[Iframe] 数据源为空，初始化为默认 Sheet1。");
+        validData = [
+          {
+            name: "Sheet1",
+            status: 1,
+            order: 0,
+            row: 30,
+            column: 20,
+            celldata: [],
+            config: {},
+          },
+        ];
+      } else {
+        try {
+          validData = JSON.parse(JSON.stringify(validData));
+        } catch (e) {
+          console.error("数据深拷贝失败:", e);
+        }
+      }
+
+      // ======= 【数据验证下拉框重力锁 - 加载层恢复】 =======
+      validData.forEach((sheet) => {
+        if (sheet.index === undefined || sheet.index === null) {
+          sheet.index = sheet.order;
+        }
+
+        const hasRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
+        if (!hasRules) {
+          const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
+          const backupData = sessionStorage.getItem(storageKey);
+          if (backupData) {
+            sheet.dataVerification = JSON.parse(backupData);
+            console.log(`%c[重力锁召回] 🚀 成功！从浏览器全局 Session 中强行逆向召回了 Sheet [${sheet.name}] 的全部下拉框规则！`, "color: #52c41a; font-weight: bold;");
           }
         }
 
-        // ======= 【数据验证下拉框重力锁 - 加载层恢复】 =======
-        validData.forEach((sheet) => {
-          if (sheet.index === undefined || sheet.index === null) {
-            sheet.index = sheet.order;
-          }
+        sheet.calcChain = [];
+        let foundFormulaCount = 0;
 
-          const hasRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
-          if (!hasRules) {
-            const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
-            const backupData = sessionStorage.getItem(storageKey);
-            if (backupData) {
-              sheet.dataVerification = JSON.parse(backupData);
-              console.log(`%c[重力锁召回] 🚀 成功！从浏览器全局 Session 中强行逆向召回了 Sheet [${sheet.name}] 的全部下拉框规则！`, "color: #52c41a; font-weight: bold;");
+        if (sheet.celldata && sheet.celldata.length > 0) {
+          sheet.celldata.forEach((cellItem) => {
+            if (cellItem && cellItem.v && cellItem.v.f) {
+              sheet.calcChain.push({
+                r: cellItem.r,
+                c: cellItem.c,
+                index: sheet.index,
+              });
+              foundFormulaCount++;
             }
+          });
+        }
+      });
+
+      validData.forEach((sheet, index) => {
+        const rowCount = Math.max(sheet.row || 0, 30);
+        const colCount = Math.max(sheet.column || 0, 20);
+        if (sheet.index === undefined) sheet.index = sheet.order;
+        if (!sheet.config) sheet.config = {};
+        if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
+
+        sheet.calcChain = [];
+
+        if (!sheet.data || sheet.data.length === 0) {
+          sheet.data = Array.from({ length: rowCount }, () =>
+            Array(colCount).fill(null),
+          );
+        } else if (sheet.data.length < rowCount) {
+          for (let i = sheet.data.length; i < rowCount; i++) {
+            sheet.data[i] = new Array(colCount).fill(null);
           }
+        }
 
-          sheet.calcChain = []; 
-          let foundFormulaCount = 0;
+        let patchMaxRow = sheet.row || 30;
+        let patchMaxCol = sheet.column || 20;
 
-          if (sheet.celldata && sheet.celldata.length > 0) {
-            sheet.celldata.forEach((cellItem) => {
-              if (cellItem && cellItem.v && cellItem.v.f) {
-                sheet.calcChain.push({
-                  r: cellItem.r,
-                  c: cellItem.c,
-                  index: sheet.index,
-                });
-                foundFormulaCount++;
+        if (sheet.celldata && Array.isArray(sheet.celldata)) {
+          sheet.celldata.forEach((cellItem) => {
+            const r = cellItem.r;
+            const c = cellItem.c;
+            const v = cellItem.v;
+
+            if (r >= patchMaxRow) patchMaxRow = r + 5;
+            if (c >= patchMaxCol) patchMaxCol = c + 2;
+
+            if (v) {
+              if (v.v !== null && v.v !== undefined && !isNaN(Number(v.v))) {
+                const isDate =
+                  typeof v.m === "string" &&
+                  (v.m.includes("-") || v.m.includes("/"));
+                if (!isDate) v.v = Number(v.v);
               }
-            });
-          }
-        });
 
-        validData.forEach((sheet, index) => {
-          const rowCount = Math.max(sheet.row || 0, 30);
-          const colCount = Math.max(sheet.column || 0, 20);
-          if (sheet.index === undefined) sheet.index = sheet.order;
-          if (!sheet.config) sheet.config = {};
-          if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
-
-          sheet.calcChain = [];
-
-          if (!sheet.data || sheet.data.length === 0) {
-            sheet.data = Array.from({ length: rowCount }, () =>
-              Array(colCount).fill(null),
-            );
-          } else if (sheet.data.length < rowCount) {
-            for (let i = sheet.data.length; i < rowCount; i++) {
-              sheet.data[i] = new Array(colCount).fill(null);
-            }
-          }
-
-          let patchMaxRow = sheet.row || 30;
-          let patchMaxCol = sheet.column || 20;
-
-          if (sheet.celldata && Array.isArray(sheet.celldata)) {
-            sheet.celldata.forEach((cellItem) => {
-              const r = cellItem.r;
-              const c = cellItem.c;
-              const v = cellItem.v;
-
-              if (r >= patchMaxRow) patchMaxRow = r + 5;
-              if (c >= patchMaxCol) patchMaxCol = c + 2;
-
-              if (v) {
-                if (v.v !== null && v.v !== undefined && !isNaN(Number(v.v))) {
-                  const isDate =
-                    typeof v.m === "string" &&
-                    (v.m.includes("-") || v.m.includes("/"));
-                  if (!isDate) v.v = Number(v.v);
+              if (v.f) {
+                if (typeof v.f === "string" && v.f.includes("!")) {
+                  console.warn(`[Formula Guard] 屏蔽跨表公式防止崩溃: ${v.f}`);
+                  delete v.f;
+                } else {
+                  delete v.v;
+                  delete v.m;
+                  v.ct = { fa: "General", t: "n" };
+                  v.needCompute = true;
+                  sheet.calcChain.push({ r: r, c: c, index: sheet.index });
                 }
+              }
 
-                if (v.f) {
-                  if (typeof v.f === "string" && v.f.includes("!")) {
-                    console.warn(`[Formula Guard] 屏蔽跨表公式防止崩溃: ${v.f}`);
-                    delete v.f;
-                  } else {
-                    delete v.v;
-                    delete v.m;
-                    v.ct = { fa: "General", t: "n" };
-                    v.needCompute = true;
-                    sheet.calcChain.push({ r: r, c: c, index: sheet.index });
+              if (v.bd) {
+                const bd = v.bd;
+                let rs = 1, cs = 1;
+                const mKey = `${r}_${c}`;
+                if (sheet.config.merge && sheet.config.merge[mKey]) {
+                  rs = sheet.config.merge[mKey].rs;
+                  cs = sheet.config.merge[mKey].cs;
+                }
+                const range = {
+                  row: [r, r + rs - 1],
+                  column: [c, c + cs - 1],
+                };
+
+                const pushRangeBorder = (borderType, styleObj) => {
+                  if (styleObj && (styleObj.style || styleObj.style === 0)) {
+                    sheet.config.borderInfo.push({
+                      rangeType: "range",
+                      borderType: borderType,
+                      style: parseInt(styleObj.style),
+                      color: styleObj.color || "#000000",
+                      range: [range],
+                    });
                   }
-                }
+                };
 
-                if (v.bd) {
-                  const bd = v.bd;
-                  let rs = 1, cs = 1;
-                  const mKey = `${r}_${c}`;
-                  if (sheet.config.merge && sheet.config.merge[mKey]) {
-                    rs = sheet.config.merge[mKey].rs;
-                    cs = sheet.config.merge[mKey].cs;
-                  }
-                  const range = {
-                    row: [r, r + rs - 1],
-                    column: [c, c + cs - 1],
-                  };
-
-                  const pushRangeBorder = (borderType, styleObj) => {
-                    if (styleObj && (styleObj.style || styleObj.style === 0)) {
-                      sheet.config.borderInfo.push({
-                        rangeType: "range",
-                        borderType: borderType,
-                        style: parseInt(styleObj.style),
-                        color: styleObj.color || "#000000",
-                        range: [range],
-                      });
-                    }
-                  };
-
-                  if (bd.t) pushRangeBorder("border-top", bd.t);
-                  if (bd.b) pushRangeBorder("border-bottom", bd.b);
-                  if (bd.l) pushRangeBorder("border-left", bd.l);
-                  if (bd.r) pushRangeBorder("border-right", bd.r);
-                }
-              }
-            });
-          }
-
-          sheet.row = Math.max(sheet.row || 0, patchMaxRow);
-          sheet.column = Math.max(sheet.column || 0, patchMaxCol);
-          if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
-
-          if (sheet.config && sheet.config.merge) {
-            const actualRows = sheet.data.length;
-            const actualCols = sheet.data[0] ? sheet.data[0].length : 0;
-
-            Object.keys(sheet.config.merge).forEach((key) => {
-              const m = sheet.config.merge[key];
-              if (!m || m.r === undefined || m.r >= actualRows) {
-                delete sheet.config.merge[key];
-              }
-            });
-
-            for (let r = 0; r < actualRows; r++) {
-              for (let c = 0; c < actualCols; c++) {
-                const cell = sheet.data[r][c];
-                if (cell && cell.mc) {
-                  const mKey = `${cell.mc.r}_${cell.mc.c}`;
-                  if (!sheet.config.merge[mKey]) {
-                    delete cell.mc;
-                  }
-                }
+                if (bd.t) pushRangeBorder("border-top", bd.t);
+                if (bd.b) pushRangeBorder("border-bottom", bd.b);
+                if (bd.l) pushRangeBorder("border-left", bd.l);
+                if (bd.r) pushRangeBorder("border-right", bd.r);
               }
             }
-          }
+          });
+        }
 
-          sheet.row = Math.max(sheet.row || 0, patchMaxRow);
-          let maxColInData = patchMaxCol;
-          if (sheet.data) {
-            sheet.data.forEach((r) => {
-              if (r && r.length > maxColInData) maxColInData = r.length;
-            });
-          }
-          sheet.column = Math.max(sheet.column || 0, maxColInData);
+        sheet.row = Math.max(sheet.row || 0, patchMaxRow);
+        sheet.column = Math.max(sheet.column || 0, patchMaxCol);
+        if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
 
-          if (!sheet.data) sheet.data = [];
-          while (sheet.data.length < sheet.row) {
-            sheet.data.push([]);
-          }
-          for (let r = 0; r < sheet.row; r++) {
-            if (!sheet.data[r]) sheet.data[r] = [];
-            while (sheet.data[r].length < sheet.column) {
-              sheet.data[r].push(null);
-            }
-            for (let c = 0; c < sheet.column; c++) {
-              if (sheet.data[r][c] === undefined) {
-                sheet.data[r][c] = null;
-              }
-            }
-          }
-
-          if (!sheet.config) sheet.config = {};
-          if (!sheet.config.merge) sheet.config.merge = {};
-
-          const actualRows = sheet.row;
-          const actualCols = sheet.column;
+        if (sheet.config && sheet.config.merge) {
+          const actualRows = sheet.data.length;
+          const actualCols = sheet.data[0] ? sheet.data[0].length : 0;
 
           Object.keys(sheet.config.merge).forEach((key) => {
             const m = sheet.config.merge[key];
-            if (
-              !m ||
-              m.r === undefined ||
-              m.c === undefined ||
-              m.r >= actualRows ||
-              m.c >= actualCols ||
-              m.r + m.rs > actualRows ||
-              m.c + m.cs > actualCols
-            ) {
+            if (!m || m.r === undefined || m.r >= actualRows) {
               delete sheet.config.merge[key];
             }
           });
@@ -500,10 +473,6 @@
             for (let c = 0; c < actualCols; c++) {
               const cell = sheet.data[r][c];
               if (cell && cell.mc) {
-                if (cell.mc.r === undefined || cell.mc.c === undefined) {
-                  delete cell.mc;
-                  continue;
-                }
                 const mKey = `${cell.mc.r}_${cell.mc.c}`;
                 if (!sheet.config.merge[mKey]) {
                   delete cell.mc;
@@ -511,1394 +480,568 @@
               }
             }
           }
-
-          sheet.luckysheet_select_save = [{ row: [0, 0], column: [0, 0] }];
-          sheet.luckysheet_selection_range = [];
-          sheet.scrollLeft = 0;
-          sheet.scrollTop = 0;
-
-          if (sheet.config.rowlen) {
-            Object.keys(sheet.config.rowlen).forEach((k) => {
-              if (parseInt(k) >= sheet.row) delete sheet.config.rowlen[k];
-            });
-          }
-          if (sheet.config.columnlen) {
-            Object.keys(sheet.config.columnlen).forEach((k) => {
-              if (parseInt(k) >= sheet.column) delete sheet.config.columnlen[k];
-            });
-          }
-
-          console.log(`[Iframe Fix] Sheet "${sheet.name}" 处理完成，激活公式: ${sheet.calcChain.length} 个`);
-        });
-
-        let hasActive = false;
-        validData.forEach((sheet) => {
-          if (sheet.status === 1) hasActive = true;
-        });
-
-        if (!hasActive) {
-          console.warn("[Iframe] 未检测到激活的 Sheet，强制激活第 0 个。");
-          if (validData[0]) validData[0].status = 1;
         }
 
-        // 步骤 2: 刷新并同步到本地及浏览器的持久化储存晶片中
-        originalDataValidation = {};
-        validData.forEach((sheet) => {
-          if (sheet && sheet.order != null && sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0) {
-            originalDataValidation[sheet.order] = sheet.dataVerification;
-            
-            // 首次读取成功也强制向 Session 里记入账本，确保双保险
-            const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
-            sessionStorage.setItem(storageKey, JSON.stringify(sheet.dataVerification));
-          }
-        });
-
-        if (validData[0] && validData[0].config && validData[0].config.rowlen) {
-          window.originalRowlen = { ...validData[0].config.rowlen };
-          console.log("[Iframe] 原始行高已备份。");
-        } else {
-          window.originalRowlen = {};
+        sheet.row = Math.max(sheet.row || 0, patchMaxRow);
+        let maxColInData = patchMaxCol;
+        if (sheet.data) {
+          sheet.data.forEach((r) => {
+            if (r && r.length > maxColInData) maxColInData = r.length;
+          });
         }
+        sheet.column = Math.max(sheet.column || 0, maxColInData);
 
-        const finalOptions = {
-          container: "luckysheet-container",
-          data: validData,
-          title: fileName,
-          lang: "zh",
-          forceCalculation: true,
-          defaultFontSize: 14,
-          limitSheetNameLength: false,
-          fontList: [
-            { fontName: "微软雅黑", url: "" },
-            { fontName: "宋体", url: "" },
-            { fontName: "Arial", url: "" },
-            { fontName: "Times New Roman", url: "" },
-          ],
-          showinfobar: false,
-          allowUpdate: true,
-          enableAddRow: true,
-          enableAddBackTop: true,
-          hook: {
-            cellUpdated: function (r, c, oldVal, newVal, isTargetSheet) {
-              if (typeof window.autoHighlightCell === "function") {
-                window.autoHighlightCell(r, c, { v: newVal });
-              }
-            },
-          },
-          ...options,
-        };
-
-        if (luckysheetData && Array.isArray(luckysheetData)) {
-          luckysheetData.forEach((sheet) => {
-            if (sheet.drawing) {
-              console.warn(`⚠️ 警告：Sheet "${sheet.name}" 包含复杂的图形对象，已剥离。`);
-              delete sheet.drawing;
+        if (!sheet.data) sheet.data = [];
+        while (sheet.data.length < sheet.row) {
+          sheet.data.push([]);
+        }
+        for (let r = 0; r < sheet.row; r++) {
+          if (!sheet.data[r]) sheet.data[r] = [];
+          while (sheet.data[r].length < sheet.column) {
+            sheet.data[r].push(null);
+          }
+          for (let c = 0; c < sheet.column; c++) {
+            if (sheet.data[r][c] === undefined) {
+              sheet.data[r][c] = null;
             }
+          }
+        }
+
+        if (!sheet.config) sheet.config = {};
+        if (!sheet.config.merge) sheet.config.merge = {};
+
+        const actualRows = sheet.row;
+        const actualCols = sheet.column;
+
+        Object.keys(sheet.config.merge).forEach((key) => {
+          const m = sheet.config.merge[key];
+          if (
+            !m ||
+            m.r === undefined ||
+            m.c === undefined ||
+            m.r >= actualRows ||
+            m.c >= actualCols ||
+            m.r + m.rs > actualRows ||
+            m.c + m.cs > actualCols
+          ) {
+            delete sheet.config.merge[key];
+          }
+        });
+
+        for (let r = 0; r < actualRows; r++) {
+          for (let c = 0; c < actualCols; c++) {
+            const cell = sheet.data[r][c];
+            if (cell && cell.mc) {
+              if (cell.mc.r === undefined || cell.mc.c === undefined) {
+                delete cell.mc;
+                continue;
+              }
+              const mKey = `${cell.mc.r}_${cell.mc.c}`;
+              if (!sheet.config.merge[mKey]) {
+                delete cell.mc;
+              }
+            }
+          }
+        }
+
+        sheet.luckysheet_select_save = [{ row: [0, 0], column: [0, 0] }];
+        sheet.luckysheet_selection_range = [];
+        sheet.scrollLeft = 0;
+        sheet.scrollTop = 0;
+
+        if (sheet.config.rowlen) {
+          Object.keys(sheet.config.rowlen).forEach((k) => {
+            if (parseInt(k) >= sheet.row) delete sheet.config.rowlen[k];
+          });
+        }
+        if (sheet.config.columnlen) {
+          Object.keys(sheet.config.columnlen).forEach((k) => {
+            if (parseInt(k) >= sheet.column) delete sheet.config.columnlen[k];
           });
         }
 
-        requestAnimationFrame(() => {
-          try {
-            console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
-            if (window.luckysheet) {
-              window.luckysheet.refreshMenu = function () {};
-            }
-            window.luckysheet.create(finalOptions);
-          } catch (createError) {
-            console.error("🔥 创建 Luckysheet 实例失败:", createError);
-          }
-        });
+        console.log(`[Iframe Fix] Sheet "${sheet.name}" 处理完成，激活公式: ${sheet.calcChain.length} 个`);
+      });
 
-        setTimeout(() => {
-          try {
-            if (!window.luckysheet) return;
+      let hasActive = false;
+      validData.forEach((sheet) => {
+        if (sheet.status === 1) hasActive = true;
+      });
 
-            const sheets = luckysheet.getluckysheetfile();
-            if (!sheets || sheets.length === 0 || !sheets[0].data) {
-              console.warn("[Iframe] 渲染未就绪 (flowdata 缺失)，跳过配置");
-              return;
-            }
-
-            luckysheet.luckysheetautofixrowlen = false;
-
-            const containerEl = document.getElementById("luckysheet-container");
-            if (containerEl && containerEl.offsetHeight > 0) {
-              try {
-                console.log("[Iframe] 正在执行界面刷新与公式重算...");
-                luckysheet.refresh();
-
-                if (window.luckysheet.execCommand) {
-                  window.luckysheet.execCommand("formulaCalculation", "all");
-                  console.log("[Iframe] 🚀 已执行全表公式重算指令");
-                } else if (luckysheet.refreshFormula) {
-                  luckysheet.refreshFormula();
-                }
-
-                // ======= 【核心扫描】：防止回退二进制首屏未被标色问题 =======
-                console.log("[护盾] 开始强力执行全表深度扫描并动态加载色彩...");
-                const sheetData = luckysheet.flowdata();
-                if (sheetData) {
-                  for (let r = 0; r < sheetData.length; r++) {
-                    for (let c = 0; c < sheetData[0].length; c++) {
-                      const cell = sheetData[r][c];
-                      if (cell) autoHighlightCell(r, c, cell);
-                    }
-                  }
-                }
-                console.log("[护盾] 全表扫描标色分配完成。");
-
-                setTimeout(() => luckysheet.refresh(), 50);
-              } catch (resErr) {
-                console.warn("[Iframe] 刷新重算过程出现异常:", resErr.message);
-              }
-            }
-
-            if (!luckysheet.hooks) luckysheet.hooks = {};
-
-            luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
-              try {
-                const allSheets = luckysheet.getAllSheets();
-                const currentSheet = allSheets.find((s) => s.status === 1) || allSheets[0];
-
-                if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
-                  const cell = currentSheet.data[r][c];
-                  if (typeof autoHighlightCell === "function") autoHighlightCell(r, c, cell);
-                  if (typeof debouncedCalculate === "function") debouncedCalculate();
-                }
-              } catch (hookError) {
-                console.error("[Hook Error] 单元格更新处理出错:", hookError);
-              }
-            };
-
-            console.log("[Iframe] Hooks 与初始化注册完成");
-
-            if (window.parent) {
-              window.parent.postMessage({ type: "LUCKYSHEET_RENDER_FINISHED", status: "success" }, "*");
-            }
-          } catch (e) {
-            console.error(`[Iframe] 延迟配置阶段致命失败:`, e);
-          }
-        }, 500);
+      if (!hasActive) {
+        console.warn("[Iframe] 未检测到激活的 Sheet，强制激活第 0 个。");
+        if (validData[0]) validData[0].status = 1;
       }
 
-      /**
-       * 从文件URL加载数据
-       */
-      function loadSheetFromFile(fileUrl, fileName, options) {
-        container.innerHTML = `<div class="loader">正在加载数据...</div>`;
+      // 步骤 2: 刷新并同步到本地及浏览器的持久化储存晶片中
+      originalDataValidation = {};
+      validData.forEach((sheet) => {
+        if (sheet && sheet.order != null && sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0) {
+          originalDataValidation[sheet.order] = sheet.dataVerification;
 
-        fetch(fileUrl)
-          .then((response) => {
-            if (!response.ok) throw new Error(`网络错误: ${response.statusText}`);
-            const clonedResponse = response.clone();
-
-            return response.json()
-              .then((jsonData) => {
-                console.log("[Iframe] ✅ 成功将响应解析为JSON！");
-                const dataToRender = Array.isArray(jsonData) ? jsonData : jsonData.sheets || [];
-                renderSheet(dataToRender, fileName, options);
-              })
-              .catch((jsonError) => {
-                console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
-                container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
-
-                // ✨【高阶变量提权】：规避 fileBlob 外部链失效引起的 ReferenceError 崩溃
-                let currentFileBlob = null;
-
-                return clonedResponse.blob()
-                  .then((fileBlob) => {
-                    currentFileBlob = fileBlob; // 缓存二进制包句柄
-
-                    console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
-                    console.log("   - 大小:", fileBlob.size, "字节");
-                    console.log("   - 类型:", fileBlob.type);
-
-                    if (fileBlob.size < 1000) {
-                      const reader = new FileReader();
-                      reader.onload = function () {
-                        console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
-                      };
-                      reader.readAsText(fileBlob);
-                    }
-
-                    const timeoutPromise = new Promise((_, reject) => {
-                      setTimeout(() => { reject(new Error("TIMEOUT")); }, 1000000);
-                    });
-
-                    const parsingPromise = new Promise((resolve, reject) => {
-                      try {
-                        LuckyExcel.transformExcelToLucky(
-                          fileBlob,
-                          function (exportJson, luckysheetfile) {
-                            console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
-                            if (exportJson.sheets && exportJson.sheets.length > 0) {
-                              exportJson.sheets.forEach((sheet, index) => {
-                                console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
-                                if (!sheet.dataVerification) {
-                                  console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
-                                }
-                              });
-                            }
-                            console.groupEnd();
-
-<<<<<<< HEAD
-                    statsResult[rule.category] = {
-                        category: rule.category, okCount, ngCount, naCount, totalCount, okPercentage
-                    };
-                } catch (e) {
-                    console.error(`[Iframe] 统计规则 "${rule.category}" 执行失败:`, e);
-                }
-            });
-
-            // console.log('[Iframe] 统计计算完成，结果:', statsResult);
-
-            window.parent.postMessage({
-                type: 'STATS_UPDATE',
-                payload: statsResult
-            }, window.location.origin);
+          // 首次读取成功也强制向 Session 里记入账本，确保双保险
+          const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
+          sessionStorage.setItem(storageKey, JSON.stringify(sheet.dataVerification));
         }
+      });
 
-        /**
-         * 自动标红函数
-         */
-        function autoHighlightCell(r, c, cell) {
-            if (!window.luckysheet || !cell) return;
+      if (validData[0] && validData[0].config && validData[0].config.rowlen) {
+        window.originalRowlen = { ...validData[0].config.rowlen };
+        console.log("[Iframe] 原始行高已备份。");
+      } else {
+        window.originalRowlen = {};
+      }
 
-            const cellValue = cell.v ? String(cell.v).trim() : '';
-            const targetColumns = [4, 5, 6, 7, 8, 9, 10]; // E列到K列
-
-            if (!targetColumns.includes(c)) return;
-
-            // 状态配置表 (颜色可根据你的喜好微调)
-            const statusMap = {
-                '√': { bg: '#99ff99', fc: '#000000' }, // 符合 - 绿色
-                '×': { bg: '#ff9999', fc: '#000000' }, // 不符合 - 红色
-                '/': { bg: '#d9d9d9', fc: '#000000' }, // 无关项 - 灰色
-                '待': { bg: '#fff9c4', fc: '#000000' }  // 待确认 - 黄色
-            };
-
-            // 检查当前值是否在配置表中
-            const config = statusMap[cellValue];
-
-            if (config) {
-                // 设置颜色
-                luckysheet.setCellFormat(r, c, 'bg', config.bg);
-                luckysheet.setCellFormat(r, c, 'fc', config.fc);
-            } else {
-                // 清除逻辑：如果输入的是其他内容，则清除掉背景色和前景色
-                // 遍历所有可能的颜色进行清除，防止残留
-                const colorsToClear = ['#99ff99', '#ff9999', '#d9d9d9', '#fff9c4'];
-                if (cell.bg && colorsToClear.includes(cell.bg)) {
-                    luckysheet.setCellFormat(r, c, 'bg', null);
-                    luckysheet.setCellFormat(r, c, 'fc', null);
-                }
+      const finalOptions = {
+        container: "luckysheet-container",
+        data: validData,
+        title: fileName,
+        lang: "zh",
+        forceCalculation: true,
+        defaultFontSize: 14,
+        limitSheetNameLength: false,
+        fontList: [
+          { fontName: "微软雅黑", url: "" },
+          { fontName: "宋体", url: "" },
+          { fontName: "Arial", url: "" },
+          { fontName: "Times New Roman", url: "" },
+        ],
+        showinfobar: false,
+        allowUpdate: true,
+        enableAddRow: true,
+        enableAddBackTop: true,
+        hook: {
+          cellUpdated: function (r, c, oldVal, newVal, isTargetSheet) {
+            if (typeof window.autoHighlightCell === "function") {
+              // 末尾传入 true，标记其为用户手动交互操作
+              window.autoHighlightCell(r, c, { v: newVal }, true);
             }
+          },
+        },
+        ...options,
+      };
+
+      if (luckysheetData && Array.isArray(luckysheetData)) {
+        luckysheetData.forEach((sheet) => {
+          if (sheet.drawing) {
+            console.warn(`⚠️ 警告：Sheet "${sheet.name}" 包含复杂的图形对象，已剥离。`);
+            delete sheet.drawing;
+          }
+        });
+      }
+
+      requestAnimationFrame(() => {
+        try {
+          console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
+          if (window.luckysheet) {
+            window.luckysheet.refreshMenu = function () { };
+          }
+          window.luckysheet.create(finalOptions);
+        } catch (createError) {
+          console.error("🔥 创建 Luckysheet 实例失败:", createError);
         }
+      });
 
-        /**
-         * 创建防抖函数的实例，延迟500ms执行。
-         */
-        const debouncedCalculate = debounce(calculateAndReportStats, 500);
+      setTimeout(() => {
+        try {
+          if (!window.luckysheet) return;
 
-        // --- [4. 核心功能函数] ---
+          const sheets = luckysheet.getluckysheetfile();
+          if (!sheets || sheets.length === 0 || !sheets[0].data) {
+            console.warn("[Iframe] 渲染未就绪 (flowdata 缺失)，跳过配置");
+            return;
+          }
 
-        /**
-                 * 渲染 Luckysheet 实例 (终极修复版：防崩溃 + 数据清洗 + 移除无效依赖)
-                 */
-        function renderSheet(luckysheetData, fileName, options) {
-            window.luckysheet_function = window.luckysheet_function || {};
-            window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
-            window.luckysheet_function._XLFN.DISPIMG = {
-                f: function () { return ""; }
-            };
-            console.log("[护盾] DISPIMG 已被成功锁定为空函数");
-            if (window.luckysheet) {
-                try {
-                    window.onresize = null; // 👈 手术刀：强制切断全局 resize 监听，防止旧 resize.js 运行
-                    luckysheet.destroy();
-                } catch (e) {
-                    console.warn("销毁旧实例时出现非致命错误:", e);
-                }
-            }
-            // 清空容器，确保干净的 DOM 环境
-            document.getElementById('luckysheet-container').innerHTML = '';
+          luckysheet.luckysheetautofixrowlen = false;
 
-            // 🔥【新增护盾 1】：在初始化前，提前强行注入 Excel 私有公式拦截器，防止卡死
-            window.luckysheet_function = window.luckysheet_function || {};
-            window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
-
-            // 彻底修复 DISPIMG 崩溃问题
-            const emptyFunc = function () { return ""; };
-            window.luckysheet_function._XLFN.DISPIMG = { f: emptyFunc };
-            window.luckysheet_function._XLFN.DISPIMG.f = emptyFunc;
-            if (!window.luckysheet_function._XLFN.DISPIMG) {
-                window.luckysheet_function._XLFN.DISPIMG = function () { return ""; };
-            }
-
-
-            // --- [数据防御性处理] ---
-            let validData = luckysheetData;
-
-            // 1. 如果数据为空或非数组，初始化默认页
-            if (!Array.isArray(validData) || validData.length === 0) {
-                console.warn("[Iframe] 数据源为空，初始化为默认 Sheet1。");
-                validData = [{
-                    name: "Sheet1",
-                    status: 1,
-                    order: 0,
-                    row: 30,
-                    column: 20,
-                    celldata: [],
-                    config: {}
-                }];
-            } else {
-                // 深拷贝，防止修改影响原始数据对象
-                try {
-                    validData = JSON.parse(JSON.stringify(validData));
-                } catch (e) {
-                    console.error("数据深拷贝失败:", e);
-                }
-            }
-            validData.forEach((sheet) => {
-                // 1. 确保 Index 存在 (公式引用的关键)
-                if (sheet.index === undefined || sheet.index === null) {
-                    sheet.index = sheet.order;
-                }
-
-                sheet.calcChain = []; // 重置
-                let foundFormulaCount = 0;
-
-                // 2. 策略 A: 扫描 celldata (LuckyExcel 的默认输出格式)
-                if (sheet.celldata && sheet.celldata.length > 0) {
-                    sheet.celldata.forEach((cellItem) => {
-                        // cellItem 结构通常是 {r:0, c:0, v:{ f: "=SUM...", v: 100 }}
-                        if (cellItem && cellItem.v && cellItem.v.f) {
-                            sheet.calcChain.push({
-                                r: cellItem.r,
-                                c: cellItem.c,
-                                index: sheet.index
-                            });
-                            foundFormulaCount++;
-                        }
-=======
-                            if (exportJson.sheets == null || exportJson.sheets.length == 0) {
-                              reject(new Error("EMPTY_CONTENT"));
-                            } else {
-                              resolve(exportJson);
-                            }
-                          },
-                          function (err) {
-                            console.error("LuckyExcel internal error:", err);
-                            reject(new Error("PARSE_ERROR"));
-                          },
-                        );
-                      } catch (e) {
-                        console.error("LuckyExcel crash:", e);
-                        reject(new Error("CRASH"));
-                      }
->>>>>>> d6e4b5d4e9b993755c8d7dea3519ab2863577bc8
-                    });
-
-                    return Promise.race([parsingPromise, timeoutPromise]);
-                  })
-                  .then(async (exportJson) => {
-                    console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
-                    const sheets = exportJson.sheets || [];
-                    const name = (exportJson.info && exportJson.info.name) || fileName;
-
-                    // 🔥【ExcelJS 底层重力破译锁】：对开源失明库进行深度补盲，强行榨取下拉框规则
-                    try {
-                      if (window.ExcelJS && currentFileBlob) {
-                        console.log("Automated Scan 🕵️ [ExcelJS 深度扫描] 启动底层破译...");
-                        const workbook = new ExcelJS.Workbook();
-                        await workbook.xlsx.load(currentFileBlob);
-
-                        workbook.eachSheet((worksheet, sheetIdx) => {
-                          const targetSheet = sheets[sheetIdx - 1] || sheets.find((s) => s.name === worksheet.name);
-                          if (!targetSheet) return;
-
-                          if (!targetSheet.dataVerification) targetSheet.dataVerification = {};
-
-                          // 弃用 eachRow 迭代器，改用绝对矩阵横纵标尺，确保没有任何空置格子被漏掉
-                          for (let rIdx = 1; rIdx <= worksheet.rowCount; rIdx++) {
-                            const row = worksheet.getRow(rIdx);
-                            for (let cIdx = 1; cIdx <= worksheet.columnCount; cIdx++) {
-                              const cell = row.getCell(cIdx); // 即使 cell 为空，ExcelJS 也会返回对象
-                              
-                              if (cell && cell.dataValidation && cell.dataValidation.type === "list") {
-                                const r = rIdx - 1;
-                                const c = cIdx - 1;
-
-<<<<<<< HEAD
-
-            // ============================================================
-            // 🔥【最终修复版】数据清洗 + 公式激活 + 边框聚合 + 逻辑合并
-            // ============================================================
-            validData.forEach((sheet, index) => {
-                // A. 基础字段补全
-                const rowCount = Math.max(sheet.row || 0, 30);
-                const colCount = Math.max(sheet.column || 0, 20);
-                if (sheet.index === undefined) sheet.index = sheet.order;
-                const hasRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
-                if (!hasRules) {
-                    // 尝试去浏览器的记忆晶片里召回
-                    const storageKey = `luckysheet_dv_backup_${options?.fileId || fileName}`;
-                    const backupData = sessionStorage.getItem(storageKey);
-
-                    if (backupData) {
-                        sheet.dataVerification = JSON.parse(backupData);
-                        console.log(`%c[重力锁召回] 🚀 成功！从浏览器全局 Session 中强行逆向召回了 Sheet [${sheet.name}] 的全部下拉框规则！`, "color: #52c41a; font-weight: bold;");
-                    } else {
-                        console.warn(`[重力锁失效] 晶片中未发现备份数据，Key: ${storageKey}`);
-                    }
-                }
-                if (!sheet.config) sheet.config = {};
-                if (!sheet.config.borderInfo) sheet.config.borderInfo = [];
-
-                // 1. 初始化计算链（必须是空数组，引擎才能在渲染时填入新指令）
-                sheet.calcChain = [];
-
-                // 2. 确保 data 二维数组行数足够，防止 mergeCalculation 崩溃
-                if (!sheet.data || sheet.data.length === 0) {
-                    sheet.data = Array.from({ length: rowCount }, () => Array(colCount).fill(null));
-                } else if (sheet.data.length < rowCount) {
-                    for (let i = sheet.data.length; i < rowCount; i++) {
-                        sheet.data[i] = new Array(colCount).fill(null);
-                    }
-                }
-
-                // 用于动态扩容探测
-                let patchMaxRow = sheet.row || 30;
-                let patchMaxCol = sheet.column || 20;
-
-                // 3. 核心遍历：处理 celldata (处理公式、边框、数据类型)
-                if (sheet.celldata && Array.isArray(sheet.celldata)) {
-                    sheet.celldata.forEach(cellItem => {
-                        const r = cellItem.r;
-                        const c = cellItem.c;
-                        const v = cellItem.v;
-
-                        // 扩容探测
-                        if (r >= patchMaxRow) patchMaxRow = r + 5;
-                        if (c >= patchMaxCol) patchMaxCol = c + 2;
-
-                        if (v) {
-                            // --- [I] 强制数据类型转换 (String -> Number) ---
-                            if (v.v !== null && v.v !== undefined && !isNaN(Number(v.v))) {
-                                const isDate = typeof v.m === 'string' && (v.m.includes('-') || v.m.includes('/'));
-                                if (!isDate) v.v = Number(v.v);
-                            }
-
-                            // --- [II] 公式激活逻辑 ---
-                            if (v.f) {
-                                if (typeof v.f === 'string' && v.f.includes('!')) {
-                                    console.warn(`[Formula Guard] 屏蔽跨表公式防止崩溃: ${v.f}`);
-                                    delete v.f;
-                                } else {
-                                    delete v.v;
-                                    delete v.m;
-                                    v.ct = { "fa": "General", "t": "n" };
-                                    v.needCompute = true;
-                                    sheet.calcChain.push({ "r": r, "c": c, "index": sheet.index });
-=======
-                                let formula = cell.dataValidation.formulae ? cell.dataValidation.formulae[0] : "";
-                                if (formula && formula.startsWith('"') && formula.endsWith('"')) {
-                                    formula = formula.substring(1, formula.length - 1);
->>>>>>> d6e4b5d4e9b993755c8d7dea3519ab2863577bc8
-                                }
-
-                                // 即使格子内部的 .v 值为 null/空，下拉框底座规则也必须钉死在坐标上！
-                                targetSheet.dataVerification[`${r}_${c}`] = {
-                                  type: "dropdown",
-                                  value1: formula,
-                                  prohibitInput: true,
-                                };
-                              }
-                            }
-                          }
-
-<<<<<<< HEAD
-                // 4. 应用最终扩容结果
-                sheet.row = Math.max(sheet.row || 0, patchMaxRow);
-                sheet.column = Math.max(sheet.column || 0, patchMaxCol);
-                if (sheet.zoomRatio == null) sheet.zoomRatio = 1;
-
-                // 5. 扫描 data 数组作为补充 (兼容性处理：如果数据在 data 数组里不在 celldata 里)
-                // 仅当 calcChain 依然为空时，才执行全表扫描
-                if (sheet.calcChain.length === 0 && sheet.data) {
-                    for (let r = 0; r < sheet.data.length; r++) {
-                        if (!sheet.data[r]) continue;
-                        for (let c = 0; c < sheet.data[r].length; c++) {
-                            const cell = sheet.data[r][c];
-                            if (cell && cell.f) {
-                                sheet.calcChain.push({ "r": r, "c": c, "index": sheet.index });
-                            }
-                        }
-                    }
-                }
-
-                // 6. 清洗无效合并单元格 (双向深度清洗)
-                if (sheet.config && sheet.config.merge) {
-                    const actualRows = sheet.data.length;
-                    const actualCols = sheet.data[0] ? sheet.data[0].length : 0;
-
-                    // 6.1 你的原有逻辑：清理注册表
-                    Object.keys(sheet.config.merge).forEach(key => {
-                        const m = sheet.config.merge[key];
-                        if (!m || m.r === undefined || m.r >= actualRows) {
-                            delete sheet.config.merge[key];
-                        }
-                    });
-
-                    // 6.2 🔥【必须增加的护盾】：清理单元格身上的“孤儿”合并标记
-                    for (let r = 0; r < actualRows; r++) {
-                        for (let c = 0; c < actualCols; c++) {
-                            const cell = sheet.data[r][c];
-                            // 如果单元格自称是合并的一部分
-                            if (cell && cell.mc) {
-                                const mKey = `${cell.mc.r}_${cell.mc.c}`;
-                                // 但在刚刚清理过的注册表里查无此人
-                                if (!sheet.config.merge[mKey]) {
-                                    delete cell.mc; // 没收它的合并标记，退化为普通单元格！
-                                }
-                            }
-                        }
-                    }
-                }
-                // ============================================================
-                // 🛡️ 终极护盾序列开始
-                // ============================================================
-
-                // 【护盾 A】：二维数组绝对矩阵化 (防 reading '0' 的最强手段)
-                sheet.row = Math.max(sheet.row || 0, patchMaxRow);
-                let maxColInData = patchMaxCol;
-                if (sheet.data) {
-                    sheet.data.forEach(r => { if (r && r.length > maxColInData) maxColInData = r.length; });
-                }
-                sheet.column = Math.max(sheet.column || 0, maxColInData);
-
-                if (!sheet.data) sheet.data = [];
-                // 1. 补齐行
-                while (sheet.data.length < sheet.row) {
-                    sheet.data.push([]);
-                }
-                // 2. 补齐列并确保每个坑位都有值 (null) 而不是 empty (稀疏数组)
-                for (let r = 0; r < sheet.row; r++) {
-                    if (!sheet.data[r]) sheet.data[r] = [];
-                    // 必须用 push 或直接赋值，不能让数组变成 [empty x 10, {v: 1}]
-                    while (sheet.data[r].length < sheet.column) {
-                        sheet.data[r].push(null);
-                    }
-                    // 额外防御：把 undefined 替换为 null
-                    for (let c = 0; c < sheet.column; c++) {
-                        if (sheet.data[r][c] === undefined) {
-                            sheet.data[r][c] = null;
-                        }
-                    }
-                }
-
-                // 🔥【新增护盾 C】：无条件清洗合并单元格 (解决 Merge info is null 的真正克星)
-                if (!sheet.config) sheet.config = {};
-                if (!sheet.config.merge) sheet.config.merge = {}; // 🔪 强制初始化为空对象，确保后续清理逻辑必然执行！
-
-                const actualRows = sheet.row;
-                const actualCols = sheet.column;
-
-                // C.1 清理注册表
-                Object.keys(sheet.config.merge).forEach(key => {
-                    const m = sheet.config.merge[key];
-                    // 严格判断 r, c, rs, cs 是否齐备，并且没有越界
-                    if (!m || m.r === undefined || m.c === undefined ||
-                        m.r >= actualRows || m.c >= actualCols ||
-                        (m.r + m.rs) > actualRows || (m.c + m.cs) > actualCols) {
-                        delete sheet.config.merge[key];
-                    }
-                });
-
-                // C.2 清理孤儿标记 (这次不管 config.merge 有没有，我们都必须地毯式搜索)
-                for (let r = 0; r < actualRows; r++) {
-                    for (let c = 0; c < actualCols; c++) {
-                        const cell = sheet.data[r][c];
-                        if (cell && cell.mc) {
-                            // 防御：mc 结构异常
-                            if (cell.mc.r === undefined || cell.mc.c === undefined) {
-                                delete cell.mc;
-                                continue;
-                            }
-                            const mKey = `${cell.mc.r}_${cell.mc.c}`;
-                            if (!sheet.config.merge[mKey]) {
-                                delete cell.mc; // 🔪 查无此人，没收合并标记！
-                            }
-                        }
-                    }
-                }
-
-                // 🔥【新增护盾 D】：强制重置用户的“历史选中区域”和“滚动位置”
-                // 这是防止 restoreselect 导致 draw.js 崩溃的绝对防御！
-                sheet.luckysheet_select_save = [{ row: [0, 0], column: [0, 0] }]; // 强行把焦点拉回 A1 单元格
-                sheet.luckysheet_selection_range = [];
-                sheet.scrollLeft = 0;
-                sheet.scrollTop = 0;
-
-                // 清洗行高列宽字典
-                if (sheet.config.rowlen) {
-                    Object.keys(sheet.config.rowlen).forEach(k => {
-                        if (parseInt(k) >= sheet.row) delete sheet.config.rowlen[k];
-                    });
-                }
-                if (sheet.config.columnlen) {
-                    Object.keys(sheet.config.columnlen).forEach(k => {
-                        if (parseInt(k) >= sheet.column) delete sheet.config.columnlen[k];
-                    });
-                }
-
-                // 🛡️ 护盾序列结束
-                console.log(`[Iframe Fix] Sheet "${sheet.name}" 处理完成，激活公式: ${sheet.calcChain.length} 个`);
-            });
-
-            // 2. 确保必然有一个激活的 Sheet (status: 1)
-            let hasActive = false;
-            validData.forEach(sheet => {
-                if (sheet.status === 1) hasActive = true;
-            });
-
-            if (!hasActive) {
-                console.warn("[Iframe] 未检测到激活的 Sheet，强制激活第 0 个。");
-                if (validData[0]) validData[0].status = 1;
-            }
-
-            // 步骤 2: 备份原始数据 (用于后续对比或导出)
-            originalDataValidation = {}; // 确保全局变量存在
-            validData.forEach(sheet => {
-                if (sheet && sheet.order != null) {
-                    // 如果这次进来的数据没带规则，但我们有全局备份（比如切Tab回显）
-                    if ((!sheet.dataVerification || Object.keys(sheet.dataVerification).length === 0) && originalDataValidation[sheet.order]) {
-                        sheet.dataVerification = originalDataValidation[sheet.order];
-                        console.log(`[Load Guard] 🔄 已从全局缓存中为 Sheet "${sheet.name}" 重新挂载下拉框验证`);
-                    }
-                }
-            });
-            validData.forEach(sheet => {
-                if (sheet && sheet.order != null && sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0) {
-                    originalDataValidation[sheet.order] = sheet.dataVerification;
-                }
-            });
-
-            // 备份原始行高 (用于 hack 修复行高问题)
-            if (validData[0] && validData[0].config && validData[0].config.rowlen) {
-                // originalRowlen 需要是全局变量
-                window.originalRowlen = { ...validData[0].config.rowlen };
-                console.log("[Iframe] 原始行高已备份。");
-            } else {
-                window.originalRowlen = {};
-            }
-
-            // 步骤 3: 组装配置对象
-            const finalOptions = {
-                container: 'luckysheet-container', // 容器 ID
-                data: validData,
-                title: fileName,
-                lang: 'zh', // 强制中文
-                forceCalculation: true,
-                // --- 【UI 与 字体配置】 ---
-                defaultFontSize: 14, // 修复 '12px default' 报错
-                limitSheetNameLength: false, // 允许长文件名
-                fontList: [
-                    { "fontName": "微软雅黑", "url": "" },
-                    { "fontName": "宋体", "url": "" },
-                    { "fontName": "Arial", "url": "" },
-                    { "fontName": "Times New Roman", "url": "" }
-                ],
-
-                // 显式开启所有功能，防止被 options 覆盖
-                showinfobar: false, // 隐藏顶部信息栏
-                allowUpdate: true,
-                enableAddRow: true,
-                enableAddBackTop: true,
-                hook: {
-                    cellUpdated: function (r, c, oldVal, newVal, isTargetSheet) {
-                        // 这里确保你引用了上面的 autoHighlightCell 函数
-                        // 确保该函数在同一个作用域或 window 上
-                        if (typeof window.autoHighlightCell === 'function') {
-                            // 只有在数据改变时才触发
-                            window.autoHighlightCell(r, c, { v: newVal });
-                        }
-                    }
-                },
-                // 合并传入的自定义选项
-                ...options
-            };
-
-            if (luckysheetData && Array.isArray(luckysheetData)) {
-                luckysheetData.forEach(sheet => {
-                    if (sheet.drawing) {
-                        console.warn(`⚠️ 警告：Sheet "${sheet.name}" 包含复杂的图形/绘图对象，为了防止引擎崩溃，已强行剥离图形数据。`);
-                        delete sheet.drawing; // 核心：删掉它，这玩意儿是导致 'fromCol' 崩溃的罪魁祸首
-                    }
-                });
-            }
-
-            requestAnimationFrame(() => { // 👈 手术刀：确保在下一帧渲染时执行，此时 DOM offsetHeight 必然存在
-                try {
-                    console.log(`[Iframe] 准备创建 Luckysheet 实例...`);
-                    if (window.luckysheet) {
-                        window.luckysheet.refreshMenu = function () { }; // 临时屏蔽可能导致异步报错的菜单刷新
-                    }
-
-
-
-                    window.luckysheet.create(finalOptions);
-                } catch (createError) {
-                    console.error("🔥 创建 Luckysheet 实例失败:", createError);
-                }
-            });
-
-            setTimeout(() => {
-                try {
-                    // 1. 基础安全检查
-                    if (!window.luckysheet) return;
-
-                    const sheets = luckysheet.getluckysheetfile();
-                    if (!sheets || sheets.length === 0 || !sheets[0].data) {
-                        console.warn("[Iframe] 渲染未就绪 (flowdata 缺失)，跳过配置");
-                        return;
-                    }
-
-                    // 2. 全局配置与状态修正
-                    luckysheet.luckysheetautofixrowlen = false;
-
-                    // 3. 执行刷新 & 强制计算公式
-                    const containerEl = document.getElementById('luckysheet-container');
-                    if (containerEl && containerEl.offsetHeight > 0) {
-                        try {
-                            console.log("[Iframe] 正在执行界面刷新与公式重算...");
-
-                            // 首次刷新布局
-                            luckysheet.refresh();
-
-                            // --- 🔥【核心修复】触发公式引擎 ---
-                            // 优先使用底层指令，确保跨表和全表公式重算
-                            if (window.luckysheet.execCommand) {
-                                window.luckysheet.execCommand("formulaCalculation", "all");
-                                console.log("[Iframe] 🚀 已执行全表公式重算指令");
-                            } else if (luckysheet.refreshFormula) {
-                                luckysheet.refreshFormula();
-                                console.log("[Iframe] 已执行 refreshFormula");
-                            }
-                            console.log("[护盾] 开始强制全表扫描并标色...");
-                            const sheetData = luckysheet.flowdata(); // 获取当前 sheet 的数据
-                            if (sheetData) {
-                                for (let r = 0; r < sheetData.length; r++) {
-                                    for (let c = 0; c < sheetData[0].length; c++) {
-                                        const cell = sheetData[r][c];
-                                        if (cell) {
-                                            autoHighlightCell(r, c, cell); // 这里直接调用你的标红函数
-                                        }
-                                    }
-                                }
-                            }
-                            console.log("[护盾] 全表扫描标色完成。");
-                            // 短延时二次重绘，确保计算后的数值显示出来
-                            setTimeout(() => luckysheet.refresh(), 50);
-
-                        } catch (resErr) {
-                            console.warn("[Iframe] 刷新重算过程出现异常:", resErr.message);
-                        }
-                    }
-
-                    // 4. 设置 Hooks (确保不重复注册)
-                    if (!luckysheet.hooks) {
-                        luckysheet.hooks = {};
-                    }
-
-                    // 注册单元格更新钩子
-                    luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
-                        try {
-                            const allSheets = luckysheet.getAllSheets();
-                            const currentSheet = allSheets.find(s => s.status === 1) || allSheets[0];
-
-                            if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
-                                const cell = currentSheet.data[r][c];
-                                // 执行原有业务逻辑
-                                if (typeof autoHighlightCell === 'function') autoHighlightCell(r, c, cell);
-                                if (typeof debouncedCalculate === 'function') debouncedCalculate();
-                            }
-                        } catch (hookError) {
-                            console.error("[Hook Error] 单元格更新处理出错:", hookError);
-                        }
-                    };
-
-                    console.log("[Iframe] Hooks 与初始化注册完成");
-
-                    // 5. 任务收尾：通知父窗口并释放渲染锁
-                    if (window.parent) {
-                        window.parent.postMessage({
-                            type: 'LUCKYSHEET_RENDER_FINISHED',
-                            status: 'success'
-                        }, '*');
-                    }
-
-                } catch (e) {
-                    console.error(`[Iframe] 延迟配置阶段致命失败:`, e);
-                } finally {
-                    if (typeof isRendering !== 'undefined') {
-                        isRendering = false;
-                    }
-                }
-            }, 500);
-        }
-
-
-        /**
-                 * 从文件URL加载数据 (终极修复版：集成作用域防御 + ExcelJS下拉框重力锁)
-                 */
-        function loadSheetFromFile(fileUrl, fileName, options) {
-            container.innerHTML = `<div class="loader">正在加载数据...</div>`;
-
-            fetch(fileUrl)
-                .then(response => {
-                    if (!response.ok) throw new Error(`网络错误: ${response.statusText}`);
-                    const clonedResponse = response.clone();
-
-                    return response.json()
-                        .then(jsonData => {
-                            console.log("[Iframe] ✅ 成功将响应解析为JSON！");
-                            console.log("[调试点 2] 从后端收到的原始数据样例:", jsonData[0].celldata[0]);
-                            // 兼容直接是数组或对象包含 sheets 的情况
-                            const dataToRender = Array.isArray(jsonData) ? jsonData : (jsonData.sheets || []);
-                            renderSheet(dataToRender, fileName, options);
-                        })
-                        .catch(jsonError => {
-                            console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
-                            container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
-
-                            // ✨【核心修复点 1】：声明一个高生命周期的寄存变量，用于安全跨 Promise 链传递二进制数据
-                            let currentFileBlob = null;
-
-                            // 1. 获取 Blob 数据
-                            return clonedResponse.blob()
-                                .then(fileBlob => {
-                                    // ✨【核心修复点 2】：把局部的 fileBlob 寄存到上一层作用域变量中，防止后续链条读取不到
-                                    currentFileBlob = fileBlob;
-
-                                    // 🔥🔥🔥【插入侦探代码开始】🔥🔥🔥
-                                    console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
-                                    console.log("   - 大小:", fileBlob.size, "字节");
-                                    console.log("   - 类型:", fileBlob.type);
-
-                                    // 如果文件小于 1KB，极有可能不是 Excel，而是后端报错文本
-                                    if (fileBlob.size < 1000) {
-                                        const reader = new FileReader();
-                                        reader.onload = function () {
-                                            console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
-                                        }
-                                        reader.readAsText(fileBlob);
-                                    }
-                                    // 🔥🔥🔥【插入侦探代码结束】🔥🔥🔥
-
-                                    // 2. 定义超时竞速 Promise (1000秒)
-                                    const timeoutPromise = new Promise((_, reject) => {
-                                        setTimeout(() => {
-                                            reject(new Error('TIMEOUT'));
-                                        }, 1000000);
-                                    });
-
-                                    // 3. 定义解析 Promise (包裹 LuckyExcel)
-                                    const parsingPromise = new Promise((resolve, reject) => {
-                                        try {
-                                            LuckyExcel.transformExcelToLucky(fileBlob,
-                                                function (exportJson, luckysheetfile) {
-                                                    // 🔥🔥🔥🔥🔥 [调试探针 START] 🔥🔥🔥🔥🔥
-                                                    console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
-
-                                                    if (exportJson.sheets && exportJson.sheets.length > 0) {
-                                                        exportJson.sheets.forEach((sheet, index) => {
-                                                            console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
-
-                                                            // 检查 dataVerification 字段
-                                                            if (sheet.dataVerification) {
-                                                                const rules = Object.keys(sheet.dataVerification);
-                                                                if (rules.length > 0) {
-                                                                    console.log(`   ✅ 发现 ${rules.length} 条验证规则:`, sheet.dataVerification);
-                                                                } else {
-                                                                    console.warn(`   ⚠️ dataVerification 对象存在，但是是空的 (Empty Object)`);
-                                                                }
-                                                            } else {
-                                                                console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
-                                                            }
-                                                        });
-                                                    } else {
-                                                        console.error("❌ 解析结果中没有找到 sheets！");
-                                                    }
-                                                    console.groupEnd();
-                                                    // 🔥🔥🔥🔥🔥 [调试探针 END] 🔥🔥🔥🔥🔥
-
-                                                    if (exportJson.sheets == null || exportJson.sheets.length == 0) {
-                                                        reject(new Error('EMPTY_CONTENT'));
-                                                    } else {
-                                                        resolve(exportJson);
-                                                    }
-                                                },
-                                                function (err) {
-                                                    console.error("LuckyExcel internal error:", err);
-                                                    reject(new Error('PARSE_ERROR'));
-                                                }
-                                            );
-                                        } catch (e) {
-                                            // 捕获同步崩溃 (如 INTERSECTCLIPRECT)
-                                            console.error("LuckyExcel crash:", e);
-                                            reject(new Error('CRASH'));
-                                        }
-                                    });
-
-                                    // 4. 【核心】竞速：解析 vs 超时
-                                    return Promise.race([parsingPromise, timeoutPromise]);
-                                })
-                                .then(async exportJson => {
-                                    // --- 竞速胜利：解析成功 ---
-                                    console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
-                                    const sheets = exportJson.sheets || [];
-                                    const name = (exportJson.info && exportJson.info.name) || fileName;
-
-                                    // 🔥🔥🔥【绝对防御：ExcelJS 逆向全盘检索并强制缝合下拉框】🔥🔥🔥🔥
-                                    try {
-                                        if (window.ExcelJS && currentFileBlob) {
-                                            console.log("Automated Scan 🕵️ [ExcelJS 深度扫描] 正在绕过 LuckyExcel 盲区，破译底层二进制规则...");
-                                            const workbook = new ExcelJS.Workbook();
-
-                                            // ✨【核心修复点 3】：此处安全使用寄存的高层 currentFileBlob 矩阵数据
-                                            await workbook.xlsx.load(currentFileBlob);
-
-                                            workbook.eachSheet((worksheet, sheetIdx) => {
-                                                // 匹配 Luckysheet 对应的目标 sheet 内存页面
-                                                const targetSheet = sheets[sheetIdx - 1] || sheets.find(s => s.name === worksheet.name);
-                                                if (!targetSheet) return;
-
-                                                // 强制初始化可能丢失的验证对象根节点
-                                                if (!targetSheet.dataVerification) targetSheet.dataVerification = {};
-
-                                                // 地毯式搜索单元格级别的原生 dataValidation 下拉框属性
-                                                worksheet.eachRow((row, rowNum) => {
-                                                    row.eachCell((cell, colNum) => {
-                                                        if (cell.dataValidation && cell.dataValidation.type === 'list') {
-                                                            const r = rowNum - 1;
-                                                            const c = colNum - 1;
-
-                                                            // 提取 Excel 内置规则公式 (对纯文本列表脱除双引号包装)
-                                                            let formula = cell.dataValidation.formulae ? cell.dataValidation.formulae[0] : '';
-                                                            if (formula && formula.startsWith('"') && formula.endsWith('"')) {
-                                                                formula = formula.substring(1, formula.length - 1);
-                                                            }
-
-                                                            // 强力缝合、逆向矫正前端内存
-                                                            targetSheet.dataVerification[`${r}_${c}`] = {
-                                                                type: 'dropdown',
-                                                                value1: formula,
-                                                                prohibitInput: true
-                                                            };
-                                                        }
-                                                    });
-                                                });
-
-                                                const hackedRulesCount = Object.keys(targetSheet.dataVerification).length;
-                                                if (hackedRulesCount > 0) {
-                                                    console.log(`%c[ExcelJS 破译成功] 🛡️ 成功突破底层，为 Sheet [${targetSheet.name}] 强行召回 ${hackedRulesCount} 条下拉框规则！`, "color: #52c41a; font-weight: bold;");
-                                                }
-                                            });
-                                        }
-                                    } catch (excelJsError) {
-                                        console.error("💀 [ExcelJS] 紧急扫描下拉框时发生致命错误:", excelJsError);
-                                    }
-                                    // 🔥🔥🔥【绝对防御结束】🔥🔥🔥🔥
-
-                                    // 执行最终安全视图渲染
-                                    renderSheet(sheets, name, options);
-                                })
-                                .catch(err => {
-                                    // --- 竞速失败：超时或报错 ---
-                                    console.error("[Iframe] ❌ 解析最终失败:", err);
-
-                                    let displayMsg = "此表格格式有问题，无法解析";
-                                    let subMsg = "文件可能包含不支持的图形/公式或已损坏";
-
-                                    if (err.message === 'TIMEOUT') {
-                                        displayMsg = "文件解析超时 (10秒)";
-                                        subMsg = "文件过于复杂，请尝试简化格式后查看或者下载";
-                                    }
-
-                                    // A. Iframe 界面显示红屏错误
-                                    container.innerHTML = `
-                                        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
-                                            <h3 style="margin-bottom:10px;font-size:18px;">❌ ${displayMsg}</h3>
-                                            <p style="font-size:14px;color:#666;">${subMsg}</p>
-                                        </div>
-                                    `;
-
-                                    // B. 通知父窗口 (Vue) 停止 Loading 状态并抛错
-                                    window.parent.postMessage({
-                                        type: 'LUCKYSHEET_RENDER_FINISHED',
-                                        status: 'error',
-                                        message: displayMsg
-                                    }, window.location.origin);
-                                });
-                        }); // json的 catch 结束
-                })
-                .catch(error => {
-                    console.error("[Iframe] ❌ 加载文件失败:", error);
-                    container.innerHTML = `<div class="loader">文件加载失败。</div>`;
-                });
-        }
-        /**
-         * 融合验证规则
-         */
-        function mergeDataWithValidation(liveSheets, validationRules) {
-            return liveSheets.map(liveSheet => {
-                if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
-                    if (!liveSheet.dataVerification || Object.keys(liveSheet.dataVerification).length === 0) {
-                        liveSheet.dataVerification = validationRules[liveSheet.order];
-                    }
-                }
-                return liveSheet;
-            });
-        }
-
-        /**
-         * 触发文件下载
-         */
-        function downloadBlob(blob, fileName) {
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.href = url;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }
-
-        /**
-         * 处理导出
-         */
-        async function handleExport(fileName) {
-            console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
-            const loaderDiv = document.createElement('div');
-            loaderDiv.className = 'loader';
-            loaderDiv.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); z-index: 10000;';
-            loaderDiv.textContent = '正在生成Excel文件，请稍候...';
-            container.appendChild(loaderDiv);
-
+          const containerEl = document.getElementById("luckysheet-container");
+          if (containerEl && containerEl.offsetHeight > 0) {
             try {
-                const allSheetsData = luckysheet.getAllSheets();
-                const blob = await exportWithExcelJS(allSheetsData);
-                downloadBlob(blob, fileName);
-                console.log("[Iframe] 通过复用模块，成功导出文件！");
-            } catch (error) {
-                console.error("[Iframe] 复用导出模块时出错:", error);
-                alert("导出文件时发生错误，详情请查看控制台。");
-            } finally {
-                container.removeChild(loaderDiv);
+              console.log("[Iframe] 正在执行界面刷新与公式重算...");
+              luckysheet.refresh();
+
+              if (window.luckysheet.execCommand) {
+                window.luckysheet.execCommand("formulaCalculation", "all");
+                console.log("[Iframe] 🚀 已执行全表公式重算指令");
+              } else if (luckysheet.refreshFormula) {
+                luckysheet.refreshFormula();
+              }
+
+              // ======= 【核心扫描】：防止回退二进制首屏未被标色问题 =======
+              console.log("[护盾] 开始强力执行全表深度扫描并动态加载色彩...");
+              const sheetData = luckysheet.flowdata();
+              if (sheetData) {
+                for (let r = 0; r < sheetData.length; r++) {
+                  for (let c = 0; c < sheetData[0].length; c++) {
+                    const cell = sheetData[r][c];
+                    if (cell) autoHighlightCell(r, c, cell);
+                  }
+                }
+              }
+              console.log("[护盾] 全表扫描标色分配完成。");
+
+              setTimeout(() => luckysheet.refresh(), 50);
+            } catch (resErr) {
+              console.warn("[Iframe] 刷新重算过程出现异常:", resErr.message);
             }
+          }
+
+          if (!luckysheet.hooks) luckysheet.hooks = {};
+
+          luckysheet.hooks.cellUpdated = function (r, c, r_len, c_len) {
+            try {
+              const allSheets = luckysheet.getAllSheets();
+              const currentSheet = allSheets.find((s) => s.status === 1) || allSheets[0];
+
+              if (currentSheet && currentSheet.data && currentSheet.data[r] && currentSheet.data[r][c]) {
+                const cell = currentSheet.data[r][c];
+                // 末尾传入 true，确保手动改写单元格依然能完美触发弹窗
+                if (typeof autoHighlightCell === "function") autoHighlightCell(r, c, cell, true);
+                if (typeof debouncedCalculate === "function") debouncedCalculate();
+              }
+            } catch (hookError) {
+              console.error("[Hook Error] 单元格更新处理出错:", hookError);
+            }
+          };
+
+          console.log("[Iframe] Hooks 与初始化注册完成");
+
+          if (window.parent) {
+            window.parent.postMessage({ type: "LUCKYSHEET_RENDER_FINISHED", status: "success" }, "*");
+          }
+        } catch (e) {
+          console.error(`[Iframe] 延迟配置阶段致命失败:`, e);
         }
+      }, 500);
+    }
 
-        // --- [5. 事件监听器] ---
+    /**
+     * 从文件URL加载数据
+     */
+    function loadSheetFromFile(fileUrl, fileName, options) {
+      container.innerHTML = `<div class="loader">正在加载数据...</div>`;
 
-        window.addEventListener('message', function (event) {
-            if (event.origin !== window.location.origin) return;
-            const { type, payload } = event.data;
-            // console.log(`[Iframe] 收到消息: type=${type}`, payload);
+      fetch(fileUrl)
+        .then((response) => {
+          if (!response.ok) throw new Error(`网络错误: ${response.statusText}`);
+          const clonedResponse = response.clone();
 
-            if (type === 'LOAD_SHEET') {
-                if (payload.luckysheetData) {
-                    renderSheet(payload.luckysheetData, payload.fileName, payload.options);
-                } else {
-                    loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
-                }
-            } else if (type === 'GET_DATA_AND_IMAGES') {
-                try {
-                    console.group("🚀 [Iframe] 收到提取数据指令");
+          return response.json()
+            .then((jsonData) => {
+              console.log("[Iframe] ✅ 成功将响应解析为JSON！");
+              const dataToRender = Array.isArray(jsonData) ? jsonData : jsonData.sheets || [];
+              renderSheet(dataToRender, fileName, options);
+            })
+            .catch((jsonError) => {
+              console.warn("[Iframe] ⚠️ 解析为JSON失败，回退到二进制文件处理模式。");
+              container.innerHTML = `<div class="loader">正在使用备用模式解析文件...</div>`;
 
-                    // 1. 核心动作：强制退出编辑模式
-                    // (如果不做这一步，正在编辑的单元格内容和验证规则不会保存)
-                    if (window.luckysheet && window.luckysheet.exitEditMode) {
-                        window.luckysheet.exitEditMode();
-                        console.log("-> 已执行 exitEditMode，确保数据已提交");
-                    }
+              // ✨【高阶变量提权】：规避 fileBlob 外部链失效引起的 ReferenceError 崩溃
+              let currentFileBlob = null;
 
-                    // 2. 获取原始数据 (深拷贝以防引用问题)
-                    const rawSheets = window.luckysheet.getluckysheetfile();
-                    const sheets = JSON.parse(JSON.stringify(rawSheets));
-                    sheets.forEach(sheet => {
-                        const hasLiveRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
+              return clonedResponse.blob()
+                .then((fileBlob) => {
+                  currentFileBlob = fileBlob; // 缓存二进制包句柄
 
-                        // 如果当前导出的数据里丢了下拉框，但是我们有初始备份，强行逆向追回！
-                        if (!hasLiveRules && originalDataValidation && originalDataValidation[sheet.order]) {
-                            sheet.dataVerification = originalDataValidation[sheet.order];
-                            console.log(`%c[Save Guard] 🛡️ 检测到内存中数据验证规则丢失，已成功从初始备份中追回 Sheet [${sheet.name}] 的下拉框！`, "color: green; font-weight: bold;");
-                        }
-                    });
-                    console.log("[调试] 打包前的 Sheet 数据:", sheets[0]);
-                    if (rawSheets && rawSheets.length > 0) {
-                        const firstSheet = rawSheets[0];
-                        const hasBorder = firstSheet.config && firstSheet.config.borderInfo && firstSheet.config.borderInfo.length > 0;
-                        console.log(`🕵️ [Save Check] Sheet1 边框检查:`,
-                            hasBorder ? `✅ 存在 ${firstSheet.config.borderInfo.length} 条规则` : "❌ 无边框信息 (为空)");
+                  console.log("🔍 [侦探] 准备交给 LuckyExcel 的文件信息：");
+                  console.log("   - 大小:", fileBlob.size, "字节");
+                  console.log("   - 类型:", fileBlob.type);
 
-                        if (hasBorder) {
-                            console.log("   -> 边框数据快照:", JSON.parse(JSON.stringify(firstSheet.config.borderInfo)));
-                        }
-                    }
-                    // 3. [调试探针] 检查第一张表的数据验证是否存在
-                    if (sheets.length > 0) {
-                        const firstSheet = sheets[0];
-                        // 兼容检查: dataVerification 可能在根目录，也可能在 config 里
-                        const rules = firstSheet.dataVerification || (firstSheet.config && firstSheet.config.dataVerification);
-
-                        if (rules) {
-                            const count = Object.keys(rules).length;
-                            console.log(`✅ [Iframe数据检查] Sheet1 包含 ${count} 条验证规则`);
-                            if (count > 0) console.log("-> 规则快照:", rules);
-                        } else {
-                            console.warn("⚠️ [Iframe数据检查] Sheet1 没有检测到验证规则 (dataVerification 为空)");
-                        }
-                    }
-                    if (sheets.length > 0 && sheets[0].dataVerification) {
-                        // 建立一个和当前文件绑定的唯一 Key (如果没有 fileId 就用 fileName)
-                        const storageKey = `luckysheet_dv_backup_${payload.fileId || fileName}`;
-
-                        // 强制备份到浏览器 Session 中，跨刷新不灭
-                        sessionStorage.setItem(storageKey, JSON.stringify(sheets[0].dataVerification));
-                        console.log(`%c[晶片注入] 🛡️ 下拉框规则已安全托管至浏览器 Session 晶片，Key: ${storageKey}`, "color: #1890ff; font-weight: bold;");
-                    }
-                    // 4. 发送数据回父窗口
-                    const responsePayload = {
-                        type: 'SHEET_DATA_WITH_IMAGES_RESPONSE',
-                        payload: {
-                            fileId: payload.fileId,
-                            documentType: payload.documentType,
-                            purpose: payload.purpose,
-                            sheets: sheets, // 👈 关键：这里传的是纯净的 sheets 数据
-                            images: window.luckysheet.getLuckysheetfile()[0].images
-                        }
+                  if (fileBlob.size < 1000) {
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                      console.error("💀 [侦探] 文件太小，疑似报错文本，内容如下:", this.result);
                     };
+                    reader.readAsText(fileBlob);
+                  }
 
-                    console.log("-> 数据打包完毕，发送回父窗口...");
-                    event.source.postMessage(responsePayload, event.origin);
-                    console.groupEnd();
+                  const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => { reject(new Error("TIMEOUT")); }, 1000000);
+                  });
 
-                } catch (e) {
-                    console.error('[Iframe] 获取数据失败:', e);
-                }
-                return;
-            } else if (type === 'EXPORT_SHEET') {
-                if (window.luckysheet) {
-                    handleExport(payload.fileName || '导出文件.xlsx');
-                }
-=======
-                          const hackedRulesCount = Object.keys(targetSheet.dataVerification).length;
-                          if (hackedRulesCount > 0) {
-                            console.log(`%c[ExcelJS 破译成功] 🛡️ 成功突破底层，为 Sheet [${targetSheet.name}] 强行召回 ${hackedRulesCount} 条下拉框规则（含空格子）！`, "color: #52c41a; font-weight: bold;");
+                  const parsingPromise = new Promise((resolve, reject) => {
+                    try {
+                      LuckyExcel.transformExcelToLucky(
+                        fileBlob,
+                        function (exportJson, luckysheetfile) {
+                          console.group("%c🔍 [Import Debug] 开始检查读取到的 Excel 文件", "color: red; font-size: 14px; font-weight: bold;");
+                          if (exportJson.sheets && exportJson.sheets.length > 0) {
+                            exportJson.sheets.forEach((sheet, index) => {
+                              console.log(`📄 Sheet [${index}] 名称: ${sheet.name}`);
+                              if (!sheet.dataVerification) {
+                                console.error(`   ❌ 该 Sheet 完全没有 dataVerification 字段！`);
+                              }
+                            });
                           }
-                        });
-                      }
-                    } catch (excelJsError) {
-                      console.error("💀 [ExcelJS] 紧急扫描下拉框时发生致命错误:", excelJsError);
-                    }
+                          console.groupEnd();
 
-                    renderSheet(sheets, name, options);
-                  })
-                  .catch((err) => {
-                    console.error("[Iframe] ❌ 解析最终失败:", err);
-                    let displayMsg = "此表格格式有问题，无法解析";
-                    container.innerHTML = `
+                          if (exportJson.sheets == null || exportJson.sheets.length == 0) {
+                            reject(new Error("EMPTY_CONTENT"));
+                          } else {
+                            resolve(exportJson);
+                          }
+                        },
+                        function (err) {
+                          console.error("LuckyExcel internal error:", err);
+                          reject(new Error("PARSE_ERROR"));
+                        },
+                      );
+                    } catch (e) {
+                      console.error("LuckyExcel crash:", e);
+                      reject(new Error("CRASH"));
+                    }
+                  });
+
+                  return Promise.race([parsingPromise, timeoutPromise]);
+                })
+                .then(async (exportJson) => {
+                  console.log("[Iframe] ✅ LuckyExcel 解析二进制文件成功！");
+                  const sheets = exportJson.sheets || [];
+                  const name = (exportJson.info && exportJson.info.name) || fileName;
+
+                  // 🔥【ExcelJS 底层重力破译锁】：对开源失明库进行深度补盲，强行榨取下拉框规则
+                  try {
+                    if (window.ExcelJS && currentFileBlob) {
+                      console.log("Automated Scan 🕵️ [ExcelJS 深度扫描] 启动底层破译...");
+                      const workbook = new ExcelJS.Workbook();
+                      await workbook.xlsx.load(currentFileBlob);
+
+                      workbook.eachSheet((worksheet, sheetIdx) => {
+                        const targetSheet = sheets[sheetIdx - 1] || sheets.find((s) => s.name === worksheet.name);
+                        if (!targetSheet) return;
+
+                        if (!targetSheet.dataVerification) targetSheet.dataVerification = {};
+
+                        // 弃用 eachRow 迭代器，改用绝对矩阵横纵标尺，确保没有任何空置格子被漏掉
+                        for (let rIdx = 1; rIdx <= worksheet.rowCount; rIdx++) {
+                          const row = worksheet.getRow(rIdx);
+                          for (let cIdx = 1; cIdx <= worksheet.columnCount; cIdx++) {
+                            const cell = row.getCell(cIdx); // 即使 cell 为空，ExcelJS 也会返回对象
+
+                            if (cell && cell.dataValidation && cell.dataValidation.type === "list") {
+                              const r = rIdx - 1;
+                              const c = cIdx - 1;
+
+                              let formula = cell.dataValidation.formulae ? cell.dataValidation.formulae[0] : "";
+                              if (formula && formula.startsWith('"') && formula.endsWith('"')) {
+                                formula = formula.substring(1, formula.length - 1);
+                              }
+
+                              // 即使格子内部的 .v 值为 null/空，下拉框底座规则也必须钉死在坐标上！
+                              targetSheet.dataVerification[`${r}_${c}`] = {
+                                type: "dropdown",
+                                value1: formula,
+                                prohibitInput: true,
+                              };
+                            }
+                          }
+                        }
+
+                        const hackedRulesCount = Object.keys(targetSheet.dataVerification).length;
+                        if (hackedRulesCount > 0) {
+                          console.log(`%c[ExcelJS 破译成功] 🛡️ 成功突破底层，为 Sheet [${targetSheet.name}] 强行召回 ${hackedRulesCount} 条下拉框规则（含空格子）！`, "color: #52c41a; font-weight: bold;");
+                        }
+                      });
+                    }
+                  } catch (excelJsError) {
+                    console.error("💀 [ExcelJS] 紧急扫描下拉框时发生致命错误:", excelJsError);
+                  }
+
+                  renderSheet(sheets, name, options);
+                })
+                .catch((err) => {
+                  console.error("[Iframe] ❌ 解析最终失败:", err);
+                  let displayMsg = "此表格格式有问题，无法解析";
+                  container.innerHTML = `
                             <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;background:#fff2f0;color:#cf1322;padding:20px;text-align:center;">
                                 <h3 style="margin-bottom:10px;font-size:18px;">❌ ${displayMsg}</h3>
                             </div>
                         `;
-                    window.parent.postMessage({ type: "LUCKYSHEET_RENDER_FINISHED", status: "error", message: displayMsg }, window.location.origin);
-                  });
-              });
-          })
-          .catch((error) => {
-            console.error("[Iframe] ❌ 加载文件失败:", error);
-            container.innerHTML = `<div class="loader">文件加载失败。</div>`;
-          });
-      }
-
-      /**
-       * 融合验证规则
-       */
-      function mergeDataWithValidation(liveSheets, validationRules) {
-        return liveSheets.map((liveSheet) => {
-          if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
-            if (!liveSheet.dataVerification || Object.keys(liveSheet.dataVerification).length === 0) {
-              liveSheet.dataVerification = validationRules[liveSheet.order];
->>>>>>> d6e4b5d4e9b993755c8d7dea3519ab2863577bc8
-            }
-          }
-          return liveSheet;
-        });
-      }
-
-      /**
-       * 触发文件下载
-       */
-      function downloadBlob(blob, fileName) {
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }
-
-      /**
-       * 处理导出
-       */
-      async function handleExport(fileName) {
-        console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
-        const loaderDiv = document.createElement("div");
-        loaderDiv.className = "loader";
-        loaderDiv.style.cssText =
-          "position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); z-index: 10000;";
-        loaderDiv.textContent = "正在生成Excel文件，请稍候...";
-        container.appendChild(loaderDiv);
-
-        try {
-          const allSheetsData = luckysheet.getAllSheets();
-          const blob = await exportWithExcelJS(allSheetsData);
-          downloadBlob(blob, fileName);
-          console.log("[Iframe] 通过复用模块，成功导出文件！");
-        } catch (error) {
-          console.error("[Iframe] 复用导出模块时出错:", error);
-          alert("导出文件时发生错误，详情请查看控制台。");
-        } finally {
-          container.removeChild(loaderDiv);
-        }
-      }
-
-      // --- [5. 事件监听器] ---
-
-      window.addEventListener("message", function (event) {
-        if (event.origin !== window.location.origin) return;
-        const { type, payload } = event.data;
-
-        if (type === "LOAD_SHEET") {
-          if (payload.luckysheetData) {
-            renderSheet(payload.luckysheetData, payload.fileName, payload.options);
-          } else {
-            loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
-          }
-        } else if (type === "GET_DATA_AND_IMAGES") {
-          try {
-            console.group("🚀 [Iframe] 收到提取数据指令");
-
-            if (window.luckysheet && window.luckysheet.exitEditMode) {
-              window.luckysheet.exitEditMode();
-              console.log("-> 已执行 exitEditMode，确保数据已提交");
-            }
-
- const rawSheets = window.luckysheet.getAllSheets();
-            const sheets = JSON.parse(JSON.stringify(rawSheets));
-            
-            // 从底层全量文件中，把最精准的 live 下拉框规则捞出来重新缝合
-            const liveFile = window.luckysheet.getluckysheetfile();
-            sheets.forEach((sheet, i) => {
-              const liveSheet = liveFile.find((s) => s.order === sheet.order) || liveFile[i];
-              if (liveSheet && liveSheet.dataVerification) {
-                sheet.dataVerification = JSON.parse(JSON.stringify(liveSheet.dataVerification));
-              }
-              
-              // 芯片双保险：如果被意外洗刷，从 sessionStorage 晶片强行逆向召回
-              const hasLiveRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
-              if (hasLiveRules) {
-                const storageKey = `luckysheet_dv_backup_${payload.fileId || payload.fileName || 'default'}`;
-                sessionStorage.setItem(storageKey, JSON.stringify(sheet.dataVerification));
-              } else if (!hasLiveRules && originalDataValidation && originalDataValidation[sheet.order]) {
-                sheet.dataVerification = originalDataValidation[sheet.order];
-                console.log(`[Save Guard] 🛡️ 成功从本地缓存追回 Sheet [${sheet.name}] 的下拉框！`);
-              }
+                  window.parent.postMessage({ type: "LUCKYSHEET_RENDER_FINISHED", status: "error", message: displayMsg }, window.location.origin);
+                });
             });
+        })
+        .catch((error) => {
+          console.error("[Iframe] ❌ 加载文件失败:", error);
+          container.innerHTML = `<div class="loader">文件加载失败。</div>`;
+        });
+    }
 
-            if (sheets.length > 0) {
-              const firstSheet = sheets[0];
-              const rules = firstSheet.dataVerification;
-
-              if (rules) {
-                const count = Object.keys(rules).length;
-                console.log(`✅ [Iframe数据检查] Sheet1 包含 ${count} 条验证规则`);
-                if (count > 0) console.log("-> 规则快照:", rules);
-              } else {
-                console.warn("⚠️ [Iframe数据检查] Sheet1 没有检测到验证规则 (dataVerification 为空)");
-              }
-            }
-
-            const responsePayload = {
-              type: "SHEET_DATA_WITH_IMAGES_RESPONSE",
-              payload: {
-                fileId: payload.fileId,
-                documentType: payload.documentType,
-                purpose: payload.purpose,
-                sheets: sheets, 
-                images: window.luckysheet.getLuckysheetfile()[0]?.images || [],
-              },
-            };
-
-            console.log("-> 数据打包完毕，发送回父窗口...");
-            event.source.postMessage(responsePayload, event.origin);
-            console.groupEnd();
-          } catch (e) {
-            console.error("[Iframe] 获取数据失败:", e);
-          }
-          return;
-        } else if (type === "EXPORT_SHEET") {
-          if (window.luckysheet) {
-            handleExport(payload.fileName || "导出文件.xlsx");
+    /**
+     * 融合验证规则
+     */
+    function mergeDataWithValidation(liveSheets, validationRules) {
+      return liveSheets.map((liveSheet) => {
+        if (liveSheet && liveSheet.order != null && validationRules[liveSheet.order]) {
+          if (!liveSheet.dataVerification || Object.keys(liveSheet.dataVerification).length === 0) {
+            liveSheet.dataVerification = validationRules[liveSheet.order];
           }
         }
+        return liveSheet;
       });
+    }
 
-      document.body.addEventListener(
-        "mousedown",
-        () => {
-          window.parent.postMessage({ type: "IFRAME_CLICKED" }, window.location.origin);
-        },
-        true,
-      );
+    /**
+     * 触发文件下载
+     */
+    function downloadBlob(blob, fileName) {
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
 
-      document.addEventListener(
-        "wheel",
-        function (event) {
-          if (event.ctrlKey) {
-            event.preventDefault(); 
-            event.stopPropagation(); 
-            event.stopImmediatePropagation(); 
+    /**
+     * 处理导出
+     */
+    async function handleExport(fileName) {
+      console.log("[Iframe] 开始复用 exportWithExcelJS 的导出流程...");
+      const loaderDiv = document.createElement("div");
+      loaderDiv.className = "loader";
+      loaderDiv.style.cssText =
+        "position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); z-index: 10000;";
+      loaderDiv.textContent = "正在生成Excel文件，请稍候...";
+      container.appendChild(loaderDiv);
 
-            if (window._isZoomLocked) return;
+      try {
+        const allSheetsData = luckysheet.getAllSheets();
+        const blob = await exportWithExcelJS(allSheetsData);
+        downloadBlob(blob, fileName);
+        console.log("[Iframe] 通过复用模块，成功导出文件！");
+      } catch (error) {
+        console.error("[Iframe] 复用导出模块时出错:", error);
+        alert("导出文件时发生错误，详情请查看控制台。");
+      } finally {
+        container.removeChild(loaderDiv);
+      }
+    }
 
-            const btnMinus = document.getElementById("luckysheet-zoom-minus");
-            const btnPlus = document.getElementById("luckysheet-zoom-plus");
+    // --- [5. 事件监听器] ---
 
-            if (!btnMinus || !btnPlus) return;
+    window.addEventListener("message", function (event) {
+      if (event.origin !== window.location.origin) return;
+      const { type, payload } = event.data;
 
-            window._isZoomLocked = true;
+      if (type === "LOAD_SHEET") {
+        if (payload.luckysheetData) {
+          renderSheet(payload.luckysheetData, payload.fileName, payload.options);
+        } else {
+          loadSheetFromFile(payload.fileUrl, payload.fileName, payload.options);
+        }
+      } else if (type === "GET_DATA_AND_IMAGES") {
+        try {
+          console.group("🚀 [Iframe] 收到提取数据指令");
 
-            if (event.deltaY < 0) {
-              btnPlus.click();
-            } else {
-              btnMinus.click();
+          if (window.luckysheet && window.luckysheet.exitEditMode) {
+            window.luckysheet.exitEditMode();
+            console.log("-> 已执行 exitEditMode，确保数据已提交");
+          }
+
+          const rawSheets = window.luckysheet.getAllSheets();
+          const sheets = JSON.parse(JSON.stringify(rawSheets));
+
+          // 从底层全量文件中，把最精准的 live 下拉框规则捞出来重新缝合
+          const liveFile = window.luckysheet.getluckysheetfile();
+          sheets.forEach((sheet, i) => {
+            const liveSheet = liveFile.find((s) => s.order === sheet.order) || liveFile[i];
+            if (liveSheet && liveSheet.dataVerification) {
+              sheet.dataVerification = JSON.parse(JSON.stringify(liveSheet.dataVerification));
             }
 
-            setTimeout(() => {
-              window._isZoomLocked = false;
-            }, 100);
-          }
-        },
-        { passive: false, capture: true },
-      );
+            // 芯片双保险：如果被意外洗刷，从 sessionStorage 晶片强行逆向召回
+            const hasLiveRules = sheet.dataVerification && Object.keys(sheet.dataVerification).length > 0;
+            if (hasLiveRules) {
+              const storageKey = `luckysheet_dv_backup_${payload.fileId || payload.fileName || 'default'}`;
+              sessionStorage.setItem(storageKey, JSON.stringify(sheet.dataVerification));
+            } else if (!hasLiveRules && originalDataValidation && originalDataValidation[sheet.order]) {
+              sheet.dataVerification = originalDataValidation[sheet.order];
+              console.log(`[Save Guard] 🛡️ 成功从本地缓存追回 Sheet [${sheet.name}] 的下拉框！`);
+            }
+          });
 
-      console.log("[Iframe] 加载器已就绪，等待消息...");
-    </script>
-  </body>
+          if (sheets.length > 0) {
+            const firstSheet = sheets[0];
+            const rules = firstSheet.dataVerification;
+
+            if (rules) {
+              const count = Object.keys(rules).length;
+              console.log(`✅ [Iframe数据检查] Sheet1 包含 ${count} 条验证规则`);
+              if (count > 0) console.log("-> 规则快照:", rules);
+            } else {
+              console.warn("⚠️ [Iframe数据检查] Sheet1 没有检测到验证规则 (dataVerification 为空)");
+            }
+          }
+
+          const responsePayload = {
+            type: "SHEET_DATA_WITH_IMAGES_RESPONSE",
+            payload: {
+              fileId: payload.fileId,
+              documentType: payload.documentType,
+              purpose: payload.purpose,
+              sheets: sheets,
+              images: window.luckysheet.getLuckysheetfile()[0]?.images || [],
+            },
+          };
+
+          console.log("-> 数据打包完毕，发送回父窗口...");
+          event.source.postMessage(responsePayload, event.origin);
+          console.groupEnd();
+        } catch (e) {
+          console.error("[Iframe] 获取数据失败:", e);
+        }
+        return;
+      } else if (type === "EXPORT_SHEET") {
+        if (window.luckysheet) {
+          handleExport(payload.fileName || "导出文件.xlsx");
+        }
+      }
+    });
+
+    document.body.addEventListener(
+      "mousedown",
+      () => {
+        window.parent.postMessage({ type: "IFRAME_CLICKED" }, window.location.origin);
+      },
+      true,
+    );
+
+    document.addEventListener(
+      "wheel",
+      function (event) {
+        if (event.ctrlKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+
+          if (window._isZoomLocked) return;
+
+          const btnMinus = document.getElementById("luckysheet-zoom-minus");
+          const btnPlus = document.getElementById("luckysheet-zoom-plus");
+
+          if (!btnMinus || !btnPlus) return;
+
+          window._isZoomLocked = true;
+
+          if (event.deltaY < 0) {
+            btnPlus.click();
+          } else {
+            btnMinus.click();
+          }
+
+          setTimeout(() => {
+            window._isZoomLocked = false;
+          }, 100);
+        }
+      },
+      { passive: false, capture: true },
+    );
+
+    console.log("[Iframe] 加载器已就绪，等待消息...");
+  </script>
+</body>
+
 </html>
