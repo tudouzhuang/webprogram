@@ -1,13 +1,18 @@
 // 注意：exportWithExcelJS 函数需要通过 <script> 标签在 HTML 中预加载
 // import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
 
+// ======= 【系统特权锁：指定主管硬编码配置】 =======
+// 1. 如果填入具体姓名/工号（例如: '彭经纬CT20000000'），则在有未关闭项时，只有该主管能强制批准下图。
+// 2. 如果留空 ''，则默认恢复初始状态：大盘所有的 manager 角色均有权批准下图。
+const DESIGNATED_SUPERVISOR = '彭经纬CT20000000'; 
+
 Vue.component('record-review-panel', {
     components: {
         'workspace-status-bar': WorkspaceStatusBar,
         'problem-record-table': ProblemRecordTable
     },
     // 【Props】: 从父组件接收要查看的过程记录ID
-        props: {
+    props: {
         recordId: {
             type: [String, Number],
             required: true
@@ -286,7 +291,7 @@ Vue.component('record-review-panel', {
                                 </div>
                             </div>
 
-                            <div v-if="activeTab === 'problemRecord'" class="scrollable-tab-content">
+                            <div v-show="activeTab === 'problemRecord'" class="scrollable-tab-content">
                                 <problem-record-table
                                     ref="problemTableRef" 
                                     :record-id="Number(recordId)"
@@ -344,7 +349,7 @@ Vue.component('record-review-panel', {
             // 移除了重复的 metaData
             planningDocs: [],             // 存放主策划书文件
             allProjectFiles: [],          // 存放项目下所有文件（用于找子Sheet）
-                        expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
+            expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
         }
     },
     // 修改后
@@ -352,7 +357,7 @@ Vue.component('record-review-panel', {
         // 【核心修复】动态判断问题面板的模式 (支持 Admin 超级模式)
         // 【核心修复 + 调试版】动态判断问题面板的模式
         // 【核心修复】更强壮的用户获取逻辑
-// ====== 【手术刀修复：消除工号后缀引起的不匹配，强力解锁审核操作权限】 ======
+        // ====== 【手术刀修复：消除工号后缀引起的不匹配，强力解锁审核操作权限】 ======
         problemPanelMode() {
             let user = {};
             try {
@@ -371,7 +376,7 @@ Vue.component('record-review-panel', {
             // 🔮【核心加固点 1】：改用包含匹配 (.includes)，防止类似 "彭经纬CT20000000" 与 "彭经纬" 发生字面冲突
             const currentUserName = user.username || user.name || '';
             const auditorName = this.recordInfo ? this.recordInfo.auditorName : '';
-            const isAuditor = currentUserName && auditorName && 
+            const isAuditor = currentUserName && auditorName &&
                 (currentUserName.includes(auditorName) || auditorName.includes(currentUserName));
 
             if (isManager || isAuditor) {
@@ -379,7 +384,7 @@ Vue.component('record-review-panel', {
             }
 
             // 🔮【核心加固点 2】：大盘兜底。因为当前组件本就是 [审核工作台]，进入此视窗的人员理应默认赋予评审操作权
-            return 'reviewer'; 
+            return 'reviewer';
         },
         excelFiles() {
             // 【【【 核心修正：增加安全检查 】】】
@@ -714,7 +719,7 @@ Vue.component('record-review-panel', {
                 // 注意：这里不再需要 this.isSaving = true，因为 saveChanges 方法已经设置过了
                 try {
                     const exporterModule = await import('/js/utils/luckysheetExporter.js');
-                    
+
                     // 通过对象属性点出来调用，绝不触发 TDZ 报错
                     const exportBlob = await exporterModule.exportWithExcelJS(payload);
                     const formData = new FormData();
@@ -752,7 +757,7 @@ Vue.component('record-review-panel', {
                 this.currentLiveStats = payload;
 
             } else if (type === 'NAVIGATE_TO_PROBLEM_RECORD') {
-                
+
                 console.log('[Parent Panel] 🛡️ 捕获到不符合项联动指令，触发同步保存并准备切换视窗...', payload);
                 const { row, sheetName } = payload;
 
@@ -767,15 +772,15 @@ Vue.component('record-review-panel', {
                 this.$nextTick(() => {
                     setTimeout(() => {
                         const problemTableComponent = this.$refs.problemTableRef;
-                        
+
                         if (problemTableComponent && typeof problemTableComponent.handleAddNew === 'function') {
                             if (problemTableComponent.currentProblem) {
                                 problemTableComponent.currentProblem.stage = 'FMC';
                                 problemTableComponent.currentProblem.problemPoint = `${sheetName}：第 ${row + 1} 行检测出不符合项`;
                             }
-                            
+
                             problemTableComponent.handleAddNew();
-                            
+
                             this.$message({
                                 message: `已联动自动保存当前表单，并成功开启 [${sheetName}] 第 ${row + 1} 行的问题整改登记框`,
                                 type: 'success',
@@ -799,33 +804,90 @@ Vue.component('record-review-panel', {
             this.sendMessageToIframe(targetIframe, { type: 'EXPORT_SHEET', payload: { fileName: fileName } });
         },
 
+        // ====== 【手术刀精准重构：最终下图闸口 - 前端硬编码特权人分流引擎】 ======
         approveRecord() {
-            this.$confirm('您确定所有内容都已审核完毕，并批准此设计记录吗?', '批准确认', {
-                confirmButtonText: '确定批准',
-                cancelButtonText: '取消',
-                type: 'success'
-            })
-                .then(async () => {
-                    try {
-                        // 【【【核心修改】】】
-                        // 解开注释，调用后端API
-                        await axios.post(`/api/process-records/${this.recordId}/approve`);
+            // 1. 安全探测子组件中的问题统计状态机
+            const problemComponent = this.$refs.problemTableRef;
+            let unclosedCount = 0;
 
-                        this.$message.success('操作成功，该记录已批准！');
+            if (problemComponent && problemComponent.problemStats) {
+                // 未关闭项 = 待解决(OPEN) + 待复核(RESOLVED) + 保留项(KEPT)
+                const stats = problemComponent.problemStats;
+                unclosedCount = (stats.OPEN || 0) + (stats.RESOLVED || 0) + (stats.KEPT || 0);
+            }
 
-                        // 操作成功后，可以返回列表页或刷新当前页
-                        this.goBack(); // 调用已有的返回方法
+            // 2. 动态捕获当前登录用户的真实姓名与角色
+            let currentUser = {};
+            try {
+                if (window.currentUser) currentUser = window.currentUser;
+                else if (sessionStorage.getItem('user')) currentUser = JSON.parse(sessionStorage.getItem('user'));
+                else if (sessionStorage.getItem('userInfo')) currentUser = JSON.parse(sessionStorage.getItem('userInfo'));
+                else if (localStorage.getItem('user')) currentUser = JSON.parse(localStorage.getItem('user'));
+                else if (localStorage.getItem('userInfo')) currentUser = JSON.parse(localStorage.getItem('userInfo'));
+            } catch (e) {
+                console.error("安全链解析用户信息失败:", e);
+            }
 
-                    } catch (error) {
-                        this.$message.error('批准失败：' + (error.response?.data?.message || '未知错误'));
-                        console.error("批准操作失败:", error);
+            const currentName = currentUser.username || currentUser.name || '';
+            const role = (currentUser.role || '').toLowerCase();
+            const isManager = role === 'admin' || role === 'manager' || role === 'administrator';
+
+            console.log(`[下图闸口检查] 当前未关闭数: ${unclosedCount} | 登录用户: ${currentName} | 是否经理角色: ${isManager}`);
+
+            // 3. 【核心控制链】：如果存在未关闭项（带病下图），启动前端动态特权人卡点
+            if (unclosedCount > 0) {
+                if (DESIGNATED_SUPERVISOR && DESIGNATED_SUPERVISOR.trim() !== '') {
+                    // 💡 分支 A：启用了特定主管锁定，检查当前登录人是否相符
+                    if (!currentName.includes(DESIGNATED_SUPERVISOR) && !DESIGNATED_SUPERVISOR.includes(currentName)) {
+                        this.$alert(
+                            `<div>
+                        <p style="color: #F56C6C; font-size: 16px; font-weight: bold; margin-bottom: 10px;">
+                            <i class="el-icon-warning"></i> 审批权限受限（带病下图拦截）
+                        </p>
+                        <p>当前图纸仍有 <strong style="color: #E6A23C;">${unclosedCount}</strong> 项未关闭的遗留问题。</p>
+                        <p>根据现场应急策略，存在遗留项时，目前系统已被安全锁定为指定主管 <strong style="color: #409EFF;">${DESIGNATED_SUPERVISOR}</strong> 专属复核特权。</p>
+                        <p style="margin-top: 15px; padding: 10px; background: #fdf6ec; border-radius: 4px; font-size: 12px; color: #E6A23C; border-left: 3px solid #E6A23C;">
+                            <strong>如何撤销限制：</strong> 请联系技术人员将代码顶部的 <code>DESIGNATED_SUPERVISOR</code> 变量变更为 <code>''</code>（留空）即可释放给所有 Manager。
+                        </p>
+                    </div>`,
+                            '安全合规拦截',
+                            { dangerouslyUseHTMLString: true, type: 'warning', confirmButtonText: '知道了' }
+                        );
+                        return; // 🧱 强行死锁拦截，拒绝向后端发送任何请求
                     }
-                }).catch(() => {
-                    this.$message.info('已取消操作');
-                });
-        },
+                } else {
+                    // 💡 分支 B：未指定特定主管（变量留空），则退化为默认策略：大盘所有 Manager 均可放行
+                    if (!isManager) {
+                        this.$message.error('当前图纸存在未关闭项，必须由部门主管（Manager）执行强制放行！');
+                        return;
+                    }
+                }
+            }
 
-                                rejectRecord() {
+            // 4. ======= 鉴权通过（或完全无缺陷），直接调用后端 100% 成功的标准下发接口 =======
+            const confirmTitle = unclosedCount === 0 ? '直接批准确认' : '特权强制下发确认';
+            const confirmMessage = unclosedCount === 0
+                ? '当前所有问题项已完全关闭，您可以直接批准并下图。是否确定?'
+                : `当前仍有 <span style="color:#E6A23C; font-weight:bold;">${unclosedCount}</span> 项缺陷未关闭。您作为系统指定的特权主管，确认这些遗留项【不影响下图】并强制签署放行吗？`;
+
+            this.$confirm(confirmMessage, confirmTitle, {
+                confirmButtonText: '确定批准下图',
+                cancelButtonText: '取消',
+                type: unclosedCount === 0 ? 'success' : 'warning',
+                dangerouslyUseHTMLString: true
+            }).then(async () => {
+                try {
+                    // 🚀 精准复用成熟的通过接口，前端帮后端把好了特权关，后端不需要做任何代码和状态机改动
+                    await axios.post(`/api/process-records/${this.recordId}/approve`);
+                    this.$message.success('操作成功，图纸已顺利下发！');
+                    this.goBack();
+                } catch (error) {
+                    this.$message.error('批准失败：' + (error.response?.data?.message || '未知错误'));
+                }
+            }).catch(() => { });
+        },
+        
+        rejectRecord() {
             this.$prompt('请输入打回意见（必填）：', '打回修改', {
                 confirmButtonText: '确定打回',
                 cancelButtonText: '取消',
@@ -847,7 +909,7 @@ Vue.component('record-review-panel', {
                     // 判断当前用户是不是管理员
                     const userRole = this.currentUser?.identity || '';
                     const isAdmin = userRole.toUpperCase() === 'MANAGER' || userRole.toUpperCase() === 'ADMIN';
-                    
+
                     if (isAdmin) {
                         this.$alert(
                             `<div>
