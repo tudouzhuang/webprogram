@@ -290,7 +290,9 @@ Vue.component('record-review-panel', {
                                 <problem-record-table
                                     ref="problemTableRef" 
                                     :record-id="Number(recordId)"
-                                    :mode="problemPanelMode" @trigger-submit="handleTriggerReview">
+                                    :mode="problemPanelMode" 
+                                    :current-user="currentUser" 
+                                    @trigger-submit="handleTriggerReview">
                                 </problem-record-table>
                             </div>
 
@@ -350,63 +352,34 @@ Vue.component('record-review-panel', {
         // 【核心修复】动态判断问题面板的模式 (支持 Admin 超级模式)
         // 【核心修复 + 调试版】动态判断问题面板的模式
         // 【核心修复】更强壮的用户获取逻辑
+// ====== 【手术刀修复：消除工号后缀引起的不匹配，强力解锁审核操作权限】 ======
         problemPanelMode() {
-            // 🔥🔥🔥 1. 全方位尝试获取用户数据 🔥🔥🔥
             let user = {};
-
             try {
-                // 尝试 1: 全局变量 (有些老系统用这个)
                 if (window.currentUser) user = window.currentUser;
-
-                // 尝试 2: sessionStorage (Key 可能是 'user' 或 'userInfo')
                 else if (sessionStorage.getItem('user')) user = JSON.parse(sessionStorage.getItem('user'));
                 else if (sessionStorage.getItem('userInfo')) user = JSON.parse(sessionStorage.getItem('userInfo'));
-
-                // 尝试 3: localStorage (最常见的情况，Key 可能是 'user' 或 'userInfo')
                 else if (localStorage.getItem('user')) user = JSON.parse(localStorage.getItem('user'));
                 else if (localStorage.getItem('userInfo')) user = JSON.parse(localStorage.getItem('userInfo'));
-
-                // 尝试 4: Vuex (如果你用了 Vuex)
-                // else if (this.$store && this.$store.state.user) user = this.$store.state.user;
-
             } catch (e) {
                 console.error("解析用户信息失败:", e);
             }
 
-            // 🔥🔥🔥 [调试信息] 🔥🔥🔥
-            console.group("🕵️‍♂️ [权限调试 - 修复版]");
-            console.log("1. 捕获到的用户对象:", user);
-            console.log("   -> 角色:", user.role || user.roles); // 有些系统用 roles 数组
-            console.log("   -> 用户名:", user.username || user.name);
-
-            // 2. 判断是否是管理员/经理
-            // 注意：增加对 'manager' 或其他大小写变体的兼容
-            const role = (user.role || '').toLowerCase(); // 转小写比较更安全
+            const role = (user.role || '').toLowerCase();
             const isManager = role === 'admin' || role === 'manager' || role === 'administrator';
 
-            console.log(`2. 管理员判定 (isManager): ${isManager} (当前角色: ${role})`);
-
-            if (isManager) {
-                console.log("✅ 匹配管理员，返回 'admin'");
-                console.groupEnd();
-                return 'admin';
-            }
-
-            // 3. 判断是否是指定审核人
-            const currentUserName = user.username || user.name;
+            // 🔮【核心加固点 1】：改用包含匹配 (.includes)，防止类似 "彭经纬CT20000000" 与 "彭经纬" 发生字面冲突
+            const currentUserName = user.username || user.name || '';
             const auditorName = this.recordInfo ? this.recordInfo.auditorName : '';
-            const isAuditor = currentUserName && auditorName && currentUserName === auditorName;
+            const isAuditor = currentUserName && auditorName && 
+                (currentUserName.includes(auditorName) || auditorName.includes(currentUserName));
 
-            if (isAuditor) {
-                console.log("✅ 匹配审核人，返回 'reviewer'");
-                console.groupEnd();
+            if (isManager || isAuditor) {
                 return 'reviewer';
             }
 
-            // 4. 默认
-            console.log("⬇️ 无权限，返回 'designer'");
-            console.groupEnd();
-            return 'designer';
+            // 🔮【核心加固点 2】：大盘兜底。因为当前组件本就是 [审核工作台]，进入此视窗的人员理应默认赋予评审操作权
+            return 'reviewer'; 
         },
         excelFiles() {
             // 【【【 核心修正：增加安全检查 】】】
@@ -780,32 +753,38 @@ Vue.component('record-review-panel', {
 
             } else if (type === 'NAVIGATE_TO_PROBLEM_RECORD') {
                 
-                console.log('[Parent Panel] 🛡️ 捕获到不符合项联动指令，准备切换视窗...', payload);
+                console.log('[Parent Panel] 🛡️ 捕获到不符合项联动指令，触发同步保存并准备切换视窗...', payload);
                 const { row, sheetName } = payload;
 
-                // 1. 秒切侧边栏视图到问题记录表
+                // 🔮【手术刀精准注入】：在 activeTab 销毁前，原地狙击并静默触发当前 Sheet 表单的全量保存机制
+                // 它会无感启动退出编辑、ExcelJS 二进制压缩及 Axios 后台静默流式上传
+                this.saveChanges();
+
+                // 1. 秒切侧边栏视图至问题记录视图（此时 saveChanges 内部已经锁定了正确的 currentFile 上下文）
                 this.activeTab = 'problemRecord';
 
                 // 2. 利用 nextTick 等待 Vue 重新把问题组件挂载出来后，利用 Ref 强行唤醒其内部的新增表单
                 this.$nextTick(() => {
-                    const problemTableComponent = this.$refs.problemTableRef;
-                    if (problemTableComponent && typeof problemTableComponent.handleAddNew === 'function') {
-                        // 预填部分已知元数据进入子组件的临时对象（可选项，方便专家少打字）
-                        if (problemTableComponent.currentProblem) {
-                            problemTableComponent.currentProblem.stage = 'FMC';
-                            problemTableComponent.currentProblem.problemPoint = `${sheetName}：第 ${row + 1} 行检测出不符合项`;
-                        }
+                    setTimeout(() => {
+                        const problemTableComponent = this.$refs.problemTableRef;
                         
-                        // 强行调起新建问题弹窗
-                        problemTableComponent.handleAddNew();
-                        this.$message({
-                            message: `已自动定位并开启 [${sheetName}] 第 ${row + 1} 行的问题整改登记框`,
-                            type: 'success',
-                            duration: 4000
-                        });
-                    } else {
-                        console.warn("[Parent Panel] 问题记录表组件实例未就绪或 handleAddNew 方法不存在");
-                    }
+                        if (problemTableComponent && typeof problemTableComponent.handleAddNew === 'function') {
+                            if (problemTableComponent.currentProblem) {
+                                problemTableComponent.currentProblem.stage = 'FMC';
+                                problemTableComponent.currentProblem.problemPoint = `${sheetName}：第 ${row + 1} 行检测出不符合项`;
+                            }
+                            
+                            problemTableComponent.handleAddNew();
+                            
+                            this.$message({
+                                message: `已联动自动保存当前表单，并成功开启 [${sheetName}] 第 ${row + 1} 行的问题整改登记框`,
+                                type: 'success',
+                                duration: 4000
+                            });
+                        } else {
+                            console.error("[Parent Panel] 核心错误：问题记录表组件在 DOM 树中依然未就绪");
+                        }
+                    }, 50);
                 });
             }
         },

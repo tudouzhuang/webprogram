@@ -55,8 +55,9 @@ const ProblemRecordTable = {
                    this.currentUser.identity.toUpperCase() === 'MANAGER';
         },
         // 判断当前用户是否可以编辑/解决该问题
+// ====== 【手术刀修复：改用箭头函数，死死锁住 Vue 实例的 this 上下文】 ======
         canEditProblem() {
-            return function(row) {
+            return (row) => {
                 // 管理员拥有所有权限
                 if (this.isAdmin) return true;
                 // 如果是设计员模式，必须与问题的 createdByUsername 匹配

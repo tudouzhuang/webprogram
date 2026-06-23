@@ -251,21 +251,76 @@
         luckysheet.setCellFormat(r, c, "fc", "#000000");
 
         // 🔮【联动核心触发】：双重校验防首屏轰炸，确保只有交互录入时执行
-        if (isInteractive) {
-          console.log(`[Iframe Alert] 检测到手动输入不符合项: r=${r}, c=${c}, value=${cellValue}`);
-          setTimeout(() => {
-            if (confirm(`检测到当前检查项被评为不符合(×)，是否需要立刻跳转到【问题记录】页面登记详细缺陷描述？`)) {
-              window.parent.postMessage({
-                type: "NAVIGATE_TO_PROBLEM_RECORD",
-                payload: {
-                  row: r,
-                  col: c,
-                  sheetName: luckysheet.getSheetName() || "当前表单"
+          if (isInteractive) {
+            console.log(`[Iframe Alert] 检测到手动输入不符合项: r=${r}, c=${c}, value=${cellValue}`);
+            setTimeout(() => {
+              
+              // 1. 提取当前激活的 Sheet 名称
+              let activeSheetName = "当前表单";
+              try {
+                const allFileSheets = luckysheet.getluckysheetfile();
+                if (Array.isArray(allFileSheets)) {
+                  const currentActiveSheet = allFileSheets.find(s => s.status === 1);
+                  if (currentActiveSheet && currentActiveSheet.name) {
+                    activeSheetName = currentActiveSheet.name;
+                  }
                 }
-              }, window.location.origin);
-            }
-          }, 100);
-        }
+              } catch (sheetErr) {
+                console.warn("[Iframe] 提取当前激活Sheet名称失败:", sheetErr);
+              }
+
+              // 2. 封装统一的跳转通信管线
+              const doNavigate = () => {
+                window.parent.postMessage({
+                  type: "NAVIGATE_TO_PROBLEM_RECORD",
+                  payload: {
+                    row: r,
+                    col: c,
+                    sheetName: activeSheetName
+                  }
+                }, window.location.origin);
+              };
+
+              // 3. 🔮【UI美化穿透核心】：动态探测父窗口的 Element UI 弹出框组件
+              let elementConfirm = null;
+              try {
+                if (window.parent) {
+                  elementConfirm = (window.parent.Vue && window.parent.Vue.prototype.$confirm) || 
+                                   (window.parent.ELEMENT && window.parent.ELEMENT.MessageBox.confirm) ||
+                                   (window.parent.ElementUI && window.parent.ElementUI.MessageBox.confirm);
+                }
+              } catch (e) {
+                console.warn("[Iframe] 穿透探测父级 Element UI 失败，将启用原生兜底机制", e);
+              }
+
+              // 4. 根据探测结果，智能化多路渲染
+              if (elementConfirm) {
+                // ✨【高颜值方案】：直接在父页面 Body 中激活 Element UI 的全屏模态弹窗
+                elementConfirm(
+                  `检测到当前检查项被评为不符合 <span style="color: #F56C6C; font-weight: bold;">(×)</span>，是否需要立刻跳转到 <span style="color: #409EFF; font-weight: bold;">【问题记录】</span> 页面登记详细缺陷描述？`, 
+                  '智能联动提示', 
+                  {
+                    confirmButtonText: '立刻跳转',
+                    cancelButtonText: '暂不处理',
+                    type: 'warning',
+                    dangerouslyUseHTMLString: true, // 允许渲染富文本颜色标记
+                    closeOnClickModal: false,       // 防止误触背景关闭
+                    distinguishCancelAndClose: true
+                  }
+                ).then(() => {
+                  doNavigate(); // 确认后平滑跳转
+                }).catch(() => {
+                  console.log("[Iframe] 用户取消了联动跳转");
+                });
+              } else {
+                // 🍂【完美降级兜底】：若父级环境未准备就绪，用原生 confirm 确保核心业务绝不卡死
+                if (confirm(`检测到当前检查项被评为不符合(×)，是否需要立刻跳转到【问题记录】页面登记详细缺陷描述？`)) {
+                  doNavigate();
+                }
+              }
+
+            }, 100);
+          }
       } else if (statusMap[cellValue]) {
         const config = statusMap[cellValue];
         luckysheet.setCellFormat(r, c, "bg", config.bg);
