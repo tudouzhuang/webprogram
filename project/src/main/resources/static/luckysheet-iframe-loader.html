@@ -251,8 +251,8 @@
         luckysheet.setCellFormat(r, c, "fc", "#000000");
 
         // 🔮【联动核心触发】：双重校验防首屏轰炸，确保只有交互录入时执行
-          if (isInteractive) {
-            console.log(`[Iframe Alert] 检测到手动输入不符合项: r=${r}, c=${c}, value=${cellValue}`);
+          if (isInteractive && window.isReviewerMode) {
+            console.log(`[Iframe Alert] 审核员输入不符合项，触发联动: r=${r}, c=${c}`);
             setTimeout(() => {
               
               // 1. 提取当前激活的 Sheet 名称
@@ -350,6 +350,7 @@
      */
     function renderSheet(luckysheetData, fileName, options) {
       // 【绝对防御补丁】：强行锁定全局对象防止 DISPIMG 运行崩溃
+      window.isReviewerMode = options && options.isReviewerMode === true;
       window.luckysheet_function = window.luckysheet_function || {};
       window.luckysheet_function._XLFN = window.luckysheet_function._XLFN || {};
       const emptyFunc = function () { return ""; };

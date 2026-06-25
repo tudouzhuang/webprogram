@@ -360,8 +360,9 @@ Vue.component('record-workspace-panel', {
                                     </div>
                                 </div>
                         
-                                <div v-if="activeTab === 'problemRecord'" class="scrollable-tab-content">
+                                <div v-show="activeTab === 'problemRecord'" class="scrollable-tab-content">
                                     <problem-record-table
+                                        ref="problemTableRef" 
                                         :record-id="Number(recordId)"
                                         mode="designer"
                                         :current-user="currentUser">
@@ -699,6 +700,7 @@ Vue.component('record-workspace-panel', {
                 // 4. 合并并优化配置参数
                 const options = {
                     lang: 'zh',
+                    isReviewerMode: true,
                     allowUpdate: !isPlanningRef,      // 策划书不许同步后端
                     showtoolbar: true,                // 开启工具栏（某些版本工具栏关闭会限制图片功能）
                     showsheetbar: true,
@@ -964,7 +966,26 @@ Vue.component('record-workspace-panel', {
 
                 console.log('[Parent Panel] 接收到实时统计更新:', payload);
                 this.currentLiveStats = payload;
+            } else if (type === 'NAVIGATE_TO_PROBLEM_RECORD') {
+                console.log('[Workspace Panel] 接收到联动视窗切换指令...', payload);
+                const { row, sheetName } = payload;
+                
+                // 1. 无感保存当前正在编辑的 Luckysheet 痕迹
+                this.handleSaveDraft();
+                
+                // 2. 秒切 Tab 到问题记录表
+                this.activeTab = 'problemRecord';
 
+                // 3. 稳稳唤醒已在后台驻留的组件录入框
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        const problemTableComponent = this.$refs.problemTableRef;
+                        if (problemTableComponent && typeof problemTableComponent.handleAddNew === 'function') {
+                            problemTableComponent.handleAddNew();
+                            this.$message.success(`已全自动保存当前表单，并为你切换至问题记录视窗`);
+                        }
+                    }, 50);
+                });
             }
         },
 

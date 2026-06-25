@@ -609,6 +609,7 @@ Vue.component('record-review-panel', {
 
                 const options = {
                     lang: 'zh',
+                    isReviewerMode: true,
                     allowUpdate: false, // 审核页面统一不允许同步，需通过审核按钮提交
                     showtoolbar: true,
                     showsheetbar: true,
