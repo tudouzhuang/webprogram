@@ -59,13 +59,16 @@ const ProblemRecordTable = {
 // ====== 【手术刀修复：加固设计员编辑状态的模糊匹配锁】 ======
         canEditProblem() {
             return (row) => {
-                if (this.isAdmin) return true;
+                // 🔮 只要是管理员或主管，直接放行，不触发任何后续的“本人比对”拦截
+                if (this.isAdmin || this.isReviewerMode) return true;
+                
+                // 只有在纯设计员模式下，才进行严格的模糊包含比对
                 if (this.isDesignerMode) {
                     const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
                     const creatorName = (row.createdByUsername || '').trim();
                     return currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
                 }
-                return this.isReviewerMode;
+                return false;
             };
         },
 
@@ -219,7 +222,9 @@ const ProblemRecordTable = {
 
         openScreenshotUploader(row, type) {
             // ====== 【手术刀修复：加固截图上传权限的模糊校验】 ======
-            if (this.isDesignerMode && !this.isAdmin) {
+        if (this.isAdmin) {
+                // 管理员放行，直接去下面开启弹窗
+            } else if (this.isDesignerMode) {
                 const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
                 const creatorName = (row.createdByUsername || '').trim();
                 const isSameUser = currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
