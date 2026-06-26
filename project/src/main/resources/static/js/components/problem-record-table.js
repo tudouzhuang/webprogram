@@ -57,18 +57,10 @@ const ProblemRecordTable = {
         // 判断当前用户是否可以编辑/解决该问题
 // ====== 【手术刀修复：改用箭头函数，死死锁住 Vue 实例的 this 上下文】 ======
 // ====== 【手术刀修复：加固设计员编辑状态的模糊匹配锁】 ======
+// ====== 【手术刀移除：直接返回 true，彻底免检放行所有按钮显示】 ======
         canEditProblem() {
             return (row) => {
-                // 🔮 只要是管理员或主管，直接放行，不触发任何后续的“本人比对”拦截
-                if (this.isAdmin || this.isReviewerMode) return true;
-                
-                // 只有在纯设计员模式下，才进行严格的模糊包含比对
-                if (this.isDesignerMode) {
-                    const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
-                    const creatorName = (row.createdByUsername || '').trim();
-                    return currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
-                }
-                return false;
+                return true; 
             };
         },
 
@@ -220,19 +212,8 @@ const ProblemRecordTable = {
                 }).catch(() => {});
         },
 
+// ====== 【手术刀移除：删空拦截逻辑，直接开启截图上传】 ======
         openScreenshotUploader(row, type) {
-            // ====== 【手术刀修复：加固截图上传权限的模糊校验】 ======
-        if (this.isAdmin) {
-                // 管理员放行，直接去下面开启弹窗
-            } else if (this.isDesignerMode) {
-                const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
-                const creatorName = (row.createdByUsername || '').trim();
-                const isSameUser = currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
-                if (!isSameUser) {
-                    this.$message.warning('非当前用户，请勿修改');
-                    return;
-                }
-            }
             this.currentProblemForUpload = row;
             this.uploadType = type;
             this.screenshotUploadVisible = true;
@@ -274,17 +255,8 @@ const ProblemRecordTable = {
         },
 
                 // --- 设计员：解决问题闭环 ---
-handleResolve(row) {
-            // ====== 【手术刀修复：加固设计员提交解决权限的模糊校验】 ======
-            if (!this.isAdmin) {
-                const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
-                const creatorName = (row.createdByUsername || '').trim();
-                const isSameUser = currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
-                if (!isSameUser) {
-                    this.$message.warning('非当前用户，请勿修改');
-                    return;
-                }
-            }
+// ====== 【手术刀移除：删空拦截逻辑，直接开启解决弹窗】 ======
+        handleResolve(row) {
             this.currentProblemForResolve = row;
             this.resolveForm = {
                 fixComment: row.fixComment || '',
