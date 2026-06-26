@@ -56,15 +56,15 @@ const ProblemRecordTable = {
         },
         // 判断当前用户是否可以编辑/解决该问题
 // ====== 【手术刀修复：改用箭头函数，死死锁住 Vue 实例的 this 上下文】 ======
+// ====== 【手术刀修复：加固设计员编辑状态的模糊匹配锁】 ======
         canEditProblem() {
             return (row) => {
-                // 管理员拥有所有权限
                 if (this.isAdmin) return true;
-                // 如果是设计员模式，必须与问题的 createdByUsername 匹配
                 if (this.isDesignerMode) {
-                    return this.currentUser && this.currentUser.username === row.createdByUsername;
+                    const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
+                    const creatorName = (row.createdByUsername || '').trim();
+                    return currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
                 }
-                // 审核员模式允许编辑
                 return this.isReviewerMode;
             };
         },
@@ -217,11 +217,13 @@ const ProblemRecordTable = {
                 }).catch(() => {});
         },
 
-        // --- 通用：表格列内的截图上传 ---
-                openScreenshotUploader(row, type) {
-            // 权限检查：非管理员且不是本人，禁止操作
+        openScreenshotUploader(row, type) {
+            // ====== 【手术刀修复：加固截图上传权限的模糊校验】 ======
             if (this.isDesignerMode && !this.isAdmin) {
-                if (this.currentUser && this.currentUser.username !== row.createdByUsername) {
+                const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
+                const creatorName = (row.createdByUsername || '').trim();
+                const isSameUser = currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
+                if (!isSameUser) {
                     this.$message.warning('非当前用户，请勿修改');
                     return;
                 }
@@ -267,11 +269,16 @@ const ProblemRecordTable = {
         },
 
                 // --- 设计员：解决问题闭环 ---
-        handleResolve(row) {
-            // 权限检查
-            if (!this.isAdmin && this.currentUser && this.currentUser.username !== row.createdByUsername) {
-                this.$message.warning('非当前用户，请勿修改');
-                return;
+handleResolve(row) {
+            // ====== 【手术刀修复：加固设计员提交解决权限的模糊校验】 ======
+            if (!this.isAdmin) {
+                const currentName = (this.currentUser?.username || this.currentUser?.name || '').trim();
+                const creatorName = (row.createdByUsername || '').trim();
+                const isSameUser = currentName && creatorName && (currentName.includes(creatorName) || creatorName.includes(currentName));
+                if (!isSameUser) {
+                    this.$message.warning('非当前用户，请勿修改');
+                    return;
+                }
             }
             this.currentProblemForResolve = row;
             this.resolveForm = {
