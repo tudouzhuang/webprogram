@@ -615,14 +615,23 @@ Vue.component('process-record-panel', {
             }
             return this.recordForm.sheetFiles.every(item => item.file !== null);
         },
-        // ====== 【手术刀注入：全量自动路由规则矩阵】 ======
         mandatoryTemplateKeys() {
-            // 1. 图表左上角：4张任何情况都必选的底层基础表
-            let keys = ['减重问题清单', '材质确认表', '结构FMC审核记录表', '结构正式图审核记录表'];
+            let keys = [
+                '设计重大风险排查表',
+                '机床参数检查表',
+                '安全部件检查表',
+                '25条图纸点检表',
+                '动态干涉检查',
+                '静态干涉检查',
+                '筋厚检查报告',
+                '减重问题清单',
+                '材质确认表',
+                '结构FMC审核记录表',
+                '结构正式图审核记录表'
+            ];
 
             if (!this.recordForm.moldType) return keys;
 
-            // 2. 根据不同的模具类型注入对应必选表单
             switch (this.recordForm.moldType) {
                 case '拉延模':
                     keys.push('拉延', '拉延调试工艺卡');
@@ -647,7 +656,7 @@ Vue.component('process-record-panel', {
                     break;
             }
 
-            // 去重输出安全键集
+            // 全局自动过滤去重，输出安全的动态必填键集
             return [...new Set(keys)];
         }
     },
