@@ -53,6 +53,15 @@ public class SecurityConfig {
                     "/uploads/**", "/templates/**",
                     "/api/files/content/**", "/api/files/templates/**"
                 ).permitAll()
+                
+                // ====== 【【【核心新增3：特权主管管控接口鉴权规则流】】】 ======
+                // a. 管理端特权配置接口：只允许具有 MANAGER 或 ADMIN 权限的人员访问列表与切换开关
+                .antMatchers("/api/special-auditors/manager-list", "/api/special-auditors/toggle")
+                    .hasAnyRole("MANAGER", "ADMIN")
+                // b. 客户端特权人池拉取接口：允许大盘任何已经成功登录认证的用户拉取并做本地缓存卡点
+                .antMatchers("/api/special-auditors/active-usernames")
+                    .authenticated()
+                
                 // 其他所有请求都需要认证
                 // 【【【核心修正2：为转交API添加明确的授权规则】】】
                 // 允许任何已登录的用户访问转交接口，先确保功能跑通

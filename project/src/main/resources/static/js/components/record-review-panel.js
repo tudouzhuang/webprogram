@@ -1,11 +1,3 @@
-// 注意：exportWithExcelJS 函数需要通过 <script> 标签在 HTML 中预加载
-// import { exportWithExcelJS } from '/js/utils/luckysheetExporter.js';
-
-// ======= 【系统特权锁：指定主管硬编码配置】 =======
-// 1. 如果填入具体姓名/工号（例如: '彭经纬CT20000000'），则在有未关闭项时，只有该主管能强制批准下图。
-// 2. 如果留空 ''，则默认恢复初始状态：大盘所有的 manager 角色均有权批准下图。
-const DESIGNATED_SUPERVISOR = '彭经纬CT20000000'; 
-
 Vue.component('record-review-panel', {
     components: {
         'workspace-status-bar': WorkspaceStatusBar,
@@ -350,6 +342,7 @@ Vue.component('record-review-panel', {
             planningDocs: [],             // 存放主策划书文件
             allProjectFiles: [],          // 存放项目下所有文件（用于找子Sheet）
             expandedPlanningGroups: {},   // 控制策划书目录的折叠状态
+            activeSpecialSupervisors: []
         }
     },
     // 修改后
@@ -796,7 +789,7 @@ Vue.component('record-review-panel', {
         },
 
         exportCurrentSheet() {
-            const currentFile = this.excelFiles.find(file => String(file.id) === this.activeTab);
+            const currentFile = this.activeFile;
             if (!currentFile) { this.$message.warning("没有可导出的活动文件。"); return; }
             const iframeRef = this.$refs['iframe-' + currentFile.id];
             const targetIframe = Array.isArray(iframeRef) ? iframeRef[0] : iframeRef;
@@ -805,9 +798,9 @@ Vue.component('record-review-panel', {
             this.sendMessageToIframe(targetIframe, { type: 'EXPORT_SHEET', payload: { fileName: fileName } });
         },
 
-        // ====== 【手术刀精准重构：最终下图闸口 - 前端硬编码特权人分流引擎】 ======
+// ====== 【最终全功能闭环：最终下图闸口 - 动态特权管控分流引擎】 ======
         approveRecord() {
-            // 1. 安全探测子组件中的问题统计状态机
+            // 1. 安全探测子组件中的问题统计状态机，抓取挂账的缺陷数
             const problemComponent = this.$refs.problemTableRef;
             let unclosedCount = 0;
 
@@ -817,7 +810,7 @@ Vue.component('record-review-panel', {
                 unclosedCount = (stats.OPEN || 0) + (stats.RESOLVED || 0) + (stats.KEPT || 0);
             }
 
-            // 2. 动态捕获当前登录用户的真实姓名与角色
+            // 2. 动态捕获当前登录用户的真实姓名、账号与角色状态
             let currentUser = {};
             try {
                 if (window.currentUser) currentUser = window.currentUser;
@@ -833,31 +826,36 @@ Vue.component('record-review-panel', {
             const role = (currentUser.role || '').toLowerCase();
             const isManager = role === 'admin' || role === 'manager' || role === 'administrator';
 
-            console.log(`[下图闸口检查] 当前未关闭数: ${unclosedCount} | 登录用户: ${currentName} | 是否经理角色: ${isManager}`);
+            console.log(`[下图闸口检查] 当前未关闭数: ${unclosedCount} | 登录用户: ${currentName} | 大盘主管角色: ${isManager}`);
 
-            // 3. 【核心控制链】：如果存在未关闭项（带病下图），启动前端动态特权人卡点
+            // 3. 【核心控制链】：如果存在未关闭项（带病下图），启动动态白名单校验卡点
             if (unclosedCount > 0) {
-                if (DESIGNATED_SUPERVISOR && DESIGNATED_SUPERVISOR.trim() !== '') {
-                    // 💡 分支 A：启用了特定主管锁定，检查当前登录人是否相符
-                    if (!currentName.includes(DESIGNATED_SUPERVISOR) && !DESIGNATED_SUPERVISOR.includes(currentName)) {
+                // 🔮 规则 A：如果特权白名单里有人（说明管理员在后台勾选并启用了特定主管管控）
+                if (this.activeSpecialSupervisors && this.activeSpecialSupervisors.length > 0) {
+                    // 检查当前登录人的账号是否被包含在后端特权小表内（支持工号后缀全称的模糊包含匹配）
+                    const hasAuth = this.activeSpecialSupervisors.some(name => 
+                        currentName.includes(name.trim()) || name.trim().includes(currentName)
+                    );
+
+                    if (!hasAuth) {
                         this.$alert(
                             `<div>
-                        <p style="color: #F56C6C; font-size: 16px; font-weight: bold; margin-bottom: 10px;">
-                            <i class="el-icon-warning"></i> 审批权限受限（带病下图拦截）
-                        </p>
-                        <p>当前图纸仍有 <strong style="color: #E6A23C;">${unclosedCount}</strong> 项未关闭的遗留问题。</p>
-                        <p>根据现场应急策略，存在遗留项时，目前系统已被安全锁定为指定主管 <strong style="color: #409EFF;">${DESIGNATED_SUPERVISOR}</strong> 专属复核特权。</p>
-                        <p style="margin-top: 15px; padding: 10px; background: #fdf6ec; border-radius: 4px; font-size: 12px; color: #E6A23C; border-left: 3px solid #E6A23C;">
-                            <strong>如何撤销限制：</strong> 请联系技术人员将代码顶部的 <code>DESIGNATED_SUPERVISOR</code> 变量变更为 <code>''</code>（留空）即可释放给所有 Manager。
-                        </p>
-                    </div>`,
-                            '安全合规拦截',
+                                <p style="color: #F56C6C; font-size: 16px; font-weight: bold; margin-bottom: 10px;">
+                                    <i class="el-icon-warning"></i> 审批权限受限（下图拦截）
+                                </p>
+                                <p>当前图纸仍有 <strong style="color: #E6A23C;">${unclosedCount}</strong> 项未关闭的遗留问题。</p>
+                                <p>根据质量合规策略，存在遗留项时，目前系统已被安全锁定。您当前的账户暂未获得独立【带病下图审批特权】授权。</p>
+                                <p style="margin-top: 15px; padding: 10px; background: #fdf6ec; border-radius: 4px; font-size: 12px; color: #E6A23C; border-left: 3px solid #E6A23C;">
+                                    <strong>如何获取权限：</strong> 请联系系统管理员在【特权管控】后台勾选开启您的专员特权，刷新后即可放行。
+                                </p>
+                            </div>`,
+                            '合规安全拦截',
                             { dangerouslyUseHTMLString: true, type: 'warning', confirmButtonText: '知道了' }
                         );
-                        return; // 🧱 强行死锁拦截，拒绝向后端发送任何请求
+                        return; // 🧱 强行死锁拦截，拒绝向后端发送任何放行请求
                     }
                 } else {
-                    // 💡 分支 B：未指定特定主管（变量留空），则退化为默认策略：大盘所有 Manager 均可放行
+                    // 🔮 规则 B：如果特权白名单完全是空的（说明没人被单独赋权），则降级退化为默认策略：大盘所有 Manager 均可放行
                     if (!isManager) {
                         this.$message.error('当前图纸存在未关闭项，必须由部门主管（Manager）执行强制放行！');
                         return;
@@ -865,11 +863,11 @@ Vue.component('record-review-panel', {
                 }
             }
 
-            // 4. ======= 鉴权通过（或完全无缺陷），直接调用后端 100% 成功的标准下发接口 =======
+            // 4. ======= 鉴权通过（或完全无缺陷），直接调用后端标准通过接口 =======
             const confirmTitle = unclosedCount === 0 ? '直接批准确认' : '特权强制下发确认';
             const confirmMessage = unclosedCount === 0
                 ? '当前所有问题项已完全关闭，您可以直接批准并下图。是否确定?'
-                : `当前仍有 <span style="color:#E6A23C; font-weight:bold;">${unclosedCount}</span> 项缺陷未关闭。您作为系统指定的特权主管，确认这些遗留项【不影响下图】并强制签署放行吗？`;
+                : `当前仍有 <span style="color:#E6A23C; font-weight:bold;">${unclosedCount}</span> 项缺陷未关闭。您作为系统当前授权的特权主管，确认这些遗留项【不影响下图】并强制签署放行吗？`;
 
             this.$confirm(confirmMessage, confirmTitle, {
                 confirmButtonText: '确定批准下图',
@@ -878,7 +876,7 @@ Vue.component('record-review-panel', {
                 dangerouslyUseHTMLString: true
             }).then(async () => {
                 try {
-                    // 🚀 精准复用成熟的通过接口，前端帮后端把好了特权关，后端不需要做任何代码和状态机改动
+                    // 🚀 精准复用成熟的通过接口，前端动态看门，后端状态机无任何变更压力
                     await axios.post(`/api/process-records/${this.recordId}/approve`);
                     this.$message.success('操作成功，图纸已顺利下发！');
                     this.goBack();
@@ -1056,8 +1054,14 @@ Vue.component('record-review-panel', {
         // --- 您已有的其他 mounted 逻辑 ---
         this.boundMessageListener = this.messageEventListener.bind(this);
         window.addEventListener('message', this.boundMessageListener);
-
+        axios.get('/api/special-auditors/active-usernames')
+            .then(res => {
+                this.activeSpecialSupervisors = res.data || [];
+                console.log("【下图闸口】当前生效的特权主管白名单:", this.activeSpecialSupervisors);
+            })
+            .catch(e => console.error("【下图闸口】同步特权白名单失败", e));
     },
+
 
     beforeDestroy() {
 

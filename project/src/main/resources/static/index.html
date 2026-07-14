@@ -583,6 +583,12 @@
                                 <span class="menu-title">数据研究</span>
                             </a>
                         </li>
+                        <li class="nav-item" v-if="currentUser && (currentUser.identity.toLowerCase() === 'manager' || currentUser.identity.toLowerCase() === 'admin')">
+                            <a class="nav-link" href="javascript:void(0)" @click="navigateTo('special-auditor-settings')">
+                                <i class="menu-icon mdi mdi-shield-account"></i>
+                                <span class="menu-title">特权管控</span>
+                            </a>
+                        </li>
                                                                                                 <li class="nav-item">
                                                     <a class="nav-link" href="javascript:void(0)" @click="navigateTo('dashboard-panel'); $nextTick(() => { setTimeout(() => { const tabTrigger = document.querySelector('#contact-tab'); if (tabTrigger) tabTrigger.click(); }, 300); })">
                                                         <i class="menu-icon mdi mdi-checkbox-marked-outline"></i>
@@ -855,6 +861,7 @@
 
     <!-- 4.2 页面主要面板组件 -->
     <script src="/js/components/problem-record-table.js"></script>
+    <script src="/js/components/special-auditor-settings.js"></script>
     <script src="js/components/dashboard-panel.js"></script>
     <script src="js/components/craft-planning-panel.js"></script>
     <script src="js/components/create-project-panel.js"></script>
@@ -890,6 +897,7 @@
     <script src="/js/utils/luckysheetExporter.js" type="module"></script>
 
     <script>
+        document.addEventListener('DOMContentLoaded', () => {
         new Vue({
             el: '#app',
             data() {
@@ -1019,7 +1027,8 @@
                         'mold-surface-panel', 'rectification-panel', 'quality-stats-panel',
                         'project-planning-panel', 'project-details-panel',
                         'process-record-panel', 'process-record-list-panel',
-                        'record-workspace-panel', 'record-review-panel', 'review-tasks-panel'
+                        'record-workspace-panel', 'record-review-panel', 'review-tasks-panel',
+                        'special-auditor-settings'
                     ];
                     // 如果跳转到的是内容面板，滚动到顶部
                     if (contentPanels.includes(panelName)) {
@@ -1178,6 +1187,7 @@
                 console.log("【父组件】Vue 实例已挂载，开始获取初始数据...");
                 this.fetchProjectList();
             }
+        });
         });
     </script>
 <span id="focus-catcher" tabindex="-1" style="position:absolute; top:-9999px; left:-9999px;"></span>
