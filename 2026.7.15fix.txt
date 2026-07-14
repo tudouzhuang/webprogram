@@ -1,0 +1,4 @@
+CREATE TABLE sys_special_auditor (
+    username VARCHAR(100) PRIMARY KEY
+);
+
