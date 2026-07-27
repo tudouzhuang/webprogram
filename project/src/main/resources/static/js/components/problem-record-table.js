@@ -122,7 +122,6 @@ const ProblemRecordTable = {
             if (this.$refs.problemForm) this.$refs.problemForm.clearValidate();
         },
         handleAddNew() {
-            if (!this.isReviewerMode) return;
             this.isEditMode = false;
             this.resetForm();
             this.dialogVisible = true;
@@ -397,7 +396,7 @@ const ProblemRecordTable = {
                             </el-option>
                         </el-select>
 
-                        <el-button v-if="isReviewerMode" type="primary" size="small" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
+                        <el-button type="primary" size="small" icon="el-icon-plus" @click="handleAddNew">新增问题</el-button>
                     </div>
                 </div>
 
