@@ -720,8 +720,6 @@
                             </div>
                         </li>
 
-                        <li class="nav-item nav-category">过程记录 (审查)</li>
-
                         <!-- ====== 【手术刀修改：非设计员（Manager/Reviewer/Admin）方可渲染审查菜单】 ====== -->
                         <template v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() !== 'designer'">
                             <li class="nav-item nav-category">过程记录 (审查)</li>
