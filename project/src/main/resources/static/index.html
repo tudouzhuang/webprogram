@@ -722,36 +722,35 @@
 
                         <li class="nav-item nav-category">过程记录 (审查)</li>
 
-                        <!-- ==================【审查记录表】(修正版) ================== -->
-                        <li class="nav-item">
-                            <!-- (A) 触发器: 保持不变 -->
-                            <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleRecordReviewMenu">
-                                <i class="menu-icon mdi mdi-file-find-outline"></i>
-                                <span class="menu-title">审查记录表</span>
-                                <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordReviewMenu}"></i>
-                            </a>
-                            <!-- (B) 容器: 保持不变 -->
-                            <div id="record-review" :class="{'show': showRecordReviewMenu}">
+                        <!-- ====== 【手术刀修改：非设计员（Manager/Reviewer/Admin）方可渲染审查菜单】 ====== -->
+                        <template v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() !== 'designer'">
+                            <li class="nav-item nav-category">过程记录 (审查)</li>
 
-                                <!-- 【核心修正】: 移除了多余的 <li> 和 <ul> 嵌套 -->
-                                <!-- 现在项目列表是直接的二级菜单，不会被 .sub-menu .sub-menu 规则错误地隐藏 -->
-                                <ul class="nav flex-column sub-menu">
-                                    <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
-                                        <a class="nav-link" href="javascript:void(0)"
-                                            @click="goToViewProcessRecords(project)">
-                                            {{ project.projectName || project.projectNumber }}
-                                        </a>
-                                    </li>
-                                    <li v-if="isProjectListLoading" class="nav-item">
-                                        <span class="nav-link text-muted">加载中...</span>
-                                    </li>
-                                    <li v-if="!isProjectListLoading && projectList.length === 0" class="nav-item">
-                                        <a class="nav-link text-muted" href="#">暂无项目</a>
-                                    </li>
-                                </ul>
-
-                            </div>
-                        </li>
+                            <!-- ==================【审查记录表】================== -->
+                            <li class="nav-item">
+                                <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleRecordReviewMenu">
+                                    <i class="menu-icon mdi mdi-file-find-outline"></i>
+                                    <span class="menu-title">审查记录表</span>
+                                    <i class="menu-arrow" :class="{'mdi-rotate-180': showRecordReviewMenu}"></i>
+                                </a>
+                                <div id="record-review" :class="{'show': showRecordReviewMenu}">
+                                    <ul class="nav flex-column sub-menu">
+                                        <li v-for="project in projectList" :key="'review-' + project.id" class="nav-item">
+                                            <a class="nav-link" href="javascript:void(0)"
+                                                @click="goToViewProcessRecords(project)">
+                                                {{ project.projectName || project.projectNumber }}
+                                            </a>
+                                        </li>
+                                        <li v-if="isProjectListLoading" class="nav-item">
+                                            <span class="nav-link text-muted">加载中...</span>
+                                        </li>
+                                        <li v-if="!isProjectListLoading && projectList.length === 0" class="nav-item">
+                                            <a class="nav-link text-muted" href="#">暂无项目</a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </li>
+                        </template>
 
                         <li class="nav-item nav-category">设变整改</li>
                         <li class="nav-item">
@@ -1069,7 +1068,14 @@
                 toggleDrawingCheckMenu() { this.showDrawingCheckMenu = !this.showDrawingCheckMenu; },
                 toggleDesignInfoMenu() { this.showDesignInfoMenu = !this.showDesignInfoMenu; },
                 toggleRecordProjectMenu() { this.showRecordProjectMenu = !this.showRecordProjectMenu; },
-                toggleRecordReviewMenu() { this.showRecordReviewMenu = !this.showRecordReviewMenu; },
+                // ====== 【手术刀修改：展开审查菜单卡点】 ======
+                toggleRecordReviewMenu() { 
+                    if (this.currentUser && this.currentUser.identity && this.currentUser.identity.toLowerCase() === 'designer') {
+                        this.$message.warning('设计人员无法进入审查模块');
+                        return;
+                    }
+                    this.showRecordReviewMenu = !this.showRecordReviewMenu; 
+                },
                 toggleRecordPlanningProjectMenu() { this.showRecordPlanningProjectMenu = !this.showRecordPlanningProjectMenu; },
 
                 // --------------------------------------------------
@@ -1160,8 +1166,12 @@
                 viewProcessRecordForProject(project) {
                     this.navigateTo('process-record-panel', { projectId: project.id });
                 },
+                // ====== 【手术刀修改：跳转审查任务卡点】 ======
                 goToViewProcessRecords(project) {
-                    // 修正了原有的逻辑错误
+                    if (this.currentUser && this.currentUser.identity && this.currentUser.identity.toLowerCase() === 'designer') {
+                        this.$message.warning('您当前为设计人员身份，暂无审查权限');
+                        return;
+                    }
                     this.goToReviewTaskList(project);
                 },
                 handleCreateNewRecord() { this.onCreateNewRecord(); },
