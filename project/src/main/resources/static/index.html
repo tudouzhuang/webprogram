@@ -639,10 +639,11 @@
                             </div>
                         </li>
 
-                        <li class="nav-item nav-category">设计记录表</li>
+                        <!-- ====== 【手术刀精准修复：审核人员隐藏，仅设计员可见】 ====== -->
+                        <li class="nav-item nav-category" v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() === 'designer'">设计记录表</li>
 
-                        <!-- ==================【设计过程记录】(保持原样) ================== -->
-                        <li class="nav-item">
+                        <!-- ==================【设计过程记录】================== -->
+                        <li class="nav-item" v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() === 'designer'">
                             <!-- 使用 toggleDrawingCheckMenu 方法 -->
                             <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleDrawingCheckMenu">
                                 <i class="menu-icon mdi mdi-clipboard-text-outline"></i>
@@ -682,10 +683,11 @@
                             </div>
                         </li>
 
-                        <li class="nav-item nav-category">过程记录</li>
+                        <!-- ====== 【手术刀精准修复：审核人员隐藏，仅设计员可见】 ====== -->
+                        <li class="nav-item nav-category" v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() === 'designer'">过程记录</li>
 
-                        <!-- ==================【过程记录表】(已优化) ================== -->
-                        <li class="nav-item">
+                        <!-- ==================【过程记录表】================== -->
+                        <li class="nav-item" v-if="currentUser && currentUser.identity && currentUser.identity.toLowerCase() === 'designer'">
                             <a class="nav-link" href="javascript:void(0)" @click.prevent="toggleInfoSummaryMenu">
                                 <i class="menu-icon mdi mdi-file-document-box-multiple-outline"></i>
                                 <span class="menu-title">过程记录表</span>
